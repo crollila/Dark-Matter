@@ -49,10 +49,13 @@ function buildNexus() {
     { x: 29, y: 12, label: 'FUSION',  key: 'transmute' },
     { x: 29, y: 16, label: '???',     key: 'tbd1' },
     { x: 29, y: 20, label: '???',     key: 'tbd2' },
+    // Vault is now a single stash station in the spawn room (no separate zone).
+    { x: 24, y: 32, label: 'VAULT',   key: 'vault' },
   ]
 
-  // Vault portal (purple) — center of the bottom spawn room, beside spawn.
-  set(24, 32, T_PORTAL_VAULT)
+  // Vault station (stash chest) — center of the bottom spawn room, beside spawn.
+  // Replaces the old purple vault portal/zone; press E here to open the stash.
+  set(24, 32, T_STATION)
 
   // ── UPPER BOX: cols 8-31, rows 1-10 ──
   fillRect(m, 8, 1, 32, 10, T_FLOOR)
@@ -176,8 +179,13 @@ function buildWorld(seed = Date.now()) {
         if (m.get(pcx+dx, pcy+dy) === T_FLOOR) m.set(pcx+dx, pcy+dy, type)
   }
 
-  // Place predefined dungeon entrances at semi-random floor positions
-  const dungeonKeys = Object.keys(DUNGEONS)
+  // Carve biome regions + hazard tiles onto the finished cave (additive).
+  if (typeof assignBiomes === 'function') assignBiomes(m, rng)
+
+  // Place predefined dungeon entrances at semi-random floor positions.
+  // Placeholder (deferred) biome dungeons are excluded — they only appear as
+  // temporary portal drops from biome mobs, not as fixed world entrances.
+  const dungeonKeys = Object.keys(DUNGEONS).filter(k => !DUNGEONS[k].placeholder)
   m.dungeonPortals = []
   const placed = new Set()
   for (let i = 0; i < dungeonKeys.length * 2 + 2; i++) {

@@ -261,6 +261,108 @@ const MOB_DEFS = {
     portalDrop: null
   },
 
+  // === BIOME: DARK MATTER (dungeon drop → dm_rift) ===
+  matter_wraith: {
+    name: 'Matter Wraith', color: '#9b7bff', ai: 'skirmisher',
+    hp: 2400, spd: 95, dmg: 190, bspd: 300, atkSpd: 1.3, range: 280, radius: 12, xp: 30,
+    portalDrop: { type: 'dm_rift', chance: 0.05 }, uniqueDrop: { base: 'u_wraith_shroud', chance: 0.03 }
+  },
+  gravity_maw: {
+    name: 'Gravity Maw', color: '#6a4bff', ai: 'charger',
+    hp: 4200, spd: 60, dmg: 260, bspd: 180, atkSpd: 1.8, range: 200, radius: 18, xp: 42,
+    portalDrop: { type: 'dm_rift', chance: 0.05 }, uniqueDrop: { base: 'u_gravity_core', chance: 0.03 }
+  },
+  null_apostle: {
+    name: 'Null Apostle', color: '#b59bff', ai: 'orbiter',
+    hp: 3000, spd: 40, dmg: 200, bspd: 230, atkSpd: 2.2, range: 250, radius: 15, xp: 38,
+    portalDrop: { type: 'dm_rift', chance: 0.05 }, uniqueDrop: { base: 'u_null_sigil', chance: 0.03 }
+  },
+
+  // === BIOME: SNOW (dungeon drop → snow_keep) ===
+  frost_skater: {
+    name: 'Frost Skater', color: '#bfe6f5', ai: 'skirmisher',
+    hp: 1800, spd: 130, dmg: 160, bspd: 320, atkSpd: 1.1, range: 270, radius: 11, xp: 28,
+    portalDrop: { type: 'snow_keep', chance: 0.05 }, uniqueDrop: { base: 'u_frost_treads', chance: 0.03 }
+  },
+  icebound_archer: {
+    name: 'Icebound Archer', color: '#8fd0e8', ai: 'chaser',
+    hp: 2200, spd: 70, dmg: 200, bspd: 300, atkSpd: 1.4, range: 300, radius: 12, xp: 32,
+    portalDrop: { type: 'snow_keep', chance: 0.05 }, uniqueDrop: { base: 'u_icebound_charm', chance: 0.03 }
+  },
+  snow_golem: {
+    name: 'Snow Golem', color: '#d8eef7', ai: 'charger',
+    hp: 5000, spd: 55, dmg: 280, bspd: 170, atkSpd: 2.0, range: 190, radius: 19, xp: 46,
+    portalDrop: { type: 'snow_keep', chance: 0.05 }, uniqueDrop: { base: 'u_glacier_plate', chance: 0.03 }
+  },
+
+  // === BIOME: HELL (dungeon drop → hell_pit) ===
+  ember_imp: {
+    name: 'Ember Imp', color: '#ff9a3c', ai: 'chaser',
+    hp: 1600, spd: 115, dmg: 170, bspd: 320, atkSpd: 1.1, range: 250, radius: 10, xp: 28,
+    portalDrop: { type: 'hell_pit', chance: 0.05 }, uniqueDrop: { base: 'u_ember_band', chance: 0.03 }
+  },
+  chainscourge: {
+    name: 'Chainscourge', color: '#d4541a', ai: 'spreader',
+    hp: 3000, spd: 65, dmg: 210, bspd: 260, atkSpd: 1.9, range: 290, radius: 14, xp: 38,
+    portalDrop: { type: 'hell_pit', chance: 0.05 }, uniqueDrop: { base: 'u_chain_girdle', chance: 0.03 }
+  },
+  lava_brute: {
+    name: 'Lava Brute', color: '#ff6a28', ai: 'charger',
+    hp: 5200, spd: 58, dmg: 300, bspd: 180, atkSpd: 1.9, range: 190, radius: 19, xp: 48,
+    portalDrop: { type: 'hell_pit', chance: 0.05 }, uniqueDrop: { base: 'u_magma_helm', chance: 0.03 }
+  },
+
+  // === BIOME: TOXIC / FUNGAL (dungeon drop → toxic_hollow) ===
+  spore_crawler: {
+    name: 'Spore Crawler', color: '#9be84a', ai: 'chaser',
+    hp: 2000, spd: 85, dmg: 180, bspd: 280, atkSpd: 1.5, range: 250, radius: 12, xp: 30,
+    portalDrop: { type: 'toxic_hollow', chance: 0.05 }, uniqueDrop: { base: 'u_spore_gloves', chance: 0.03 }
+  },
+  venom_cap: {
+    name: 'Venom Cap', color: '#6abf3a', ai: 'orbiter',
+    hp: 3200, spd: 32, dmg: 190, bspd: 200, atkSpd: 2.3, range: 230, radius: 16, xp: 34,
+    portalDrop: { type: 'toxic_hollow', chance: 0.05 }, uniqueDrop: { base: 'u_venom_amulet', chance: 0.03 }
+  },
+  mycelium_horror: {
+    name: 'Mycelium Horror', color: '#3f7a2a', ai: 'spreader',
+    hp: 4400, spd: 50, dmg: 240, bspd: 240, atkSpd: 1.9, range: 280, radius: 18, xp: 44,
+    portalDrop: { type: 'toxic_hollow', chance: 0.05 }, uniqueDrop: { base: 'u_myco_plate', chance: 0.03 }
+  },
+
+  // === BIOME: RUINED KINGDOM (dungeon drop → ruined_keep) ===
+  fallen_squire: {
+    name: 'Fallen Squire', color: '#d8c9a0', ai: 'charger',
+    hp: 3400, spd: 62, dmg: 230, bspd: 180, atkSpd: 1.8, range: 190, radius: 15, xp: 36,
+    portalDrop: { type: 'ruined_keep', chance: 0.05 }, uniqueDrop: { base: 'u_squire_helm', chance: 0.03 }
+  },
+  cursed_archer: {
+    name: 'Cursed Archer', color: '#b8a878', ai: 'chaser',
+    hp: 2400, spd: 72, dmg: 200, bspd: 300, atkSpd: 1.3, range: 300, radius: 12, xp: 34,
+    portalDrop: { type: 'ruined_keep', chance: 0.05 }, uniqueDrop: { base: 'u_cursed_ring', chance: 0.03 }
+  },
+  grave_priest: {
+    name: 'Grave Priest', color: '#9aa0b8', ai: 'spreader',
+    hp: 3000, spd: 48, dmg: 210, bspd: 250, atkSpd: 2.0, range: 290, radius: 14, xp: 38,
+    portalDrop: { type: 'ruined_keep', chance: 0.05 }, uniqueDrop: { base: 'u_grave_charm', chance: 0.03 }
+  },
+
+  // === BIOME: ASTRAL DESERT (dungeon drop → astral_dunes) ===
+  star_scarab: {
+    name: 'Star Scarab', color: '#ffe08a', ai: 'charger',
+    hp: 3600, spd: 70, dmg: 240, bspd: 190, atkSpd: 1.7, range: 200, radius: 15, xp: 38,
+    portalDrop: { type: 'astral_dunes', chance: 0.05 }, uniqueDrop: { base: 'u_scarab_band', chance: 0.03 }
+  },
+  mirage_stalker: {
+    name: 'Mirage Stalker', color: '#ffd166', ai: 'skirmisher',
+    hp: 2200, spd: 135, dmg: 180, bspd: 330, atkSpd: 1.0, range: 280, radius: 11, xp: 34,
+    portalDrop: { type: 'astral_dunes', chance: 0.05 }, uniqueDrop: { base: 'u_mirage_cloak', chance: 0.03 }
+  },
+  sunseer: {
+    name: 'Sunseer', color: '#ffbf47', ai: 'orbiter',
+    hp: 3200, spd: 42, dmg: 210, bspd: 240, atkSpd: 2.1, range: 250, radius: 15, xp: 40,
+    portalDrop: { type: 'astral_dunes', chance: 0.05 }, uniqueDrop: { base: 'u_sunseer_amulet', chance: 0.03 }
+  },
+
   // === BOSSES ===
   goblin_warchief: {
     name: 'Goblin Warchief', color: '#e76f51', ai: 'boss_goblin',
@@ -293,6 +395,7 @@ function spawnMob(key, x, y) {
     color: def.color, name: def.name,
     ai: def.ai, isBoss: !!def.isBoss,
     portalDrop: def.portalDrop,
+    uniqueDrop: def.uniqueDrop || null,
     // ai state
     shootTimer: Math.random() * 2,
     phase: Math.random() * Math.PI * 2,
@@ -390,5 +493,16 @@ const DUNGEONS = {
     rooms: { min: 6, max: 10 },
     roomSize: { min: 5, max: 9 },
     mobsPerRoom: { min: 2, max: 4 }
-  }
+  },
+
+  // === BIOME DUNGEONS (PLACEHOLDERS) ===
+  // Deferred: these drop as portals from biome mobs but entry is disabled in
+  // world.js (shows a "not yet open" notice). Only label fields are needed.
+  // Fill in mobs/boss/rooms/etc. later to turn any of these into a real dungeon.
+  dm_rift:       { name: 'Dark Matter Rift',  stars: 6, color: '#9b7bff', placeholder: true },
+  snow_keep:     { name: 'Frostspire Keep',   stars: 5, color: '#bfe6f5', placeholder: true },
+  hell_pit:      { name: 'Infernal Pit',      stars: 6, color: '#ff7a3c', placeholder: true },
+  toxic_hollow:  { name: 'Spore Hollow',      stars: 5, color: '#9be84a', placeholder: true },
+  ruined_keep:   { name: 'Ruined Throne',     stars: 5, color: '#d8c9a0', placeholder: true },
+  astral_dunes:  { name: 'Astral Tomb',       stars: 6, color: '#ffe08a', placeholder: true }
 }

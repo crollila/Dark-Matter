@@ -446,6 +446,8 @@ const Minimap = (() => {
       case T_PORTAL_RAID:    return [210, 60, 60, 255]
       case T_PORTAL_DUNGEON: return [170, 80, 230, 255]
       case T_PORTAL_VAULT:   return [170, 100, 240, 255]
+      case T_ICE:            return [159, 212, 232, 255]
+      case T_LAVA:           return [200, 70, 30, 255]
       default:               return [40, 44, 58, 255]
     }
   }
@@ -456,9 +458,16 @@ const Minimap = (() => {
     const g = c.getContext('2d')
     const img = g.createImageData(map.w, map.h)
     const d = img.data
+    const hasBiome = !!map.biome && typeof BIOME_BY_ID !== 'undefined'
     for (let y = 0; y < map.h; y++) {
       for (let x = 0; x < map.w; x++) {
-        const [r, gg, b, a] = tileRGBA(map.get(x, y))
+        const t = map.get(x, y)
+        let [r, gg, b, a] = tileRGBA(t)
+        // Tint floor/grass by biome so regions read on the minimap.
+        if (hasBiome && (t === T_FLOOR || t === T_GRASS)) {
+          const bd = BIOME_BY_ID[map.biome[y * map.w + x]]
+          if (bd && bd.mini) { r = bd.mini[0]; gg = bd.mini[1]; b = bd.mini[2]; a = 255 }
+        }
         const i = (y * map.w + x) * 4
         d[i] = r; d[i + 1] = gg; d[i + 2] = b; d[i + 3] = a
       }
@@ -579,4 +588,16 @@ function renderPlayer(char, offX, offY) {
   ctx.beginPath()
   ctx.arc(sx + Math.cos(ang) * (PLAYER_RADIUS + 5), sy + Math.sin(ang) * (PLAYER_RADIUS + 5), 3, 0, Math.PI*2)
   ctx.fill()
+
+  // Small HP/MP bars directly under the character (drawn last so bullets/
+  // particles don't cover them). The main HUD bars remain the primary readout.
+  const bw = 36, bh = 4
+  const bx = sx - bw / 2, by = sy + PLAYER_RADIUS + 6
+  const hpF = char.maxHp ? Math.max(0, Math.min(1, char.hp / char.maxHp)) : 0
+  const mpF = char.maxMp ? Math.max(0, Math.min(1, char.mp / char.maxMp)) : 0
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(bx - 1, by - 1, bw + 2, bh * 2 + 4)
+  ctx.fillStyle = UI.hpTrack; ctx.fillRect(bx, by, bw, bh)
+  ctx.fillStyle = UI.hp;      ctx.fillRect(bx, by, bw * hpF, bh)
+  ctx.fillStyle = UI.mpTrack; ctx.fillRect(bx, by + bh + 2, bw, bh)
+  ctx.fillStyle = UI.mp;      ctx.fillRect(bx, by + bh + 2, bw * mpF, bh)
 }

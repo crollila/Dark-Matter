@@ -102,12 +102,13 @@ function loop(ts) {
   // Inventory overlay (gameplay zones only; drawn on top of the HUD)
   if (G.char && (G.zone === 'nexus' || G.zone === 'world' || G.zone === 'dungeon' || G.zone === 'vault')) {
     // Suppress inventory hotkeys while the chat input or a station panel is open.
-    const overlayOpen = (window.Chat && Chat.isOpen()) || (window.Stations && Stations.isOpen())
+    const overlayOpen = (window.Chat && Chat.isOpen()) || (window.Stations && Stations.isOpen()) || (window.Options && Options.isOpen())
     if (!overlayOpen) Inventory.update(G.char)
     Inventory.render(G.char)
-    // Station panels (salvage/reforge/fusion/gamble/vault), then chat on top.
+    // Station panels (salvage/reforge/fusion/gamble/vault), then chat, then options on top.
     if (window.Stations) Stations.render(G.char)
     if (window.Chat) Chat.render()
+    if (window.Options) Options.render()
   }
 
   requestAnimationFrame(loop)

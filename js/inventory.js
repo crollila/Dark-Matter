@@ -54,11 +54,15 @@ const Inventory = (() => {
     return true
   }
 
+  function altHeld() { return !!(keys['AltLeft'] || keys['AltRight']) }
+
   // ---- equip target resolution ----
-  function resolveGearSlot(char, item) {
+  // Rings: normally fill ring1 first, then ring2. With Alt, always target ring2.
+  function resolveGearSlot(char, item, alt) {
     const s = item && item.slot
     if (!s) return null
     if (s === 'ring') {
+      if (alt) return 'ring2'
       if (!char.gear.ring1) return 'ring1'
       if (!char.gear.ring2) return 'ring2'
       return 'ring1'
@@ -67,12 +71,19 @@ const Inventory = (() => {
     return null
   }
 
+  // Which equipped item a hovered item compares against. Rings compare to ring1
+  // by default and ring2 with Alt, regardless of which slots are filled.
+  function compareSlot(char, item, alt) {
+    if (item && item.slot === 'ring') return alt ? 'ring2' : 'ring1'
+    return resolveGearSlot(char, item, false)
+  }
+
   function clampVitals(char) {
     char.hp = Math.max(0, Math.min(char.hp, char.maxHp))
     char.mp = Math.max(0, Math.min(char.mp, char.maxMp))
   }
 
-  function equip(char, idx) {
+  function equip(char, idx, alt) {
     if (!ensureChar(char)) return
     const inv = char.inventory
     const item = inv[idx]
@@ -82,7 +93,7 @@ const Inventory = (() => {
       spawnFloatText(char.x, char.y - 40, 'Wrong class', UI.bad)
       return
     }
-    const slot = resolveGearSlot(char, item)
+    const slot = resolveGearSlot(char, item, alt)
     if (!slot) {
       flash(`Can't equip ${item.name} (${item.slot || '?'})`, UI.bad)
       spawnFloatText(char.x, char.y - 40, 'Cannot equip there', UI.bad)
@@ -126,9 +137,10 @@ const Inventory = (() => {
 
   // ---- layout ----
   function computeLayout() {
-    const PW = 372
+    // PW/px clamp so the window stays fully on-screen on small/laptop windows.
+    const PW = Math.min(372, canvas.width - 16)
     const PH = Math.min(canvas.height - 24, 588)
-    const px = canvas.width - PW - 16
+    const px = Math.max(8, canvas.width - PW - 16)
     const py = ((canvas.height - PH) / 2) | 0
 
     const closeBtn  = { x: px + PW - 30, y: py + 12, w: 20, h: 20 }
@@ -163,17 +175,21 @@ const Inventory = (() => {
       cells.push({ i, x: gx + c * (cell + g), y: gy + r * (cell + g), w: cell, h: cell })
     }
 
-    // Stats popup attached to the LEFT of the window
+    // Stats popup attached to the LEFT of the window. On narrow windows there
+    // isn't room beside the window, so it becomes an on-top overlay instead of
+    // overlapping the inventory awkwardly.
     const SW = 220
-    const statsPanel = { x: px - SW - 10, y: py, w: SW, h: PH }
+    const statsFits = (px - SW - 10) >= 8
+    const statsPanel = { x: Math.max(8, px - SW - 10), y: py, w: SW, h: PH }
 
     return { PW, PH, px, py, closeBtn, statsBtn, slots, silhouette, cells, gx, gy, cols, rows, cell,
-             gridLabel: { x: gx, y: gy - 8 }, statsPanel }
+             gridLabel: { x: gx, y: gy - 8 }, statsPanel, statsFits }
   }
 
   function hit(r, x, y) { return r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h }
 
-  function onClick(x, y, char) {
+  function onClick(x, y, char, alt) {
+    if (window.Options && Options.isOpen()) return false
     if (!open || !_layout) return false
     const L = _layout
     if (hit(L.closeBtn, x, y)) { open = false; return true }
@@ -183,10 +199,10 @@ const Inventory = (() => {
     for (const s of L.slots) {
       if (hit(s, x, y)) { if (char.gear[s.key]) unequip(char, s.key); return true }
     }
-    // grid items → equip
+    // grid items → equip (Alt → into ring2 when possible)
     const inv = char.inventory || []
     for (const c of L.cells) {
-      if (hit(c, x, y)) { if (inv[c.i]) equip(char, c.i); return true }
+      if (hit(c, x, y)) { if (inv[c.i]) equip(char, c.i, alt); return true }
     }
 
     // click inside stats popup → swallow; click outside whole window → close
@@ -334,23 +350,23 @@ const Inventory = (() => {
     }
     ctx.textAlign = 'left'
 
-    // Materials + dust below stats
+    // Dust below stats (salvage output / reforge fuel)
     y += 8
     ctx.fillStyle = UI.accent; ctx.font = 'bold 11px monospace'
-    ctx.fillText('MATERIALS', p.x + 16, y); y += 6
+    ctx.fillText('DUST', p.x + 16, y); y += 6
     ctx.strokeStyle = '#1f2740'; ctx.beginPath(); ctx.moveTo(p.x + 14, y); ctx.lineTo(p.x + p.w - 14, y); ctx.stroke()
     y += 16
-    const mats = (typeof account !== 'undefined' && account.materials) || {}
-    const mk = Object.keys(mats)
-    if (!mk.length) { ctx.fillStyle = UI.textFaint; ctx.font = '10px monospace'; ctx.fillText('None — kill dungeon bosses.', p.x + 16, y); y += 16 }
-    for (const k of mk) {
-      const m = (typeof MATERIALS !== 'undefined') ? MATERIALS[k] : null
-      ctx.fillStyle = (m && m.color) || '#ccc'
+    const dust = (typeof account !== 'undefined' && account.dust) || {}
+    const dk = (typeof DUST !== 'undefined' ? Object.keys(DUST) : Object.keys(dust)).filter(k => (dust[k] | 0) > 0)
+    if (!dk.length) { ctx.fillStyle = UI.textFaint; ctx.font = '10px monospace'; ctx.fillText('None — salvage items for dust.', p.x + 16, y); y += 16 }
+    for (const k of dk) {
+      const d = (typeof DUST !== 'undefined') ? DUST[k] : null
+      ctx.fillStyle = (d && d.color) || '#ccc'
       ctx.beginPath(); ctx.arc(p.x + 20, y - 3, 4, 0, Math.PI * 2); ctx.fill()
       ctx.font = '10px monospace'; ctx.textAlign = 'left'
-      ctx.fillText(m ? m.name : k, p.x + 30, y)
+      ctx.fillText(d ? d.name : k, p.x + 30, y)
       ctx.fillStyle = UI.text; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'right'
-      ctx.fillText('x' + mats[k], p.x + p.w - 16, y); y += 18
+      ctx.fillText('x' + (dust[k] | 0), p.x + p.w - 16, y); y += 18
     }
     ctx.textAlign = 'left'
   }
@@ -364,8 +380,10 @@ const Inventory = (() => {
 
     ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-    // Stats popup (left of window) — drawn first so the main window reads on top
-    if (statsOpen) renderStatsPanel(L.statsPanel, char)
+    // Stats popup (left of window) — drawn first so the main window reads on top.
+    // On narrow windows it doesn't fit beside the window, so it's drawn LAST
+    // (as an overlay) further below instead.
+    if (statsOpen && L.statsFits) renderStatsPanel(L.statsPanel, char)
 
     // Main window
     uiPanel(px, py, PW, PH, 12, UI.panelBorder, UI.panelBg)
@@ -430,9 +448,12 @@ const Inventory = (() => {
       ctx.fillText('[I] close   •   click item to equip   •   click slot to unequip', px + 18, py + PH - 12)
     }
 
-    // Tooltips (on top of everything)
+    // Narrow window: draw the stats popup on top as an overlay (no room beside).
+    if (statsOpen && !L.statsFits) renderStatsPanel(L.statsPanel, char)
+
+    // Tooltips (on top of everything). Alt compares a ring against ring2.
     if (hoverGrid) {
-      const slot = resolveGearSlot(char, hoverGrid)
+      const slot = compareSlot(char, hoverGrid, altHeld())
       drawHoverTooltips(char, hoverGrid, slot ? char.gear[slot] : null)
     } else if (hoverEquipped) {
       drawHoverTooltips(char, hoverEquipped, null)
@@ -484,7 +505,7 @@ const Inventory = (() => {
 canvas.addEventListener('mousedown', e => {
   if (e.button !== 0) return
   if (Inventory.isOpen() && typeof G !== 'undefined' && G.char) {
-    if (Inventory.onClick(e.clientX, e.clientY, G.char)) { e.stopPropagation() }
+    if (Inventory.onClick(e.clientX, e.clientY, G.char, e.altKey)) { e.stopPropagation() }
   }
 }, true)
 

@@ -44,6 +44,8 @@ const T_PORTAL_DUNGEON = 7
 const T_STATION = 8  // interactable NPC spot
 const T_SPAWN   = 9
 const T_PORTAL_VAULT = 10  // purple portal in nexus → vault room
+const T_ICE  = 11  // snow biome — slippery floor (no block, momentum slide)
+const T_LAVA = 12  // hell biome — damages + slows (no block)
 
 const TILE_COLORS = {
   [T_VOID]:  '#000000',
@@ -57,6 +59,8 @@ const TILE_COLORS = {
   [T_STATION]: '#3a3a4a',
   [T_SPAWN]:   '#2a2a3a',
   [T_PORTAL_VAULT]: '#3a1a6a',
+  [T_ICE]:   '#9fd4e8',
+  [T_LAVA]:  '#7a1c0c',
 }
 const TILE_COLORS_ALT = {
   [T_FLOOR]: '#353525',
@@ -179,9 +183,12 @@ function makeTileMap(w, h) {
   }
 }
 
-// --- TILE SPEED FACTOR (water slows movement) ---
+// --- TILE SPEED FACTOR (water + lava slow movement; ice handled via slide) ---
 function tileSpeedFactor(tileMap, x, y) {
-  return tileMap.get((x/TILE)|0, (y/TILE)|0) === T_WATER ? 0.5 : 1
+  const t = tileMap.get((x/TILE)|0, (y/TILE)|0)
+  if (t === T_WATER) return 0.5
+  if (t === T_LAVA)  return 0.5
+  return 1
 }
 
 // --- MOVE WITH COLLISION ---
@@ -215,8 +222,24 @@ function renderTileMap(tileMap, labels) {
       const alt = (tx + ty) % 2 === 0
       let color = TILE_COLORS[t] || '#111'
       if (alt && TILE_COLORS_ALT[t]) color = TILE_COLORS_ALT[t]
+      // Biome floor tint (world map only) — gives each region its own palette.
+      if ((t === T_FLOOR || t === T_GRASS) && tileMap.biome &&
+          typeof BIOME_BY_ID !== 'undefined') {
+        const b = tileMap.biome[ty * tileMap.w + tx]
+        const bd = b && BIOME_BY_ID[b]
+        if (bd) color = alt ? bd.floorAlt : bd.floor
+      }
       ctx.fillStyle = color
       ctx.fillRect(px, py, TILE, TILE)
+      if (t === T_LAVA) {
+        const pulse = 0.4 + Math.sin(Date.now()/260 + tx*0.7 + ty*0.5) * 0.25
+        ctx.fillStyle = `rgba(255,110,40,${pulse})`
+        ctx.fillRect(px+3, py+3, TILE-6, TILE-6)
+      }
+      if (t === T_ICE) {
+        ctx.fillStyle = 'rgba(255,255,255,0.18)'
+        ctx.fillRect(px+2, py+2, TILE-4, 4)
+      }
 
       if (t === T_WALL) {
         ctx.fillStyle = '#333'

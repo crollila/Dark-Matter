@@ -18,7 +18,7 @@ const VaultZone = (() => {
   }
 
   function update(dt, char) {
-    const blocked = (window.Chat && Chat.isOpen()) || (window.Stations && Stations.isOpen())
+    const blocked = (window.Chat && Chat.isOpen()) || (window.Stations && Stations.isOpen()) || (window.Options && Options.isOpen())
 
     // R → nexus
     if (keys['KeyR'] && !blocked) { G.enterZone('nexus'); return }
@@ -83,9 +83,9 @@ const VaultZone = (() => {
       ctx.font = 'bold 14px monospace'
       const tw = ctx.measureText(prompt).width
       ctx.fillStyle = 'rgba(0,0,0,0.7)'
-      ctx.fillRect(canvas.width / 2 - tw / 2 - 12, canvas.height - 120, tw + 24, 30)
+      ctx.fillRect(canvas.width / 2 - tw / 2 - 12, canvas.height - 128, tw + 24, 30)
       ctx.fillStyle = '#cc88ff'; ctx.textAlign = 'center'
-      ctx.fillText(prompt, canvas.width / 2, canvas.height - 100); ctx.textAlign = 'left'
+      ctx.fillText(prompt, canvas.width / 2, canvas.height - 108); ctx.textAlign = 'left'
     }
 
     renderHUD(char, 'VAULT', map, [])

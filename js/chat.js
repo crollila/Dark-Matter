@@ -3,7 +3,7 @@
 // ------------------------------------------------------------
 // Toggle with Enter (empty) or '/' (prefilled). While open,
 // gameplay input is suppressed (zones check Chat.isOpen()).
-// Commands: /help /godmode /giveitem /givemat /xp /level /enter
+// Commands: /help /godmode /giveitem /givedust /xp /level /enter
 // ============================================================
 
 const Chat = (() => {
@@ -39,7 +39,7 @@ const Chat = (() => {
     const c = (typeof G !== 'undefined') ? G.char : null
     switch (cmd) {
       case 'help':
-        pushLog('/godmode  /giveitem <slot|baseKey> [tier1-6]  /givemat <mat> <n>', '#9fb3c8')
+        pushLog('/godmode  /giveitem <slot|baseKey> [tier1-6]  /givedust <rarity> <n>', '#9fb3c8')
         pushLog('/givedust <rarity> <n>  /giveglory <n>  /xp <n>  /level <n>', '#9fb3c8')
         pushLog('/enter <world|nexus|vault|dungeonKey>', '#9fb3c8')
         break
@@ -74,13 +74,8 @@ const Chat = (() => {
   }
 
   function giveMat(a) {
-    const key = a[0], n = parseInt(a[1]) || 1
-    if (!key || !(window.MATERIALS && MATERIALS[key])) {
-      pushLog('mats: ' + Object.keys(window.MATERIALS || {}).join(', '), '#ff6b6b'); return
-    }
-    addMaterial(account, key, n)
-    if (window.saveGame) saveGame()
-    pushLog('+' + n + ' ' + MATERIALS[key].name, MATERIALS[key].color)
+    // Materials removed from the game. Use /givedust instead.
+    pushLog('materials removed — use /givedust <rarity> <n>', '#ff6b6b')
   }
 
   function giveDust(a) {
@@ -120,23 +115,34 @@ const Chat = (() => {
       return
     }
     if (!inGameplay()) return
+    if (window.Options && Options.isOpen()) return   // don't open chat over the options menu
     if (e.code === 'Enter') { openChat(''); e.stopPropagation(); e.preventDefault(); return }
     if (e.key === '/')      { openChat('/'); e.stopPropagation(); e.preventDefault(); return }
   }, true)
+
+  // ---- error console: surface runtime errors locally (no networking) ----
+  // Kept quiet during normal play — only fires on actual errors/rejections.
+  window.addEventListener('error', e => {
+    try { pushLog('⚠ ' + ((e && e.message) || 'error'), '#ff6b6b') } catch (_) {}
+  })
+  window.addEventListener('unhandledrejection', e => {
+    try { pushLog('⚠ ' + ((e && e.reason && e.reason.message) || (e && e.reason) || 'rejection'), '#ff6b6b') } catch (_) {}
+  })
 
   // ---- render (top-left; called from main loop in gameplay zones) ----
   function render() {
     if (!inGameplay()) return
     ctx.textAlign = 'left'
-    let y = 40
+    // Start below the top-left [R]/[I] HUD hints so the log doesn't overlap them.
+    let y = 58
     if (open) {
       const bw = Math.min(560, canvas.width - 20)
-      ctx.fillStyle = 'rgba(0,0,0,0.82)'; ctx.fillRect(10, 30, bw, 24)
-      ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 1; ctx.strokeRect(10, 30, bw, 24)
+      ctx.fillStyle = 'rgba(0,0,0,0.82)'; ctx.fillRect(10, 56, bw, 24)
+      ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 1; ctx.strokeRect(10, 56, bw, 24)
       ctx.fillStyle = '#e0fbfc'; ctx.font = '12px monospace'
       const cursor = Math.floor(Date.now() / 500) % 2 === 0 ? '_' : ''
-      ctx.fillText('> ' + buffer + cursor, 16, 46)
-      y = 70
+      ctx.fillText('> ' + buffer + cursor, 16, 72)
+      y = 96
     }
     ctx.font = '11px monospace'
     for (let i = log.length - 1; i >= 0; i--) {

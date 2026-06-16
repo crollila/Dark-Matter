@@ -107,6 +107,7 @@ const Stations = (() => {
   }
 
   function onClick(x, y, char) {
+    if (window.Options && Options.isOpen()) return false
     if (!open || !_L) return false
     const L = _L
     if (hit(L.closeBtn, x, y)) { close(); return true }

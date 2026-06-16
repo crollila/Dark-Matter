@@ -40,7 +40,7 @@ const DungeonZone = (() => {
   }
 
   function update(dt, char) {
-    const chatOpen = (window.Chat && Chat.isOpen())
+    const chatOpen = (window.Chat && Chat.isOpen()) || (window.Options && Options.isOpen())
     const inputBlocked = chatOpen || (window.Inventory && Inventory.isOpen())
 
     // R → nexus always
@@ -266,10 +266,11 @@ const DungeonZone = (() => {
     renderFloatTexts()
 
     if (promptLabel && promptTimer > 0) {
+      // sits above the bottom-center HUD module (which occupies ~height-88..height-12)
       ctx.fillStyle = 'rgba(0,0,0,0.65)'
-      ctx.fillRect(canvas.width/2 - 140, canvas.height - 80, 280, 32)
+      ctx.fillRect(canvas.width/2 - 140, canvas.height - 128, 280, 32)
       ctx.fillStyle = '#e0fbfc'; ctx.font = '13px monospace'; ctx.textAlign = 'center'
-      ctx.fillText(promptLabel, canvas.width/2, canvas.height - 59)
+      ctx.fillText(promptLabel, canvas.width/2, canvas.height - 107)
       ctx.textAlign = 'left'
     }
 
@@ -278,10 +279,11 @@ const DungeonZone = (() => {
 
     // [E] Pick up loot prompt
     if (lootPrompt) {
+      // stacked above the exit prompt, clear of the bottom-center HUD module
       ctx.fillStyle = 'rgba(0,0,0,0.7)'
-      ctx.fillRect(canvas.width/2 - 110, canvas.height - 120, 220, 30)
+      ctx.fillRect(canvas.width/2 - 110, canvas.height - 166, 220, 30)
       ctx.fillStyle = '#ffd60a'; ctx.font = 'bold 14px monospace'; ctx.textAlign = 'center'
-      ctx.fillText('[E] Pick up loot', canvas.width/2, canvas.height - 100)
+      ctx.fillText('[E] Pick up loot', canvas.width/2, canvas.height - 146)
       ctx.textAlign = 'left'
     }
 
@@ -331,7 +333,9 @@ const DungeonZone = (() => {
   }
 
   function renderBossBar(boss) {
-    const bw = canvas.width * 0.5
+    // Width capped so the centered bar never runs under the top-right minimap
+    // (~186px wide) on narrow windows.
+    const bw = Math.max(160, Math.min(canvas.width * 0.5, canvas.width - 388))
     const bx = canvas.width/2 - bw/2
     const by = 44   // pushed below the top-center dungeon-name box (no overlap)
     ctx.fillStyle = 'rgba(0,0,0,0.7)'

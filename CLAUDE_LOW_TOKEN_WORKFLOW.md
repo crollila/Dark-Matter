@@ -105,8 +105,19 @@ Update this map after each patch so future prompts can point Claude to exact fil
 - If adding a new JS module, update script order here.
 - Check script order when adding globals used by later files.
 
+### `js/biomes.js`
+- Data-driven world biome defs (`BIOMES`, `BIOME_BY_ID`): palette, mob pool, hazard tile, minimap tint, related dungeon-drop key.
+- `assignBiomes(map, rng)`: paints Voronoi biome regions onto the world map (`map.biome` Uint8Array, `map.biomeAt`), scatters ice/lava hazard tiles, keeps spawn/home neutral.
+
+Use for:
+- biome palettes / regions
+- which mobs spawn in which biome
+- biome hazard tile placement
+
 ### `js/engine.js`
 - Canvas setup/render helpers.
+- Tile constants incl. `T_ICE` (snow, slippery), `T_LAVA` (hell, damage+slow).
+- `tileSpeedFactor` (water+lava slow), biome floor tint in `renderTileMap`.
 - Input globals.
 - Camera/math/tile helpers.
 - Collision helpers such as wall blocking/water slowing.
@@ -296,6 +307,18 @@ Use for:
 - menu/class selection UI
 - death/menu render issues
 
+### `js/options.js`
+- ESC options menu (gameplay zones only).
+- Hotkeys list, graphics placeholders (hide other projectiles, other-player opacity), screen rotation + reset.
+- `Settings` global + localStorage persistence (`realm_settings`).
+- Screen rotation is stored/displayed only; gameplay rotation deferred (would break offset-based aim).
+- Zones gate input via `Options.isOpen()`.
+
+Use for:
+- options/settings UI
+- hotkey list
+- persisted client settings
+
 ### `js/main.js`
 - Boot sequence.
 - Global game state `G`.
@@ -329,18 +352,25 @@ Keep updated.
 - [x] Inventory/equip
 - [x] Save/load
 - [x] Permadeath separation: character gear/inventory dies, account data survives
-- [x] Materials
-- [x] Dust
+- [ ] Materials — REMOVED (no drops/UI; old saves' `account.materials` kept but unused)
+- [x] Dust (still required for Salvage/Reforge)
 - [x] Salvage
 - [x] Reforge
 - [x] Fusion
 - [x] Gamble
 - [x] Void multiplier stats
-- [x] Vault room/account stash
-- [x] Chat/debug commands
+- [x] Account stash via Nexus VAULT station (old vault zone code retained but unused)
+- [x] ESC options menu + persisted client settings
+- [x] HP/MP bars under the player character
+- [x] Chat/debug commands + in-game error log
 - [x] Water slows player
 - [x] Dungeon portals require E
 - [x] Dungeons: goblin_warren, fungal_cavern, void_rift
+- [x] World biomes (6): dark_matter, snow, hell, toxic, ruined, astral — Voronoi regions, palette, minimap tint, biome name label
+- [x] Biome terrain: ice (slippery), lava (DoT+slow)
+- [x] Biome mobs (18, 3/biome) spawn only in-biome + leash back if they wander out
+- [x] Biome drops: shared biome dungeon-portal drop per biome + one unique mob-only item per monster (`u_*` bases, `unique:true`, mob-only)
+- [ ] Biome dungeons (dm_rift, snow_keep, hell_pit, toxic_hollow, ruined_keep, astral_dunes): PLACEHOLDERS — `placeholder:true`, entry deferred ("not yet open"), excluded from fixed world scatter
 
 ---
 
@@ -363,6 +393,7 @@ Keep updated.
 - That one roll percent applies to all stats on the item.
 - Do not average per-stat rolls.
 - Reforge changes only rollPercent/stat values.
+- bspd (projectile speed) is a FIXED weapon property (midpoint, ignores rollPercent); reforge never changes it; not an affix.
 - Reforge must not change baseKey, rarity, slot, class lock, or stat identities.
 - Fusion consumes 3 identical items: same base item + same rarity.
 - Fusion output keeps main item identity and rolls between highest input rollPercent and 100.
@@ -444,7 +475,7 @@ Keep updates short.
 Move completed items out of this list after patches.
 
 - Stabilize item overhaul/stations after big rewrite.
-- Remove vault access from character panel if not already done; vault should be accessed through Nexus/vault room only.
+- Vault is now a Nexus VAULT station (E to open stash). Old `vault.js` zone + `buildVault` are unused but intact; remove later if desired.
 - Ensure rarity affix counts exactly match current rule.
 - Tune mob drop rates and XP if too fast/slow.
 - Improve dungeon generator minimum room/mob reliability if degenerate seeds still happen.

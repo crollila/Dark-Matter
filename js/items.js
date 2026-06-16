@@ -135,6 +135,56 @@ const ITEM_BASES = {
     affixPool: [ { hpRegen: [2, 5] }, { spd: [1, 3] }, { hp: [60, 120] }, { int: [2, 4] }, { mp: [80, 160] } ] },
 }
 
+// ---- BIOME UNIQUE DROPS ----
+// One mob-only unique per biome monster (18 total). Marked `unique: true` so
+// basesForSlot()/gamble never roll them — they ONLY drop from their mob (see
+// world.js killMob → uniqueDrop). Slots are class-agnostic (no weapons) so any
+// class can use them. They flow through equip/salvage/reforge like any base.
+const BIOME_UNIQUES = {
+  // Dark Matter
+  u_wraith_shroud: { name: 'Wraith Shroud', slot: 'chest', classes: null, unique: true,
+    core: { hp: [200, 300], armor: [6, 11] }, affixPool: [ { spd: [3, 6] }, { hpRegen: [3, 6] } ] },
+  u_gravity_core: { name: 'Gravity Core', slot: 'amulet', classes: null, unique: true,
+    core: { hp: [180, 280], str: [4, 8] }, affixPool: [ { armor: [3, 6] }, { hpRegen: [2, 5] } ] },
+  u_null_sigil: { name: 'Null Sigil', slot: 'ring', classes: null, unique: true,
+    core: { int: [4, 8], mp: [160, 280] }, affixPool: [ { hp: [80, 160] }, { spd: [2, 4] } ] },
+  // Snow
+  u_frost_treads: { name: 'Frost Treads', slot: 'boots', classes: null, unique: true,
+    core: { spd: [8, 15], hp: [80, 150] }, affixPool: [ { armor: [3, 5] }, { dex: [3, 5] } ] },
+  u_icebound_charm: { name: 'Icebound Charm', slot: 'amulet', classes: null, unique: true,
+    core: { hp: [160, 260], mp: [120, 220] }, affixPool: [ { armor: [3, 6] }, { hpRegen: [2, 5] } ] },
+  u_glacier_plate: { name: 'Glacier Plate', slot: 'chest', classes: null, unique: true,
+    core: { hp: [240, 340], armor: [8, 14] }, affixPool: [ { hpRegen: [3, 6] }, { str: [3, 6] } ] },
+  // Hell
+  u_ember_band: { name: 'Ember Band', slot: 'ring', classes: null, unique: true,
+    core: { str: [4, 9], hp: [100, 180] }, affixPool: [ { spd: [3, 5] }, { armor: [2, 5] } ] },
+  u_chain_girdle: { name: 'Chain Girdle', slot: 'pants', classes: null, unique: true,
+    core: { hp: [180, 280], armor: [5, 10] }, affixPool: [ { str: [3, 6] }, { hpRegen: [2, 5] } ] },
+  u_magma_helm: { name: 'Magma Helm', slot: 'helmet', classes: null, unique: true,
+    core: { armor: [6, 11], hp: [120, 200], str: [3, 6] }, affixPool: [ { hpRegen: [3, 6] }, { spd: [2, 4] } ] },
+  // Toxic / Fungal
+  u_spore_gloves: { name: 'Spore Gloves', slot: 'hands', classes: null, unique: true,
+    core: { dex: [4, 8], armor: [3, 6] }, affixPool: [ { spd: [3, 6] }, { hp: [80, 150] } ] },
+  u_venom_amulet: { name: 'Venom Amulet', slot: 'amulet', classes: null, unique: true,
+    core: { hp: [160, 260], hpRegen: [4, 8] }, affixPool: [ { dex: [3, 6] }, { armor: [3, 5] } ] },
+  u_myco_plate: { name: 'Mycelial Plate', slot: 'chest', classes: null, unique: true,
+    core: { hp: [220, 320], armor: [7, 12] }, affixPool: [ { hpRegen: [4, 7] }, { spd: [2, 4] } ] },
+  // Ruined Kingdom
+  u_squire_helm: { name: 'Squire Helm', slot: 'helmet', classes: null, unique: true,
+    core: { armor: [5, 10], hp: [120, 200], str: [3, 6] }, affixPool: [ { spd: [2, 5] }, { hpRegen: [2, 5] } ] },
+  u_cursed_ring: { name: 'Cursed Signet', slot: 'ring', classes: null, unique: true,
+    core: { str: [4, 8], int: [4, 8] }, affixPool: [ { hp: [80, 160] }, { mp: [100, 200] } ] },
+  u_grave_charm: { name: 'Grave Charm', slot: 'ability', classes: null, unique: true,
+    core: { mp: [160, 280], int: [4, 7] }, affixPool: [ { hpRegen: [3, 6] }, { hp: [80, 160] } ] },
+  // Astral Desert
+  u_scarab_band: { name: 'Scarab Band', slot: 'ring', classes: null, unique: true,
+    core: { str: [4, 8], hp: [100, 180] }, affixPool: [ { armor: [3, 6] }, { dex: [3, 5] } ] },
+  u_mirage_cloak: { name: 'Mirage Cloak', slot: 'boots', classes: null, unique: true,
+    core: { spd: [8, 14], hp: [80, 150] }, affixPool: [ { dex: [3, 6] }, { armor: [2, 5] } ] },
+  u_sunseer_amulet: { name: 'Sunseer Amulet', slot: 'amulet', classes: null, unique: true,
+    core: { mp: [160, 280], int: [4, 8] }, affixPool: [ { hpRegen: [3, 6] }, { hp: [80, 160] } ] },
+}
+
 // Void multiplier templates per slot (% based; recalcStats applies these as
 // multipliers instead of additive stats). Void items "break" the additive rules.
 const VOID_MULT = {
@@ -154,6 +204,10 @@ const VOID_AFFIXES = {
   hpPct: [6, 14], mpPct: [6, 16], dmgPct: [5, 12], spdPct: [4, 10], armorPct: [5, 12],
 }
 
+// Fold biome uniques into the base registry so equip/salvage/reforge resolve
+// them by baseKey. They're flagged `unique` and filtered out of random rolls.
+Object.assign(ITEM_BASES, BIOME_UNIQUES)
+
 // Legacy alias so older callers referencing ITEM_DEFS keep resolving bases.
 const ITEM_DEFS = ITEM_BASES
 
@@ -162,6 +216,7 @@ function basesForSlot(slot, classKey) {
   const out = []
   for (const k in ITEM_BASES) {
     const b = ITEM_BASES[k]
+    if (b.unique) continue   // biome uniques are mob-only, never random/gamble
     if (b.slot !== slot) continue
     if (b.classes && classKey && b.classes.indexOf(classKey) < 0) continue
     if (b.classes && !classKey) continue   // class-locked base needs a class
@@ -221,6 +276,9 @@ function fmtStatLine(k, v) {
 function _clampPct(p) { return Math.max(1, Math.min(100, Math.round(p))) }
 
 function _statValue(k, lo, hi, t) {
+  // bspd (projectile speed) is a FIXED weapon property: it never scales with the
+  // item's rollPercent and is never changed by reforge. Always use the midpoint.
+  if (k === 'bspd') t = 0.5
   const v = lo + (hi - lo) * t
   return (hi - lo) >= 1 ? Math.round(v) : Math.round(v * 100) / 100
 }
@@ -377,12 +435,10 @@ function gambleItem(acct, char, slot) {
   return it ? { item: it } : { error: 'Gamble failed' }
 }
 
-// Generate boss loot for a dungeon: always some material, often an item (boss
-// loot is biased toward higher rarity tiers).
+// Generate boss loot for a dungeon: often an item (boss loot is biased toward
+// higher rarity tiers). Materials removed — loot is items only.
 function generateBossLoot(dungeonKey) {
   const loot = { items: [], materials: {} }
-  const matKey = DUNGEON_MATERIAL[dungeonKey]
-  if (matKey) loot.materials[matKey] = 1 + (Math.random() * 3 | 0)
   if (Math.random() < 0.85) {
     const it = randomItem(dungeonKey, { boost: 0.6 })
     if (it) loot.items.push(it)
@@ -399,7 +455,6 @@ function rollMobDrop(stars, opts) {
   const loot = { items: [], materials: {} }
   const it = randomItem(opts.source || 'world', { boost: (stars || 0) * 0.12 })
   if (it) loot.items.push(it)
-  if (opts.matKey && Math.random() < 0.4) loot.materials[opts.matKey] = 1
   return loot
 }
 
@@ -572,11 +627,6 @@ function renderItemTooltip(it, x, y) {
 function renderLootPreview(bag, offX, offY) {
   if (!bag) return
   const rows = []
-  for (const mk in bag.materials) {
-    if (bag.materials[mk] <= 0) continue
-    const m = MATERIALS[mk]
-    rows.push({ color: (m && m.color) || '#ccc', label: `${m ? m.name : mk} x${bag.materials[mk]}` })
-  }
   for (const it of bag.items) {
     rows.push({ color: it.color || '#ccc', item: it,
       label: `${it.name}  ${typeof it.rating === 'number' ? it.rating + '%' : ''}` })
@@ -651,22 +701,6 @@ function renderLootHUD(char, acct) {
     ctx.fillStyle = it.color || '#ccc'
     ctx.fillText(itemDisplayName(it), x, y)
     y += 13
-  }
-
-  // Materials
-  const mats = (acct && acct.materials) || {}
-  const matKeys = Object.keys(mats)
-  if (matKeys.length) {
-    y += 8
-    ctx.fillStyle = '#9fb3c8'; ctx.font = 'bold 10px monospace'
-    ctx.fillText('MATERIALS', x, y); y += 14
-    ctx.font = '10px monospace'
-    for (const k of matKeys) {
-      const m = MATERIALS[k]
-      ctx.fillStyle = (m && m.color) || '#ccc'
-      ctx.fillText(`${m ? m.name : k} x${mats[k]}`, x, y)
-      y += 13
-    }
   }
 
   ctx.textAlign = 'left'

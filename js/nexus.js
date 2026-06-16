@@ -21,7 +21,7 @@ const NexusZone = (() => {
 
   function update(dt, char) {
     const stationOpen = (window.Stations && Stations.isOpen())
-    const chatOpen = (window.Chat && Chat.isOpen()) || stationOpen
+    const chatOpen = (window.Chat && Chat.isOpen()) || stationOpen || (window.Options && Options.isOpen())
     // Movement (water slows)
     let vx = 0, vy = 0
     const spd = char.spd
@@ -48,7 +48,7 @@ const NexusZone = (() => {
     const tile = map.get(tx, ty)
 
     // Station/portal keys: map station.key → station panel mode
-    const STATION_MODE = { gamble: 'gamble', upgrade: 'reforge', destroy: 'salvage', transmute: 'fusion' }
+    const STATION_MODE = { gamble: 'gamble', upgrade: 'reforge', destroy: 'salvage', transmute: 'fusion', vault: 'vault' }
 
     if (tile === T_PORTAL_WORLD) {
       promptLabel = '[E] Enter World'
@@ -110,9 +110,9 @@ const NexusZone = (() => {
     // Prompt
     if (promptLabel && promptTimer > 0) {
       ctx.fillStyle = 'rgba(0,0,0,0.65)'
-      ctx.fillRect(canvas.width/2 - 140, canvas.height - 80, 280, 32)
+      ctx.fillRect(canvas.width/2 - 140, canvas.height - 128, 280, 32)
       ctx.fillStyle = '#e0fbfc'; ctx.font = '13px monospace'; ctx.textAlign = 'center'
-      ctx.fillText(promptLabel, canvas.width/2, canvas.height - 59)
+      ctx.fillText(promptLabel, canvas.width/2, canvas.height - 107)
       ctx.textAlign = 'left'
     }
 
