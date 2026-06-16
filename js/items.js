@@ -407,6 +407,10 @@ const DUNGEON_MATERIAL = {
 }
 
 const INVENTORY_CAP = 30
+// Max items a single loot bag holds. Used by inventory drop-into-bag merging and
+// the loot preview capacity readout. Bags may temporarily exceed this from large
+// boss drops; the cap only gates whether a dropped item merges or starts a new bag.
+const MAX_BAG_ITEMS = 12
 
 // ---- HELPERS ----
 let _itemSeq = 1
@@ -960,7 +964,9 @@ function renderLootPreview(bag, offX, offY) {
   ctx.fillRect(px, py, panelW, panelH); ctx.strokeRect(px, py, panelW, panelH)
   ctx.textAlign = 'left'
   ctx.fillStyle = '#9fb3c8'; ctx.font = 'bold 9px monospace'
-  ctx.fillText('LOOT', px + padX, py + 11)
+  const _cap = (typeof MAX_BAG_ITEMS === 'number') ? MAX_BAG_ITEMS : 12
+  const _cnt = bag.items.length
+  ctx.fillText('LOOT  ' + (_cnt >= _cap ? 'Bag full' : _cnt + '/' + _cap), px + padX, py + 11)
 
   let y = py + header + padY + 8
   let hoverItem = null
@@ -1061,6 +1067,7 @@ window.DUST = DUST
 window.MATERIALS = MATERIALS
 window.DUNGEON_MATERIAL = DUNGEON_MATERIAL
 window.INVENTORY_CAP = INVENTORY_CAP
+window.MAX_BAG_ITEMS = MAX_BAG_ITEMS
 window.basesForSlot = basesForSlot
 window.rollItem = rollItem
 window.randomItem = randomItem

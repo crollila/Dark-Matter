@@ -23,7 +23,7 @@ const WorldZone = (() => {
   const BOSS_BIOME_RADIUS = 22   // boss-biome paint radius (tiles)
   const WORLD_MOB_POOL = ['slime', 'forest_sprite', 'goblin_scout']
   const BIOME_SPAWN = 9     // biome mobs spawned per biome at world-gen
-  const NEUTRAL_SPAWN = 12  // wandering neutral mobs scattered in open terrain
+  const NEUTRAL_SPAWN = 30  // wandering neutral mobs scattered in open terrain
   const RESPAWN_MIN = 1, RESPAWN_MAX = 30   // seconds
   const RESPAWN_PLAYER_GAP2 = 360 * 360      // don't respawn this close to player
 
@@ -37,7 +37,7 @@ const WorldZone = (() => {
     eLatchLoot = false
     nearBag = null
     // Register this zone as the active loot sink so dropped items land here.
-    window.activeLootZone = { addBag: (b) => lootBags.push(b) }
+    window.activeLootZone = { addBag: (b) => lootBags.push(b), getBags: () => lootBags }
     currentBiome = null
     worldTime = 0
     respawnQueue = []
@@ -356,8 +356,10 @@ const WorldZone = (() => {
     spawnParticles(e.x, e.y, e.color, 14)
     spawnFloatText(e.x, e.y - 20, `+${xp} XP`, '#ffd60a')
 
-    // Schedule this biome to repopulate after a random 1–30s delay.
-    if (isBiome) respawnQueue.push({ biome: e.biome, at: worldTime + RESPAWN_MIN + Math.random() * (RESPAWN_MAX - RESPAWN_MIN) })
+    // Schedule a 1:1 repopulation after a random 1–30s delay so the world stays
+    // populated. Biome mobs respawn inside their biome; neutral (biome 0) mobs
+    // respawn as wandering neutrals (spawnInBiome(0) → spawnNeutral).
+    respawnQueue.push({ biome: isBiome ? e.biome : 0, at: worldTime + RESPAWN_MIN + Math.random() * (RESPAWN_MAX - RESPAWN_MIN) })
 
     // Common mob loot drop (shared by all world mobs; biome mobs a bit higher).
     const drop = rollMobDrop(0, { source: 'world', chance: isBiome ? BIOME_LOOT_CHANCE : NEUTRAL_LOOT_CHANCE })
@@ -468,8 +470,14 @@ const WorldZone = (() => {
     worldBoss = boss
     bossDamage = {}
     if (wb.biome) paintBossBiome(spot.tx, spot.ty, wb.biome, boss)
+    // Short location/flavor hint from the boss biome name (if resolvable).
+    const hint = (wb.biome && typeof BIOME_BY_ID !== 'undefined' && BIOME_BY_ID[wb.biome] && BIOME_BY_ID[wb.biome].name) || ''
     spawnFloatText(char.x, char.y - 60, 'World Boss Awakened: ' + boss.name, '#ff5db1')
     if (typeof LootLog !== 'undefined') LootLog.push('World Boss Awakened: ' + boss.name, '#ff5db1')
+    // Chat-log announcement (does not require the chat input to be open).
+    if (window.Chat && Chat.announce) {
+      Chat.announce('World Boss Awakened: ' + boss.name + (hint ? ' — ' + hint : ''), '#ff5db1')
+    }
     spawnParticles(spot.x, spot.y, boss.color, 36, 160)
     return boss
   }
@@ -592,7 +600,48 @@ const WorldZone = (() => {
       ctx.textAlign = 'left'
     }
 
+    // World-boss tracker (screen-fixed): sigil + name + arrow toward the boss.
+    if (worldBoss && worldBoss.alive) renderBossIndicator(worldBoss)
+
     renderLootHUD(char, account)
+  }
+
+  // Small screen-fixed indicator pointing at the active world boss. Uses
+  // worldToScreen (which already applies the screen rotation) so the arrow points
+  // correctly at any rotation. Shows a dot ("nearby") when the boss is on-screen.
+  function renderBossIndicator(boss) {
+    const cw = canvas.width, ch = canvas.height
+    const [bsx, bsy] = worldToScreen(boss.x, boss.y)
+    const onScreen = bsx >= 0 && bsx <= cw && bsy >= 0 && bsy <= ch
+    const col = boss.color || '#ff5db1'
+    const name = boss.name || 'World Boss'
+    ctx.font = 'bold 11px monospace'
+    const tw = ctx.measureText(name).width
+    const boxW = tw + 56, boxH = 24
+    const bx = ((cw - boxW) / 2) | 0, by = 56
+    ctx.fillStyle = 'rgba(0,0,0,0.72)'; ctx.fillRect(bx, by, boxW, boxH)
+    ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.strokeRect(bx, by, boxW, boxH)
+    // Spire/sigil marker (left)
+    const mx = bx + 15, my = by + boxH / 2
+    ctx.fillStyle = col
+    ctx.beginPath(); ctx.moveTo(mx, my - 7); ctx.lineTo(mx + 5, my + 6); ctx.lineTo(mx - 5, my + 6); ctx.closePath(); ctx.fill()
+    // Name
+    ctx.fillStyle = '#ffd7ec'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
+    ctx.fillText(name, bx + 27, my)
+    ctx.textBaseline = 'alphabetic'
+    // Arrow toward boss, or a "nearby" dot when on-screen
+    const ax = bx + boxW - 14, ay = by + boxH / 2
+    if (onScreen) {
+      ctx.fillStyle = col
+      ctx.beginPath(); ctx.arc(ax, ay, 4, 0, Math.PI * 2); ctx.fill()
+    } else {
+      const ang = Math.atan2(bsy - ch / 2, bsx - cw / 2)
+      ctx.save(); ctx.translate(ax, ay); ctx.rotate(ang)
+      ctx.fillStyle = col
+      ctx.beginPath(); ctx.moveTo(8, 0); ctx.lineTo(-4, -5); ctx.lineTo(-4, 5); ctx.closePath(); ctx.fill()
+      ctx.restore()
+    }
+    ctx.textAlign = 'left'
   }
 
   // Draw a small name + stars label above each dungeon portal in view

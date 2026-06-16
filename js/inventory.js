@@ -172,9 +172,12 @@ const Inventory = (() => {
   }
 
   // ---- drop a grid item out of the inventory onto the ground ----
-  // Creates a private (owner = this character) loot bag at the character's feet.
-  // The item only leaves the inventory AFTER the bag is created — if creation
-  // fails the item is kept (no deletion). Leaves a hole; never compacts.
+  // If the player is standing over/near an accessible loot bag that has space
+  // (< MAX_BAG_ITEMS), the item is added into that bag (closest one wins).
+  // Otherwise a new private (owner = this character) loot bag is created at the
+  // character's feet. The item only leaves the inventory AFTER it is safely in a
+  // bag — if both paths fail it stays in its slot (no deletion). Item id/stats are
+  // preserved exactly (same object reference). Leaves a hole; never compacts.
   function dropToGround(char, idx) {
     const item = char.inventory[idx]
     if (!item) return
@@ -185,6 +188,30 @@ const Inventory = (() => {
       flash('Cannot drop items here', UI.bad)
       return
     }
+
+    // 1) Try the closest accessible nearby bag that still has room.
+    const CAP = (typeof MAX_BAG_ITEMS === 'number') ? MAX_BAG_ITEMS : 12
+    const bags = (typeof zone.getBags === 'function') ? zone.getBags() : null
+    if (bags && bags.length) {
+      const reach2 = 70 * 70
+      let target = null, best = Infinity
+      for (const b of bags) {
+        if (!b || !Array.isArray(b.items) || b.items.length >= CAP) continue
+        if (typeof lootBagAccessible === 'function' && !lootBagAccessible(b, char)) continue
+        const dx = b.x - char.x, dy = b.y - char.y, d2 = dx * dx + dy * dy
+        if (d2 <= reach2 && d2 < best) { best = d2; target = b }
+      }
+      if (target) {
+        target.items.push(item)        // same reference → id/stats preserved
+        char.inventory[idx] = null
+        if (window.saveGame) saveGame()
+        flash('Added ' + item.name + ' to bag', item.color || UI.text)
+        spawnFloatText(char.x, char.y - 40, 'Added to bag', item.color || UI.text)
+        return
+      }
+    }
+
+    // 2) Otherwise create a new private bag at the character's feet.
     let bag = null
     try {
       bag = createLootBag(char.x, char.y + 12, { items: [item] }, 120,

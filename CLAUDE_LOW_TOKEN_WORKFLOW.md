@@ -169,6 +169,7 @@ Use for:
 - `BIOME_UNIQUES` (mob-only) + `DUNGEON_EXCLUSIVES` (now 4 per biome dungeon = 3 armor/accessory + 1 class-locked WEAPON, tagged `dungeon:<key>`, `unique:true`): both folded into `ITEM_BASES`, skipped by random/gamble. Exclusive weapons have FIXED `bspd` (single-value range → midpoint, never rerolls/reforges). `EXCLUSIVES_BY_DUNGEON` lookup; `rollDungeonExclusive(key, boost, classKey?)` filters class-locked exclusives to the active class (falls back to agnostic ones if none usable). `generateBossLoot` rolls exclusive (boss high chance), `rollMobDrop` adds a rare exclusive for dungeon basic mobs.
 - Class-targeted loot: `CLASS_AFFINITY` (per-class preferred stats) + `baseAffinityWeight` bias `randomItem`'s base pick toward class-fitting gear (weapons already hard class-locked). Old/agnostic bases keep weight 1 — safe.
 - `WORLD_BOSS_MYTHICS` (`m_*`): one mythic per world boss, `unique:true` + NO `dungeon` tag (kept out of random/gamble AND EXCLUSIVES_BY_DUNGEON) — rolled directly via `rollItem(base,'mythic')` by world.js `onWorldBossKill`. 5 affixes each. `DUNGEON_EXCLUSIVES` also now carries 3 exclusives for each of the 6 world-boss dungeons.
+- Bag capacity: `MAX_BAG_ITEMS` (12) gates the inventory drop-into-bag merge (not boss/mob fills, which may exceed it). `renderLootPreview` header shows `LOOT  n/12` or `Bag full`.
 - Loot ownership: `createLootBag(x,y,loot,life,meta)` where `meta={ownerId,visibility,source}`. Bags carry `ownerId`/`visibility`('public'|'private')/`source`('mob'|'boss'|'drop'). `lootBagAccessible(bag,char)`: non-private→open; private+no owner→open (old shapes safe); private+owner→only matching `char.id`. `bagIsEmpty(bag)`. `pickupLootBag` (pick-all) + `pickLootItem(char,acct,bag,index)` (single item) both gate on access; no dup/delete. `renderLootPreview` rows are clickable (hit-map `_lootPreviewHit`); `handleLootPreviewClick` + a capture mousedown listener pick one item (disabled while inventory/options/stations/chat open). A consumed preview click also clears `mouse.down` (engine sets it first on the same target) so it never fires a gameplay shot.
 
 Use for:
@@ -188,7 +189,7 @@ Use for:
 - Inventory/stash transfer helpers if they live here.
 - Inventory debug helpers.
 
-- Drag/drop: grid items are drag-aware. `onMouseDown`/`onMouseMove`/`onMouseUp` (window-level mouseup so off-panel drops are caught). Plain click = equip (old feel). Drag to another grid cell = slot-stable `moveItem` (move/swap, never compacts). Drag to an equipment slot = equip. Drag released OUTSIDE the window = `dropToGround` → creates a PRIVATE (owner=char.id, source 'drop') loot bag at the character via `window.activeLootZone.addBag` (world/dungeon only; item kept if bag creation fails; leaves a hole). Drag ghost + "drop" hint rendered at cursor.
+- Drag/drop: grid items are drag-aware. `onMouseDown`/`onMouseMove`/`onMouseUp` (window-level mouseup so off-panel drops are caught). Plain click = equip (old feel). Drag to another grid cell = slot-stable `moveItem` (move/swap, never compacts). Drag to an equipment slot = equip. Drag released OUTSIDE the window = `dropToGround` (world/dungeon only): FIRST tries to merge the item into the closest accessible nearby bag (`lootBagAccessible`, within 70px, `< MAX_BAG_ITEMS`) via `zone.getBags()` (same object ref → id/stats preserved); else creates a PRIVATE (owner=char.id, source 'drop') loot bag at the character via `zone.addBag`. Item only leaves its slot after it is safely in a bag (kept on failure; leaves a hole). `window.activeLootZone` (world.js/dungeon.js) now exposes `{ addBag, getBags }`. Drag ghost + "drop" hint rendered at cursor.
 
 Use for:
 - inventory UI bugs
@@ -252,8 +253,9 @@ Use for:
 - Portal labels/interact-to-enter.
 - World loot bags and mob drops if implemented here.
 - Water movement in world update if zone-specific.
-- Spawning: `populateWorld` spreads biome mobs across each `map.biomeClusters` blob at world-gen (+ a few neutral wanderers); `spawnInBiome`/`spawnNeutral`/`findBiomeSpot` find valid tiles inside the right biome, away from player/home. NO spawn-near-player repop.
-- Respawn: dead biome mobs scheduled in `respawnQueue` (random 1–30s via `worldTime`), respawn as a random one of that biome's 3 mobs inside the same biome, not next to player.
+- Spawning: `populateWorld` spreads biome mobs across each `map.biomeClusters` blob at world-gen + `NEUTRAL_SPAWN` (30) neutral wanderers; `spawnInBiome`/`spawnNeutral`/`findBiomeSpot` find valid tiles inside the right biome, away from player/home (neutrals also kept ≥12 tiles from home). NO spawn-near-player repop.
+- Respawn: ALL dead world mobs scheduled in `respawnQueue` (random 1–30s via `worldTime`) for 1:1 replacement — biome mobs respawn as a random one of that biome's 3 inside the same biome; neutral mobs (`biome:0`) respawn as wandering neutrals (`spawnInBiome(0)`→`spawnNeutral`); never next to player.
+- World-boss tracker: `render` draws `renderBossIndicator(worldBoss)` while a boss is alive — screen-fixed box (top-center, y56) with spire sigil + boss name + arrow (via `worldToScreen`, rotation-correct) toward the boss, or a dot when on-screen. Spawn also fires `Chat.announce('World Boss Awakened: <name> — <biome name hint>')` plus the existing float + `LootLog`.
 - Drop tuning consts in `killMob`: `BIOME_LOOT_CHANCE`/`NEUTRAL_LOOT_CHANCE`, `PORTAL_MULT`, `UNIQUE_MULT`. Biome mobs still share common drops + keep their unique.
 
 - World bosses: `WORLD_BOSSES` (mobs.js) maps each of 6 world bosses → boss biome id, signature mythic base, related dungeon. `killMob` counts NON-boss world kills (`mobKillCount`); every `WORLD_BOSS_EVERY` (6) it calls `trySpawnWorldBoss` (cap 1 active). `spawnWorldBoss` finds a walkable spot away from home/player (avoids water/lava), spawns the boss (`worldBoss`, `boss.worldBoss=true`, always aggro/never sleeps), paints its boss biome via `paintBossBiome` (overwrites `map.biome` ids in a radius, saves prev ids on `boss._biomePatch`, nulls `map._mini`), shows "World Boss Awakened". `bossDamage` tracks per-player hits. `onWorldBossKill` (boss branch at top of `killMob`): grants XP, `restoreBossBiome`, drops a PRIVATE bag with the boss mythic (`rollItem(base,'mythic')`) + a bonus item gated by the 2% threshold, then drops a `pendingPortals` portal to the boss's dungeon (always, 90s). Debug hooks `WorldZone.debugSpawnBoss/debugWorldBoss` (chat `/spawnboss`,`/worldboss`).
@@ -320,6 +322,8 @@ Use for:
 - Local debug command console.
 - Commands like `/help`, `/godmode`, `/giveitem`, `/givemat`, `/givedust`, `/giveglory`, `/xp`, `/level`, `/enter`.
 - Chat log rendering/input suppression.
+- `Chat.announce(text,color)`: push a log line WITHOUT opening the input (used by world.js world-boss announcements).
+- Copy/paste: while open, `Ctrl/Cmd+V` pastes clipboard text into the input (async `navigator.clipboard.readText`, newlines→spaces, clamped 80); other Ctrl/Cmd combos (C/X/A) pass through to the browser and are never appended as text nor leaked to gameplay.
 
 Use for:
 - command bugs
@@ -329,6 +333,7 @@ Use for:
 - General HUD/menu/class select/death screen rendering.
 - HUD zone labels and compact HP/MP display.
 - Top UI layout.
+- `GAME_VERSION`/`GAME_PATCH` consts (top of file) — bump each patch; shown bottom-center of the MainMenu (home/character-select) as `v0.4.0 — World Bosses`.
 
 Use for:
 - HUD overlap
@@ -418,6 +423,11 @@ Keep updated.
 - [x] Boss death return portal: `onBossKill` sets the boss tile to `T_PORTAL_DUNGEON` (return to world), spawned before the loot gate so it appears even with no loot; loot pickup keeps interaction priority (portal entry only when not on a loot bag).
 - [x] Tile render radius option (`Settings.tileRenderRadius`, blocks/tiles, default 60, clamped 20–120): `renderTileMap` caps span + circular-culls distant tiles (visual only; collision + minimap unaffected).
 - [x] Player body rotates with world rotation: a bright world-anchored facing wedge on the body makes rotation visible for all class shapes; HP/MP bars stay upright via `drawUpright`; aim dot/shooting still use mouse aim.
+- [x] World-boss tracking: chat announcement on spawn (`Chat.announce`, name + biome hint) + screen-fixed direction indicator (sigil/name/rotation-correct arrow) while the boss is alive
+- [x] Home/character-select shows `v<GAME_VERSION> — <GAME_PATCH>` (ui.js consts) bottom-center
+- [x] Chat input copy/paste (Ctrl/Cmd+V paste via clipboard; C/X/A pass through; never leaks to gameplay)
+- [x] Neutral mob density raised (`NEUTRAL_SPAWN` 30) + 1:1 respawn for ALL world mobs; neutrals count toward world-boss kill counter
+- [x] Inventory drop-into-bag: dropping merges into the closest accessible nearby bag with room (`MAX_BAG_ITEMS` 12) else creates a new bag; id/stats preserved, item kept on failure. Loot preview shows `n/12`/`Bag full`
 - [x] Loot ownership: bags carry `ownerId`/`visibility`/`source`. Boss bags PRIVATE to earner; mob/common bags PUBLIC (first to pick). Access checks (`lootBagAccessible`) default old/partial bags to safe-accessible. Data-only, no networking.
 
 ---

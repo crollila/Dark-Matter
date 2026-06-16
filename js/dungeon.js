@@ -32,7 +32,7 @@ const DungeonZone = (() => {
     eLatch = false
     bossDamage = {}
     // Register this zone as the active loot sink so dropped items land here.
-    window.activeLootZone = { addBag: (b) => lootBags.push(b) }
+    window.activeLootZone = { addBag: (b) => lootBags.push(b), getBags: () => lootBags }
     pBullets.reset(); eBullets.reset()
     particles.length = 0; floatTexts.length = 0
     grid = makeGrid(80, 80)

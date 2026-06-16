@@ -127,6 +127,23 @@ const Chat = (() => {
   // ---- input (capture phase, runs before engine's bubble handler) ----
   window.addEventListener('keydown', e => {
     if (open) {
+      // Copy/paste & other modifier combos: never treat as text input, and never
+      // let them leak through to gameplay.
+      if (e.ctrlKey || e.metaKey) {
+        if (e.code === 'KeyV') {
+          // Paste clipboard text into the input (if the browser allows it).
+          e.preventDefault(); e.stopPropagation()
+          if (navigator.clipboard && navigator.clipboard.readText) {
+            navigator.clipboard.readText().then(t => {
+              if (t) buffer = (buffer + t.replace(/[\r\n]+/g, ' ')).slice(0, 80)
+            }).catch(() => {})
+          }
+          return
+        }
+        // Let the browser handle copy/cut/select-all normally; just don't append.
+        e.stopPropagation()
+        return
+      }
       if (e.code === 'Enter')      { submit(); e.stopPropagation(); e.preventDefault(); return }
       if (e.code === 'Escape')     { closeChat(); e.stopPropagation(); e.preventDefault(); return }
       if (e.code === 'Backspace')  { buffer = buffer.slice(0, -1); e.stopPropagation(); e.preventDefault(); return }
@@ -178,7 +195,11 @@ const Chat = (() => {
     ctx.globalAlpha = 1
   }
 
-  return { isOpen, render, exec, openChat, closeChat }
+  // Push a line to the chat log without opening the input (e.g. world-boss
+  // announcements). Safe to call from any gameplay zone.
+  function announce(text, color) { pushLog(text, color || '#cfe') }
+
+  return { isOpen, render, exec, openChat, closeChat, announce }
 })()
 
 window.Chat = Chat

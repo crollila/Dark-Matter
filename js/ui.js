@@ -2,6 +2,10 @@
 // UI — main menu, class select, HUD, player render, death screen
 // ============================================================
 
+// ---- GAME VERSION / PATCH (update these each patch) ----
+const GAME_VERSION = '0.4.0'
+const GAME_PATCH = 'World Bosses'
+
 // ---- SHARED UI THEME ----
 // Central place for colors/styling so the look can be retuned later without
 // hunting through every draw call. New HUD / inventory / minimap all read this.
@@ -175,6 +179,11 @@ const MainMenu = (() => {
     ctx.font = 'bold 13px monospace'
     ctx.textAlign = 'center'
     ctx.fillText('+ NEW CHARACTER', canvas.width/2, btnY + 25)
+
+    // Version + latest patch (small, unobtrusive, bottom-center)
+    ctx.fillStyle = '#5d6b85'
+    ctx.font = '11px monospace'
+    ctx.fillText(`v${GAME_VERSION} — ${GAME_PATCH}`, canvas.width/2, canvas.height - 14)
     ctx.textAlign = 'left'
   }
 
