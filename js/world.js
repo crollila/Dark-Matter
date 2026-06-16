@@ -310,7 +310,7 @@ const WorldZone = (() => {
       ctx.textAlign = 'left'
     }
 
-    renderHUD(char, 'WORLD')
+    renderHUD(char, 'WORLD', map, mobs)
     renderLootHUD(char, account)
   }
 

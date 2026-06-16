@@ -2,6 +2,61 @@
 // UI — main menu, class select, HUD, player render, death screen
 // ============================================================
 
+// ---- SHARED UI THEME ----
+// Central place for colors/styling so the look can be retuned later without
+// hunting through every draw call. New HUD / inventory / minimap all read this.
+const UI = {
+  panelBg:     'rgba(12,14,24,0.94)',
+  panelBg2:    'rgba(18,21,36,0.96)',
+  panelBorder: '#33405e',
+  accent:      '#4cc9f0',
+  text:        '#e0fbfc',
+  textDim:     '#9fb3c8',
+  textFaint:   '#5d6b85',
+  hp:          '#43c463', hpTrack: '#10261a',
+  mp:          '#3aa0ff', mpTrack: '#0c1830',
+  xp:          '#ffd60a', xpTrack: '#2c2406',
+  glory:       '#cc44ff', gloryTrack: '#1c0a2a',
+  good:        '#5fd06a', bad: '#ff6b6b',
+}
+
+// ---- SHARED DRAW HELPERS ----
+function uiRoundRect(x, y, w, h, r) {
+  r = Math.max(0, Math.min(r, w / 2, h / 2))
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.arcTo(x + w, y,     x + w, y + h, r)
+  ctx.arcTo(x + w, y + h, x,     y + h, r)
+  ctx.arcTo(x,     y + h, x,     y,     r)
+  ctx.arcTo(x,     y,     x + w, y,     r)
+  ctx.closePath()
+}
+function uiPanel(x, y, w, h, r = 8, border = UI.panelBorder, bg = UI.panelBg) {
+  uiRoundRect(x, y, w, h, r)
+  ctx.fillStyle = bg; ctx.fill()
+  if (border) { ctx.lineWidth = 1; ctx.strokeStyle = border; ctx.stroke() }
+}
+// Horizontal stat bar with rounded ends, inner sheen, and optional centered label.
+function uiBar(x, y, w, h, frac, fill, track, label, r) {
+  if (r == null) r = Math.min(h / 2, 5)
+  frac = Math.max(0, Math.min(1, frac || 0))
+  uiRoundRect(x, y, w, h, r); ctx.fillStyle = track; ctx.fill()
+  if (frac > 0) {
+    ctx.save()
+    uiRoundRect(x, y, w, h, r); ctx.clip()
+    ctx.fillStyle = fill; ctx.fillRect(x, y, w * frac, h)
+    ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.fillRect(x, y, w * frac, Math.max(2, h * 0.42))
+    ctx.restore()
+  }
+  uiRoundRect(x, y, w, h, r); ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.stroke()
+  if (label && h >= 11) {
+    ctx.fillStyle = UI.text; ctx.font = `bold ${Math.min(11, h - 5)}px monospace`
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText(label, x + w / 2, y + h / 2 + 0.5)
+    ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left'
+  }
+}
+
 // ---- MAIN MENU ----
 const MainMenu = (() => {
   let hoverChar = -1
@@ -280,96 +335,194 @@ const ClassSelect = (() => {
 })()
 
 // ---- HUD ----
-function renderHUD(char, zoneName) {
+// Cohesive bottom-center vitals module (HP / MP / XP) + integrated ability slot,
+// zone banner top-center, minimap top-right. `map`/`mobs` are optional and only
+// used to feed the minimap (safe zones pass an empty mob list).
+function renderHUD(char, zoneName, map, mobs) {
   const pad = 12
   const w = canvas.width, h = canvas.height
-
-  // Bottom-left: HP + MP bars
-  const barW = 220, barH = 14
-  const bx = pad, by = h - pad - barH * 2 - 8
-
-  // HP
-  ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx-1, by-1, barW+2, barH+2)
-  ctx.fillStyle = '#1a3a1a'; ctx.fillRect(bx, by, barW, barH)
-  ctx.fillStyle = '#4caf50'; ctx.fillRect(bx, by, barW * Math.max(0, char.hp / char.maxHp), barH)
-  ctx.fillStyle = '#e0fbfc'; ctx.font = 'bold 9px monospace'
-  ctx.fillText(`HP  ${compactNum(char.hp)} / ${compactNum(char.maxHp)}`, bx + 4, by + 10)
-
-  // MP
-  const my = by + barH + 4
-  ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx-1, my-1, barW+2, barH+2)
-  ctx.fillStyle = '#0a1a3a'; ctx.fillRect(bx, my, barW, barH)
-  ctx.fillStyle = '#4cc9f0'; ctx.fillRect(bx, my, barW * Math.max(0, char.mp / char.maxMp), barH)
-  ctx.fillStyle = '#e0fbfc'; ctx.font = 'bold 9px monospace'
-  ctx.fillText(`MP  ${compactNum(char.mp)} / ${compactNum(char.maxMp)}`, bx + 4, my + 10)
-
-  // XP bar (thin, above HP)
-  if (char.level < LEVEL_CAP) {
-    const xy = by - 6
-    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(bx-1, xy-1, barW+2, 5)
-    ctx.fillStyle = '#3a2a00'; ctx.fillRect(bx, xy, barW, 4)
-    ctx.fillStyle = '#ffd60a'; ctx.fillRect(bx, xy, barW * Math.min(1, char.xp / char.xpNext), 4)
-  } else {
-    // Glory bar post-cap
-    const xy = by - 6
-    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(bx-1, xy-1, barW+2, 5)
-    ctx.fillStyle = '#1a0a2a'; ctx.fillRect(bx, xy, barW, 4)
-    ctx.fillStyle = '#cc44ff'; ctx.fillRect(bx, xy, Math.min(barW, (char.glory % 1000) / 1000 * barW), 4)
-  }
-
-  // Level + class
-  ctx.fillStyle = '#e0fbfc'
-  ctx.font = 'bold 12px monospace'
   const cls = CLASSES[char.classKey]
-  ctx.fillText(`${cls.name}  Lv.${char.level}`, bx, by - 12)
+  const capped = char.level >= LEVEL_CAP
 
-  if (char.level >= LEVEL_CAP) {
-    ctx.fillStyle = '#cc44ff'
-    ctx.fillText(`Glory: ${char.glory.toLocaleString()}`, bx + 130, by - 12)
-  }
+  // ---- Bottom-center vitals module ----
+  const barsW = 270, slot = 54, gap = 12
+  const modW = pad + barsW + gap + slot + pad
+  const modH = 76
+  const mx = ((w - modW) / 2) | 0
+  const my = h - modH - 12
 
-  // Ability cooldown slot (bottom center)
-  const aw = 44, ax = w/2 - aw/2, ay = h - pad - aw
-  ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.strokeStyle = '#4cc9f055'; ctx.lineWidth = 1
-  ctx.fillRect(ax, ay, aw, aw); ctx.strokeRect(ax, ay, aw, aw)
-  const cdFrac = char.abilityCooldown <= 0 ? 1 : 0
-  if (cdFrac < 1) {
-    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(ax, ay, aw, aw)
-    ctx.fillStyle = '#333'
-    const cdMax = 5
-    ctx.fillRect(ax, ay + aw * (char.abilityCooldown / cdMax), aw, aw * (1 - char.abilityCooldown / cdMax))
+  uiPanel(mx, my, modW, modH, 11, UI.panelBorder, UI.panelBg)
+  // accent top edge for a bit of identity
+  ctx.save(); uiRoundRect(mx, my, modW, modH, 11); ctx.clip()
+  ctx.fillStyle = cls.color + '22'; ctx.fillRect(mx, my, modW, 3); ctx.restore()
+
+  const bx = mx + pad
+  // header line: class + level (left), xp/glory readout (right)
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
+  ctx.fillStyle = cls.color; ctx.font = 'bold 12px monospace'
+  ctx.fillText(cls.name, bx, my + 16)
+  ctx.fillStyle = UI.textDim; ctx.font = 'bold 11px monospace'
+  ctx.fillText(`Lv.${char.level}`, bx + ctx.measureText(cls.name).width + 12, my + 16)
+
+  ctx.textAlign = 'right'; ctx.font = '9px monospace'
+  ctx.fillStyle = capped ? UI.glory : UI.xp
+  ctx.fillText(capped ? `GLORY ${char.glory.toLocaleString()}`
+                      : `XP ${char.xp | 0} / ${char.xpNext | 0}`, bx + barsW, my + 16)
+  ctx.textAlign = 'left'
+
+  // HP + MP (clearly separated, color-coded, labelled)
+  uiBar(bx, my + 22, barsW, 18, char.hp / char.maxHp, UI.hp, UI.hpTrack,
+        `HP  ${compactNum(char.hp)} / ${compactNum(char.maxHp)}`)
+  uiBar(bx, my + 44, barsW, 14, char.mp / char.maxMp, UI.mp, UI.mpTrack,
+        `MP  ${compactNum(char.mp)} / ${compactNum(char.maxMp)}`)
+  // XP / glory — secondary thin bar
+  const xpFrac = capped ? (char.glory % 1000) / 1000 : Math.min(1, char.xp / char.xpNext)
+  uiBar(bx, my + 62, barsW, 6, xpFrac, capped ? UI.glory : UI.xp,
+        capped ? UI.gloryTrack : UI.xpTrack, null, 3)
+
+  // ---- Ability slot (integrated on the right of the module) ----
+  const ax = mx + modW - pad - slot, ay = my + (modH - slot) / 2
+  const ready = char.abilityCooldown <= 0
+  uiPanel(ax, ay, slot, slot, 8, ready ? cls.color + 'aa' : '#2a3450', 'rgba(0,0,0,0.5)')
+  if (!ready) {
+    const cdMax = 5, f = Math.min(1, char.abilityCooldown / cdMax)
+    ctx.save(); uiRoundRect(ax, ay, slot, slot, 8); ctx.clip()
+    ctx.fillStyle = 'rgba(0,0,0,0.62)'; ctx.fillRect(ax, ay, slot, slot * f); ctx.restore()
   }
-  ctx.fillStyle = char.abilityCooldown <= 0 ? cls.color : '#555'
-  ctx.font = '8px monospace'; ctx.textAlign = 'center'
-  ctx.fillText('SPACE', ax + aw/2, ay + 14)
-  ctx.font = '7px monospace'
-  ctx.fillText(cls.abilityName.split(' ')[0], ax + aw/2, ay + 26)
-  if (char.abilityCooldown > 0) {
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 11px monospace'
-    ctx.fillText(char.abilityCooldown.toFixed(1), ax + aw/2, ay + 38)
+  ctx.textAlign = 'center'
+  ctx.fillStyle = ready ? cls.color : UI.textFaint; ctx.font = 'bold 8px monospace'
+  ctx.fillText('SPACE', ax + slot / 2, ay + 13)
+  ctx.fillStyle = ready ? UI.text : UI.textFaint; ctx.font = '7px monospace'
+  ctx.fillText(cls.abilityName.split(' ')[0].toUpperCase(), ax + slot / 2, ay + 26)
+  if (!ready) {
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 13px monospace'
+    ctx.fillText(char.abilityCooldown.toFixed(1), ax + slot / 2, ay + 43)
+  } else {
+    ctx.fillStyle = cls.color; ctx.font = 'bold 9px monospace'
+    ctx.fillText('READY', ax + slot / 2, ay + 43)
   }
   ctx.textAlign = 'left'
 
-  // Zone name (top center) — box auto-sizes to fit name + stars
+  // ---- Zone banner (top-center) ----
   ctx.font = 'bold 11px monospace'
-  const znW = Math.max(120, ctx.measureText(zoneName).width + 24)
-  ctx.fillStyle = 'rgba(0,0,0,0.5)'
-  ctx.fillRect(w/2 - znW/2, pad - 2, znW, 20)
-  ctx.fillStyle = '#4cc9f0cc'; ctx.textAlign = 'center'
-  ctx.fillText(zoneName, w/2, pad + 12)
+  const znW = Math.max(130, ctx.measureText(zoneName).width + 28)
+  uiPanel(w / 2 - znW / 2, pad - 4, znW, 22, 6)
+  ctx.fillStyle = UI.accent; ctx.textAlign = 'center'
+  ctx.fillText(zoneName, w / 2, pad + 11)
   ctx.textAlign = 'left'
 
-  // R to nexus reminder (top right, only outside nexus)
+  // ---- [R] return hint (top-left; clear of minimap) ----
   if (zoneName !== 'NEXUS') {
-    ctx.fillStyle = '#ffffff33'; ctx.font = '10px monospace'
-    ctx.textAlign = 'right'
-    ctx.fillText('[R] Return to Nexus', w - pad, pad + 12)
-    ctx.textAlign = 'left'
+    ctx.fillStyle = UI.textFaint; ctx.font = '10px monospace'
+    ctx.fillText('[R] Return to Nexus', pad, pad + 11)
   }
+  // [I] inventory hint just under it
+  ctx.fillStyle = UI.textFaint; ctx.font = '10px monospace'
+  ctx.fillText('[I] Inventory', pad, pad + 26)
+
+  // ---- Minimap (top-right) ----
+  if (typeof Minimap !== 'undefined' && map) Minimap.render(char, map, mobs || [])
 
   // Tiny "Saved" flash (drawn across all zones that use the HUD)
   if (window.renderSaveIndicator) renderSaveIndicator()
 }
+
+// ---- MINIMAP ----
+// Tactical top-right map: full tile layout (cached per-map to an offscreen
+// canvas), player position + facing, enemy dots, bosses as gold diamonds.
+const Minimap = (() => {
+  const SIZE = 172
+
+  function tileRGBA(t) {
+    switch (t) {
+      case T_VOID:           return [0, 0, 0, 0]
+      case T_WALL:           return [26, 30, 46, 255]
+      case T_FLOOR:          return [58, 62, 78, 255]
+      case T_WATER:          return [26, 58, 92, 255]
+      case T_GRASS:          return [42, 74, 26, 255]
+      case T_STATION:        return [120, 120, 200, 255]
+      case T_SPAWN:          return [40, 50, 70, 255]
+      case T_PORTAL_WORLD:   return [40, 200, 110, 255]
+      case T_PORTAL_RAID:    return [210, 60, 60, 255]
+      case T_PORTAL_DUNGEON: return [170, 80, 230, 255]
+      case T_PORTAL_VAULT:   return [170, 100, 240, 255]
+      default:               return [40, 44, 58, 255]
+    }
+  }
+
+  function build(map) {
+    const c = document.createElement('canvas')
+    c.width = map.w; c.height = map.h
+    const g = c.getContext('2d')
+    const img = g.createImageData(map.w, map.h)
+    const d = img.data
+    for (let y = 0; y < map.h; y++) {
+      for (let x = 0; x < map.w; x++) {
+        const [r, gg, b, a] = tileRGBA(map.get(x, y))
+        const i = (y * map.w + x) * 4
+        d[i] = r; d[i + 1] = gg; d[i + 2] = b; d[i + 3] = a
+      }
+    }
+    g.putImageData(img, 0, 0)
+    return c
+  }
+
+  function render(char, map, mobs) {
+    if (!map || !map.w) return
+    if (!map._mini) map._mini = build(map)
+
+    const x = canvas.width - SIZE - 14, y = 14
+    uiPanel(x - 3, y - 3, SIZE + 6, SIZE + 6, 8)
+
+    const sc = SIZE / Math.max(map.w, map.h)
+    const dw = map.w * sc, dh = map.h * sc
+    const ox = x + (SIZE - dw) / 2, oy = y + (SIZE - dh) / 2
+
+    ctx.save()
+    uiRoundRect(x, y, SIZE, SIZE, 6); ctx.clip()
+    ctx.fillStyle = '#05060c'; ctx.fillRect(x, y, SIZE, SIZE)
+    ctx.imageSmoothingEnabled = false
+    ctx.drawImage(map._mini, ox, oy, dw, dh)
+
+    const w2m = (wx, wy) => [ox + (wx / TILE) * sc, oy + (wy / TILE) * sc]
+
+    // Enemies
+    for (const e of mobs) {
+      if (!e || !e.alive) continue
+      const [ex, ey] = w2m(e.x, e.y)
+      if (e.isBoss) {
+        ctx.fillStyle = '#ffd700'
+        ctx.beginPath()
+        ctx.moveTo(ex, ey - 4); ctx.lineTo(ex + 4, ey)
+        ctx.lineTo(ex, ey + 4); ctx.lineTo(ex - 4, ey)
+        ctx.closePath(); ctx.fill()
+        ctx.strokeStyle = '#fff8'; ctx.lineWidth = 1; ctx.stroke()
+      } else {
+        ctx.fillStyle = '#ff5454'
+        ctx.beginPath(); ctx.arc(ex, ey, 1.8, 0, Math.PI * 2); ctx.fill()
+      }
+    }
+
+    // Player + facing
+    const [px, py] = w2m(char.x, char.y)
+    const [wx, wy] = screenToWorld(mouse.x, mouse.y)
+    const ang = Math.atan2(wy - char.y, wx - char.x)
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5
+    ctx.beginPath(); ctx.moveTo(px, py)
+    ctx.lineTo(px + Math.cos(ang) * 9, py + Math.sin(ang) * 9); ctx.stroke()
+    ctx.fillStyle = CLASSES[char.classKey].color
+    ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI * 2); ctx.fill()
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke()
+    ctx.restore()
+
+    // Label
+    ctx.fillStyle = UI.textFaint; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'left'
+    ctx.fillText('MAP', x + 4, y + 11)
+    ctx.textAlign = 'left'
+  }
+
+  return { render }
+})()
 
 // ---- DEATH SCREEN ----
 function renderDead(char) {

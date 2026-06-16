@@ -116,7 +116,7 @@ const NexusZone = (() => {
       ctx.textAlign = 'left'
     }
 
-    renderHUD(char, 'NEXUS')
+    renderHUD(char, 'NEXUS', map, [])
   }
 
   return { init, update, render }

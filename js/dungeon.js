@@ -288,7 +288,7 @@ const DungeonZone = (() => {
     const ddef = DUNGEONS[defKey]
     const dungeonName = ((ddef && ddef.name) || defKey).toUpperCase()
     const label = dungeonName + (ddef && ddef.stars ? '  ' + starString(ddef.stars) : '')
-    renderHUD(char, label)
+    renderHUD(char, label, map, mobs)
     renderLootHUD(char, account)
   }
 

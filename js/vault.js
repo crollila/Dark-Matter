@@ -88,7 +88,7 @@ const VaultZone = (() => {
       ctx.fillText(prompt, canvas.width / 2, canvas.height - 100); ctx.textAlign = 'left'
     }
 
-    renderHUD(char, 'VAULT')
+    renderHUD(char, 'VAULT', map, [])
   }
 
   return { init, update, render }
