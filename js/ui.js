@@ -619,13 +619,17 @@ function renderPlayer(char, offX, offY) {
 
   // Small HP/MP bars directly under the character (drawn last so bullets/
   // particles don't cover them). The main HUD bars remain the primary readout.
+  // Counter-rotated so they stay visually UNDER the character on the rotated
+  // screen instead of swinging around with the world rotation.
   const bw = 36, bh = 4
-  const bx = sx - bw / 2, by = sy + PLAYER_RADIUS + 6
+  const bx = -bw / 2, by = PLAYER_RADIUS + 6
   const hpF = char.maxHp ? Math.max(0, Math.min(1, char.hp / char.maxHp)) : 0
   const mpF = char.maxMp ? Math.max(0, Math.min(1, char.mp / char.maxMp)) : 0
-  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(bx - 1, by - 1, bw + 2, bh * 2 + 4)
-  ctx.fillStyle = UI.hpTrack; ctx.fillRect(bx, by, bw, bh)
-  ctx.fillStyle = UI.hp;      ctx.fillRect(bx, by, bw * hpF, bh)
-  ctx.fillStyle = UI.mpTrack; ctx.fillRect(bx, by + bh + 2, bw, bh)
-  ctx.fillStyle = UI.mp;      ctx.fillRect(bx, by + bh + 2, bw * mpF, bh)
+  drawUpright(sx, sy, () => {
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(bx - 1, by - 1, bw + 2, bh * 2 + 4)
+    ctx.fillStyle = UI.hpTrack; ctx.fillRect(bx, by, bw, bh)
+    ctx.fillStyle = UI.hp;      ctx.fillRect(bx, by, bw * hpF, bh)
+    ctx.fillStyle = UI.mpTrack; ctx.fillRect(bx, by + bh + 2, bw, bh)
+    ctx.fillStyle = UI.mp;      ctx.fillRect(bx, by + bh + 2, bw * mpF, bh)
+  })
 }

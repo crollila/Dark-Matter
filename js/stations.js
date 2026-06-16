@@ -72,9 +72,10 @@ const Stations = (() => {
   function doAction(char) {
     if (mode === 'salvage') {
       if (!sel.length) { flash('Select items to salvage', '#ff6b6b'); return }
-      const idxs = sel.slice().sort((a, b) => b - a)
       let n = 0
-      for (const i of idxs) { const it = char.inventory[i]; if (it) { salvageItem(account, it); char.inventory.splice(i, 1); n++ } }
+      // Slot-stable: clear salvaged slots in place (leave holes) so unrelated
+      // items keep their positions.
+      for (const i of sel) { const it = char.inventory[i]; if (it) { salvageItem(account, it); char.inventory[i] = null; n++ } }
       sel = []
       if (window.saveGame) saveGame()
       flash(`Salvaged ${n} item(s) into dust`, '#b18bff')
@@ -91,8 +92,9 @@ const Stations = (() => {
       const items = sel.map(i => char.inventory[i])
       const res = fuseItems(items)
       if (res.error) { flash(res.error, '#ff6b6b'); return }
-      const idxs = sel.slice().sort((a, b) => b - a)
-      for (const i of idxs) char.inventory.splice(i, 1)
+      // Slot-stable: clear the 3 consumed slots in place, drop the result into
+      // the first empty slot (reuses one of the now-empty consumed slots).
+      for (const i of sel) char.inventory[i] = null
       sel = []
       addItemToInventory(char, res.item)
       if (window.saveGame) saveGame()
@@ -120,12 +122,14 @@ const Stations = (() => {
     }
 
     if (mode === 'vault') {
-      // left grid = inventory → deposit to stash
+      // left grid = inventory → deposit to stash (both sides slot-stable: items
+      // stay in place; only the moved item changes slot).
       for (const c of L.cells) if (hit(c, x, y)) {
         const it = char.inventory[c.i]
         if (it) {
-          if (account.stash.length >= 60) { flash('Stash full', '#ff6b6b'); return true }
-          char.inventory.splice(c.i, 1); account.stash.push(it)
+          const si = firstEmptySlot(account.stash, 60)
+          if (si < 0) { flash('Stash full', '#ff6b6b'); return true }
+          account.stash[si] = it; char.inventory[c.i] = null
           if (window.saveGame) saveGame(); flash(`Stashed ${it.name}`, it.color)
         }
         return true
@@ -134,8 +138,9 @@ const Stations = (() => {
       for (const c of L.rcells) if (hit(c, x, y)) {
         const it = account.stash[c.i]
         if (it) {
-          if (char.inventory.length >= INVENTORY_CAP) { flash('Inventory full', '#ff6b6b'); return true }
-          account.stash.splice(c.i, 1); char.inventory.push(it)
+          const ii = firstEmptySlot(char.inventory, INVENTORY_CAP)
+          if (ii < 0) { flash('Inventory full', '#ff6b6b'); return true }
+          char.inventory[ii] = it; account.stash[c.i] = null
           if (window.saveGame) saveGame(); flash(`Withdrew ${it.name}`, it.color)
         }
         return true
@@ -203,7 +208,7 @@ const Stations = (() => {
     } else {
       // inventory grid (left)
       ctx.fillStyle = '#9fb3c8'; ctx.font = 'bold 10px monospace'
-      ctx.fillText(`INVENTORY ${char.inventory.length}/${INVENTORY_CAP}`, L.gx, L.gy - 6)
+      ctx.fillText(`INVENTORY ${invItemCount(char.inventory)}/${INVENTORY_CAP}`, L.gx, L.gy - 6)
       for (const c of L.cells) { const h = drawCell(c, char.inventory[c.i], sel.indexOf(c.i) >= 0); if (h) hoverItem = h }
       hoverItem = renderRightInfo(L, char) || hoverItem
     }
@@ -274,8 +279,8 @@ const Stations = (() => {
   function renderVault(L, char) {
     let hov = null
     ctx.fillStyle = '#9fb3c8'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'left'
-    ctx.fillText(`INVENTORY ${char.inventory.length}/${INVENTORY_CAP}  (click → stash)`, L.gx, L.gy - 6)
-    ctx.fillText(`VAULT ${account.stash.length}/60  (click → inventory)`, L.rx, L.gy - 6)
+    ctx.fillText(`INVENTORY ${invItemCount(char.inventory)}/${INVENTORY_CAP}  (click → stash)`, L.gx, L.gy - 6)
+    ctx.fillText(`VAULT ${invItemCount(account.stash)}/60  (click → inventory)`, L.rx, L.gy - 6)
     for (const c of L.cells) { const h = drawCell(c, char.inventory[c.i], false); if (h) hov = h }
     for (const c of L.rcells) { const h = drawCell(c, account.stash[c.i], false); if (h) hov = h }
     return hov

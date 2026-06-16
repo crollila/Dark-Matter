@@ -125,6 +125,8 @@ Use for:
 - Utility helpers like compact number/star rendering if present.
 
 - Screen rotation: `beginWorldTransform`/`endWorldTransform` wrap world-space drawing (rotates about screen center); `screenToWorld`/`worldToScreen` invert/apply the rotation so mouse aim stays correct. HUD/prompts drawn outside the transform.
+- `inputToWorld(vx,vy)`: converts SCREEN-relative WASD/arrow input → world velocity (W always = up on screen at any rotation). Used by all zone movement.
+- `drawUpright(ax,ay,fn)`: inside the world transform, draws `fn()` upright (counter-rotated) anchored at offset point `ax,ay` (local +y = screen-down). Used for under-char HP/MP bars (ui.js), loot bags + beam/bounce (items.js `renderLootBag`), portal labels (world.js, now BELOW portal), float texts (engine.js). Loot preview (outside transform) anchors via `worldToScreen`.
 
 Use for:
 - movement/collision helpers
@@ -163,7 +165,8 @@ Use for:
 - Loot table helpers.
 - Item tooltip/loot preview helpers if present.
 - Salvage/reforge/fusion/gamble item logic if implemented here.
-- `BIOME_UNIQUES` (mob-only) + `DUNGEON_EXCLUSIVES` (3 per biome dungeon, tagged `dungeon:<key>`, `unique:true`): both folded into `ITEM_BASES`, skipped by random/gamble. `EXCLUSIVES_BY_DUNGEON` lookup; `generateBossLoot` rolls exclusive (boss high chance), `rollMobDrop` adds a rare exclusive for dungeon basic mobs.
+- `BIOME_UNIQUES` (mob-only) + `DUNGEON_EXCLUSIVES` (now 4 per biome dungeon = 3 armor/accessory + 1 class-locked WEAPON, tagged `dungeon:<key>`, `unique:true`): both folded into `ITEM_BASES`, skipped by random/gamble. Exclusive weapons have FIXED `bspd` (single-value range → midpoint, never rerolls/reforges). `EXCLUSIVES_BY_DUNGEON` lookup; `rollDungeonExclusive(key, boost, classKey?)` filters class-locked exclusives to the active class (falls back to agnostic ones if none usable). `generateBossLoot` rolls exclusive (boss high chance), `rollMobDrop` adds a rare exclusive for dungeon basic mobs.
+- Class-targeted loot: `CLASS_AFFINITY` (per-class preferred stats) + `baseAffinityWeight` bias `randomItem`'s base pick toward class-fitting gear (weapons already hard class-locked). Old/agnostic bases keep weight 1 — safe.
 
 Use for:
 - item stats/rarity/rollPercent
@@ -221,9 +224,9 @@ Use for:
 - Mob/boss AI patterns.
 - Dungeon definitions may currently live here.
 - Star ratings may be on dungeon defs here.
-- `DUNGEONS` includes 3 OG (goblin_warren/fungal_cavern/void_rift) + 6 biome dungeons (dark_matter_core, frozen_catacombs, infernal_pit, plague_grotto, fallen_keep, astral_tomb), each with tileColor/mobs/boss/rooms/roomSize/mobsPerRoom. Biome dungeon bosses reuse boss_void/boss_mycelian/boss_goblin AI. Unknown key → `buildDungeon` returns null → DungeonZone.init bails to world.
+- `DUNGEONS` includes 3 OG (goblin_warren/fungal_cavern/void_rift) + 6 biome dungeons (dark_matter_core, frozen_catacombs, infernal_pit, plague_grotto, fallen_keep, astral_tomb, each tagged `biome: true`), each with tileColor/mobs/boss/rooms/roomSize/mobsPerRoom. Biome dungeon bosses reuse boss_void/boss_mycelian/boss_goblin AI. Unknown key → `buildDungeon` returns null → DungeonZone.init bails to world. `biome: true` keeps them out of world scatter (map.js) — they enter only via biome mob portal drops. Biome mob `portalDrop.chance` = 0.25 (used raw in world.js, no multiplier).
 
-- Perf: `updateMob`/`renderMob` do offscreen culling + AI sleep. Normal mobs far from player (`MOB_WAKE_MARGIN` past view) sleep — exist but skip AI (no shooting/movement, `e.asleep=true`) until player nears; normal mobs past view (`MOB_CULL_MARGIN`) aren't drawn. Bosses never sleep/cull. Counters in `MobDebug` (`MobDebug.reset()` each zone update); `mobStats()` logs active/sleeping/rendered. Minimap unaffected (reads `mobs` array directly).
+- Perf: `updateMob`/`renderMob` do offscreen culling + AI sleep using FIXED world-px distances from Options (`Settings.renderDistance`/`aiWakeDistance`, NOT window size). `_mobRenderDist()` (cull radius from camera) + `_mobWakeDist()` (sleep radius from player; forced ≥ render+200 so visible mobs stay awake). Mobs past render dist aren't drawn; past wake dist sleep (`e.asleep=true`, skip AI). Bosses never sleep/cull. Mobs are NEVER removed from arrays when culled. Counters in `MobDebug`; `mobStats()` logs. Minimap unaffected (reads `mobs` array directly).
 
 Use for:
 - mob stats/AI
@@ -321,8 +324,8 @@ Use for:
 
 ### `js/options.js`
 - ESC options menu (gameplay zones only).
-- Rebindable hotkeys: click a row → press a key (stored as `KeyboardEvent.code`). Graphics placeholders, screen rotation +/- + reset, reset-hotkeys button.
-- `Settings` global (incl. `Settings.keys`) + localStorage persistence (`realm_settings`); unknown/old settings fall back to `DEFAULT_KEYS`.
+- Rebindable hotkeys: click a row → press a key (stored as `KeyboardEvent.code`). Graphics placeholders, screen rotation +/- + reset, reset-hotkeys button. PERFORMANCE section: render distance + AI wake distance +/- steppers (clamped via `PERF_LIMITS`, defaults `PERF_DEFAULTS` 1500/1800).
+- `Settings` global (incl. `Settings.keys`, `renderDistance`, `aiWakeDistance`) + localStorage persistence (`realm_settings`); unknown/old settings fall back to defaults.
 - `DEFAULT_KEYS`: interact=Control, inventory=I, returnNexus=R, ability=Space, ring2=Alt. Move/Shoot/Chat/Command/Options are fixed (Esc/Enter/'/' can't be bound).
 - Global `Hotkeys` helper: `Hotkeys.code/name/down(action)` (modifier-side-agnostic). Zones use this instead of hardcoded `keys['KeyE']` etc.
 - Screen rotation is now LIVE: hold Q/E to rotate (handled in `main.js` `updateScreenRotation`); render transform + aim conversion live in `engine.js`.
@@ -375,7 +378,8 @@ Keep updated.
 - [x] Void multiplier stats
 - [x] Account stash via Nexus VAULT station (now on a hallway `???` alcove at tile 29,16; standalone spawn-room vault tile removed; old vault zone code retained but unused)
 - [x] ESC options menu + persisted client settings + rebindable hotkeys
-- [x] Screen rotation (hold Q/E; render transform + aim conversion; reset in Options)
+- [x] Screen rotation (hold Q/E; **Z resets to 0°**; reset button in Options). Movement is screen-relative (`inputToWorld`); world-anchored overlays (HP/MP bars, loot bags+beam/bounce, portal labels, float texts) stay upright via `drawUpright`.
+- [x] Inventory is SLOT-STABLE: fixed-cap array with null holes; equip/unequip/swap/salvage/fusion/vault deposit-withdraw/pickup never auto-shift other items (`firstEmptySlot`/`invItemCount`). Equip returns swapped item to the exact slot. **Organize** button (inventory header) compacts+sorts by rarity desc → slot → name → roll% desc.
 - [x] HP/MP bars under the player character
 - [x] Chat/debug commands + in-game error log
 - [x] Water slows player
@@ -384,12 +388,13 @@ Keep updated.
 - [x] World map: large (200×200), low wall density, grass-heavy neutral terrain between biomes
 - [x] World biomes (6): dark_matter, snow, hell, toxic, ruined, astral — SEPARATED clusters (grass gaps), palette, minimap tint, biome name label
 - [x] Biome mobs spawned throughout each biome at world-gen; respawn 1–30s inside same biome (random of its 3); never next to player
-- [x] Perf: offscreen render culling + far-mob AI sleep (bosses exempt; minimap still shows all mobs; `mobStats()` debug)
+- [x] Perf: offscreen render culling + far-mob AI sleep — FIXED world-px distances from Options render/AI-wake settings (not window size); bosses exempt; mobs never removed from arrays; minimap still shows all mobs; `mobStats()` debug
 - [x] Minimap mouse-wheel zoom (hover, clamped 1–6x, in-memory)
 - [x] Biome terrain: ice (slippery), lava (DoT+slow)
 - [x] Biome mobs (3/biome) spawn in-biome (spread at world-gen, ~9/biome) + leash back if they wander out
 - [x] Biome drops: shared biome dungeon-portal drop per biome + one unique mob-only item per monster (`u_*` bases, `unique:true`, mob-only)
-- [x] Biome dungeons (dark_matter_core, frozen_catacombs, infernal_pit, plague_grotto, fallen_keep, astral_tomb): REAL/enterable — themed palette, biome's 3 mobs + dedicated boss (reuses existing boss AIs), 3 dungeon-exclusive drops each. Biome mobs drop their portal; fixed world portals scatter too. Old placeholder keys removed.
+- [x] Biome dungeons (dark_matter_core, frozen_catacombs, infernal_pit, plague_grotto, fallen_keep, astral_tomb): REAL/enterable — themed palette, biome's 3 mobs + dedicated boss (reuses existing boss AIs), 4 dungeon-exclusive drops each (3 armor/accessory + 1 class-locked weapon). Mob-drop-ONLY entry (25% biome mob portal drop); NOT in fixed world scatter. World scatter = OG dungeons only.
+- [x] Class-targeted loot: weapons hard class-locked; armor/accessory drops biased toward class stats via `CLASS_AFFINITY`/`baseAffinityWeight`; gamble + exclusive rolls class-filtered.
 
 ---
 
@@ -407,7 +412,7 @@ Keep updated.
   - epic: 3 affixes
   - legendary: 4 affixes
   - mythic: 5 affixes
-  - void: random 6–10 affixes
+  - void: exactly 5 multiplier (%) affixes (fixed ordered VOID_AFFIXES keys → identity/count stable; reforge only re-rolls values)
 - Each item rolls one `rollPercent` from 1–100.
 - That one roll percent applies to all stats on the item.
 - Do not average per-stat rolls.

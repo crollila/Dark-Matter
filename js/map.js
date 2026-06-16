@@ -182,9 +182,10 @@ function buildWorld(seed = Date.now()) {
   if (typeof assignBiomes === 'function') assignBiomes(m, rng)
 
   // Place predefined dungeon entrances at semi-random floor positions.
-  // Placeholder (deferred) biome dungeons are excluded — they only appear as
-  // temporary portal drops from biome mobs, not as fixed world entrances.
-  const dungeonKeys = Object.keys(DUNGEONS).filter(k => !DUNGEONS[k].placeholder)
+  // Biome dungeons (DUNGEONS[k].biome) are excluded — they only enter the world
+  // via biome mob portal drops, never as fixed scatter. Only normal/world
+  // dungeons (goblin_warren, fungal_cavern, void_rift) are scattered here.
+  const dungeonKeys = Object.keys(DUNGEONS).filter(k => !DUNGEONS[k].placeholder && !DUNGEONS[k].biome)
   m.dungeonPortals = []
   const placed = new Set()
   for (let i = 0; i < dungeonKeys.length * 2 + 2; i++) {

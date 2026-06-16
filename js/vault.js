@@ -31,6 +31,7 @@ const VaultZone = (() => {
       if (keys['KeyA'] || keys['ArrowLeft'])  vx = -spd
       if (keys['KeyD'] || keys['ArrowRight']) vx =  spd
       if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707 }
+      ;[vx, vy] = inputToWorld(vx, vy)   // screen-relative movement (rotation-aware)
     }
     moveWithCollision(char, vx, vy, dt, PLAYER_RADIUS, map)
     camFollow(char.x, char.y, dt)

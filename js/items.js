@@ -25,9 +25,9 @@ const RARITY = {
   epic:      { key: 'epic',      name: 'Epic',      color: '#b15bff', weight: 12, tier: 3, scale: 2.3, affixes: 3 },
   legendary: { key: 'legendary', name: 'Legendary', color: '#ffb000', weight: 5,  tier: 4, scale: 3.2, affixes: 4 },
   mythic:    { key: 'mythic',    name: 'Mythic',    color: '#ff3b6b', weight: 2,  tier: 5, scale: 4.5, affixes: 5 },
-  // Void rolls a random number of affixes (6–10) and breaks the additive rules
-  // with multiplier (%) stats. affixes here is the minimum; see rollItem.
-  void:      { key: 'void',      name: 'Void',      color: '#7d4bff', weight: 1,  tier: 6, scale: 4.5, affixes: 6, multiplier: true },
+  // Void gets exactly 5 multiplier (%) stat bonuses (same count as mythic), and
+  // breaks the additive rules with multiplier (%) stats. See rollItem.
+  void:      { key: 'void',      name: 'Void',      color: '#7d4bff', weight: 1,  tier: 6, scale: 4.5, affixes: 5, multiplier: true },
 }
 // Rarity ordering low → high (used for "best item in bag" comparisons)
 const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary', 'mythic', 'void']
@@ -235,6 +235,29 @@ const DUNGEON_EXCLUSIVES = {
     core: { spd: [10, 17], hp: [100, 180] }, affixPool: [ { dex: [4, 7] }, { armor: [3, 6] } ] },
   at_cosmic_relic: { name: 'Cosmic Relic', slot: 'ability', classes: null, unique: true, dungeon: 'astral_tomb',
     core: { mp: [180, 300], int: [5, 9] }, affixPool: [ { hpRegen: [4, 7] }, { hp: [100, 180] } ] },
+
+  // --- One exclusive WEAPON per biome dungeon (class-restricted; bspd is a
+  //     FIXED midpoint so projectile speed never rerolls/reforges). These join
+  //     the dungeon's exclusive pool; class filtering lives in
+  //     rollDungeonExclusive so a wrong-class weapon never drops. ---
+  dx_graviton_staff: { name: 'Graviton Staff', slot: 'weapon', classes: ['mage'], unique: true, dungeon: 'dark_matter_core',
+    core: { dmg: [110, 170], range: [270, 310], atkSpd: [0.50, 0.60], bspd: [300, 300], int: [5, 9] },
+    affixPool: [ { mp: [160, 300] }, { hpRegen: [3, 6] }, { int: [3, 6] }, { spd: [2, 4] } ] },
+  fz_glacial_longbow: { name: 'Glacial Longbow', slot: 'weapon', classes: ['archer'], unique: true, dungeon: 'frozen_catacombs',
+    core: { dmg: [60, 100], range: [310, 350], atkSpd: [0.28, 0.34], bspd: [500, 500], dex: [5, 9] },
+    affixPool: [ { spd: [4, 7] }, { hp: [80, 160] }, { dex: [3, 6] }, { armor: [2, 5] } ] },
+  if_magma_cleaver: { name: 'Magma Cleaver', slot: 'weapon', classes: ['warrior'], unique: true, dungeon: 'infernal_pit',
+    core: { dmg: [80, 140], range: [95, 115], atkSpd: [0.45, 0.55], bspd: [300, 300], str: [5, 9] },
+    affixPool: [ { hp: [100, 200] }, { armor: [4, 7] }, { str: [3, 6] }, { hpRegen: [2, 5] } ] },
+  pg_venomfang_daggers: { name: 'Venomfang Daggers', slot: 'weapon', classes: ['rogue'], unique: true, dungeon: 'plague_grotto',
+    core: { dmg: [40, 70], range: [150, 180], atkSpd: [0.15, 0.19], bspd: [400, 400], dex: [5, 9] },
+    affixPool: [ { spd: [4, 7] }, { dex: [3, 6] }, { hp: [80, 150] }, { armor: [2, 5] } ] },
+  fk_oathbreaker_blade: { name: 'Oathbreaker Blade', slot: 'weapon', classes: ['warrior'], unique: true, dungeon: 'fallen_keep',
+    core: { dmg: [85, 150], range: [95, 115], atkSpd: [0.46, 0.56], bspd: [290, 290], str: [5, 9] },
+    affixPool: [ { hp: [100, 200] }, { armor: [4, 7] }, { str: [3, 6] }, { spd: [2, 4] } ] },
+  at_astral_scepter: { name: 'Astral Scepter', slot: 'weapon', classes: ['priest'], unique: true, dungeon: 'astral_tomb',
+    core: { dmg: [50, 85], range: [210, 250], atkSpd: [0.22, 0.28], bspd: [310, 310], int: [5, 9] },
+    affixPool: [ { mp: [160, 300] }, { hpRegen: [4, 7] }, { hp: [80, 160] }, { int: [3, 6] } ] },
 }
 
 // Void multiplier templates per slot (% based; recalcStats applies these as
@@ -250,8 +273,8 @@ const VOID_MULT = {
   amulet:  { hpPct: [8, 14], mpPct: [10, 18] },
   ability: { mpPct: [10, 18], dmgPct: [6, 12] },
 }
-// Void affix pool — % multiplier stats a void item can roll. Void rolls 6–10
-// of these at random (duplicates stack), on top of any slot weapon mechanics.
+// Void affix pool — % multiplier stats a void item can roll. Void takes exactly
+// the first `RARITY.void.affixes` (5) keys here, on top of any weapon mechanics.
 const VOID_AFFIXES = {
   hpPct: [6, 14], mpPct: [6, 16], dmgPct: [5, 12], spdPct: [4, 10], armorPct: [5, 12],
 }
@@ -358,14 +381,16 @@ function rollItem(baseKey, rarityKey, rollPercent, source) {
   const stats = {}
 
   if (isVoid) {
-    // VOID: 6–10 random multiplier (%) affixes (duplicates stack). The single
-    // rollPercent still drives every value — only WHICH affixes is random.
-    const count = 6 + Math.floor(Math.random() * 5)   // 6..10
+    // VOID: exactly `rar.affixes` (5) multiplier (%) stat bonuses, taken from a
+    // FIXED ordered key list so the identity/count is stable (and reforge keeps
+    // the same stats — only the single rollPercent re-rolls their values). If
+    // the pool has fewer keys than the count, use all of them (no crash).
+    const n = rar.affixes || 5
     const keys = Object.keys(VOID_AFFIXES)
-    for (let i = 0; i < count; i++) {
-      const k = keys[Math.random() * keys.length | 0]
+    for (let i = 0; i < n && i < keys.length; i++) {
+      const k = keys[i]
       const [lo, hi] = VOID_AFFIXES[k]
-      stats[k] = Math.round(((stats[k] || 0) + lo + (hi - lo) * t) * 10) / 10
+      stats[k] = Math.round((lo + (hi - lo) * t) * 10) / 10
     }
     // Weapons still need functional mechanic stats so they can fire.
     if (base.slot === 'weapon') {
@@ -408,6 +433,27 @@ function rollItem(baseKey, rarityKey, rollPercent, source) {
   return inst
 }
 
+// Per-class preferred main/secondary stats. Drives loot bias toward gear that
+// fits the playing class. Class-locked weapons are already hard-filtered; this
+// makes class-agnostic armor/accessories lean toward the class's stat theme
+// without locking everything (others can still drop). Bases without these stats
+// (old/agnostic) keep weight 1, so nothing crashes or disappears.
+const CLASS_AFFINITY = {
+  warrior: ['str', 'hp', 'armor'],
+  rogue:   ['dex', 'spd'],
+  mage:    ['int', 'mp'],
+  priest:  ['int', 'mp', 'hpRegen'],
+  archer:  ['dex', 'spd'],
+}
+const AFFINITY_WEIGHT = 3   // matching base is 3x as likely as a non-matching one
+function baseAffinityWeight(base, classKey) {
+  if (!base || !classKey || !CLASS_AFFINITY[classKey]) return 1
+  const pref = CLASS_AFFINITY[classKey]
+  const core = base.core || {}
+  for (const a of pref) if (core[a] != null) return AFFINITY_WEIGHT
+  return 1
+}
+
 // Roll a random item: random base (optionally class-filtered), weighted rarity.
 function randomItem(source, opts) {
   opts = opts || {}
@@ -418,7 +464,11 @@ function randomItem(source, opts) {
   bases = bases.concat(ck ? basesForSlot(slot, ck).filter(k => ITEM_BASES[k].classes) : [])
   bases = Array.from(new Set(bases))
   if (!bases.length) return null
-  const baseKey = bases[Math.random() * bases.length | 0]
+  // Weighted pick: bias toward bases carrying the class's preferred stats.
+  const weights = bases.map(k => baseAffinityWeight(ITEM_BASES[k], ck))
+  let total = 0; for (const w of weights) total += w
+  let r = Math.random() * total, baseKey = bases[bases.length - 1]
+  for (let i = 0; i < bases.length; i++) { r -= weights[i]; if (r <= 0) { baseKey = bases[i]; break } }
   const rarity = opts.rarity || rollRarity(opts.boost || 0)
   return rollItem(baseKey, rarity, null, source)
 }
@@ -501,9 +551,19 @@ function gambleItem(acct, char, slot) {
 
 // Roll one of a dungeon's exclusive signature items (boosted rarity). Returns
 // null for dungeons with no exclusives (e.g. goblin_warren) — safe, no crash.
-function rollDungeonExclusive(dungeonKey, boost) {
-  const keys = EXCLUSIVES_BY_DUNGEON[dungeonKey]
-  if (!keys || !keys.length) return null
+function rollDungeonExclusive(dungeonKey, boost, classKey) {
+  const all = EXCLUSIVES_BY_DUNGEON[dungeonKey]
+  if (!all || !all.length) return null
+  const ck = classKey || (typeof G !== 'undefined' && G.char && G.char.classKey) || null
+  // Never roll a class-locked exclusive (the biome weapons) for the wrong class.
+  // Class-agnostic exclusives always qualify; if nothing class-usable remains
+  // (e.g. no character), fall back to the agnostic ones so armor still drops.
+  const usable = all.filter(k => {
+    const cl = ITEM_BASES[k].classes
+    return !cl || (ck && cl.indexOf(ck) >= 0)
+  })
+  const keys = usable.length ? usable : all.filter(k => !ITEM_BASES[k].classes)
+  if (!keys.length) return null
   const baseKey = keys[Math.random() * keys.length | 0]
   return rollItem(baseKey, rollRarity(boost || 0), null, dungeonKey)
 }
@@ -574,10 +634,27 @@ function createLootBag(x, y, loot, lifetime = 120) {
 }
 
 // ---- INVENTORY / MATERIAL MUTATION ----
+// Inventory is SLOT-STABLE: a fixed-capacity array where empty slots are holes
+// (null/undefined). Items never auto-shift when others are added/removed — they
+// stay in their exact index until the player moves or Organizes them.
+function invItemCount(inv) {
+  if (!Array.isArray(inv)) return 0
+  let n = 0
+  for (let i = 0; i < inv.length; i++) if (inv[i]) n++
+  return n
+}
+// First empty slot index within capacity, or -1 if full.
+function firstEmptySlot(inv, cap) {
+  cap = cap || (typeof INVENTORY_CAP === 'number' ? INVENTORY_CAP : 30)
+  for (let i = 0; i < cap; i++) if (!inv[i]) return i
+  return -1
+}
+
 function addItemToInventory(char, item) {
   if (!char.inventory) char.inventory = []
-  if (char.inventory.length >= INVENTORY_CAP) return false
-  char.inventory.push(item)
+  const idx = firstEmptySlot(char.inventory, INVENTORY_CAP)
+  if (idx < 0) return false       // inventory full (no empty slot)
+  char.inventory[idx] = item
   return true
 }
 
@@ -650,34 +727,38 @@ const LootLog = {
 
 // ---- RENDER: loot bags in world space ----
 function renderLootBag(bag, offX, offY, t) {
-  const sx = bag.x + offX
-  const sy = bag.y + offY + Math.sin(t / 400 + bag.bob) * 3
+  // Drawn upright (counter-rotated) so the beam stays vertical and the bounce
+  // goes straight up/down on screen instead of sliding sideways when rotated.
+  // Position still tracks the rotated world tile via the anchor.
+  drawUpright(bag.x + offX, bag.y + offY, () => {
+    const sy = Math.sin(t / 400 + bag.bob) * 3   // local bounce (screen-vertical)
 
-  // Loot beam (rarity-colored vertical glow)
-  const beamH = 70
-  const grad = ctx.createLinearGradient(sx, sy - beamH, sx, sy + 6)
-  grad.addColorStop(0, 'rgba(0,0,0,0)')
-  grad.addColorStop(1, bag.color)
-  ctx.globalAlpha = 0.35
-  ctx.fillStyle = grad
-  ctx.fillRect(sx - 6, sy - beamH, 12, beamH + 6)
-  ctx.globalAlpha = 1
+    // Loot beam (rarity-colored vertical glow)
+    const beamH = 70
+    const grad = ctx.createLinearGradient(0, sy - beamH, 0, sy + 6)
+    grad.addColorStop(0, 'rgba(0,0,0,0)')
+    grad.addColorStop(1, bag.color)
+    ctx.globalAlpha = 0.35
+    ctx.fillStyle = grad
+    ctx.fillRect(-6, sy - beamH, 12, beamH + 6)
+    ctx.globalAlpha = 1
 
-  // Rarity glow ring (pulsing)
-  const pulse = 0.5 + Math.sin(t / 300 + bag.bob) * 0.5
-  ctx.shadowBlur = 14 + pulse * 10
-  ctx.shadowColor = bag.color
+    // Rarity glow ring (pulsing)
+    const pulse = 0.5 + Math.sin(t / 300 + bag.bob) * 0.5
+    ctx.shadowBlur = 14 + pulse * 10
+    ctx.shadowColor = bag.color
 
-  // Chest/bag body
-  ctx.fillStyle = bag.color
-  ctx.fillRect(sx - 9, sy - 8, 18, 14)
-  ctx.fillStyle = 'rgba(0,0,0,0.35)'
-  ctx.fillRect(sx - 9, sy - 2, 18, 2)
-  ctx.shadowBlur = 0
+    // Chest/bag body
+    ctx.fillStyle = bag.color
+    ctx.fillRect(-9, sy - 8, 18, 14)
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'
+    ctx.fillRect(-9, sy - 2, 18, 2)
+    ctx.shadowBlur = 0
 
-  // Lid highlight
-  ctx.fillStyle = 'rgba(255,255,255,0.25)'
-  ctx.fillRect(sx - 9, sy - 8, 18, 3)
+    // Lid highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.25)'
+    ctx.fillRect(-9, sy - 8, 18, 3)
+  })
 }
 
 // ---- RENDER: floating item tooltip (used by loot preview hover) ----
@@ -689,7 +770,10 @@ function renderItemTooltip(it, x, y) {
   const src = (window.DUNGEONS && DUNGEONS[it.source] && DUNGEONS[it.source].name) || it.source || '—'
   lines.push({ t: `${rar} • ${it.slot} • ${src}`, c: '#9fb3c8' })
   const stats = it.stats || {}
-  for (const k in stats) lines.push({ t: fmtStatLine(k, stats[k]), c: it.void && PCT_KEYS[k] ? '#b18bff' : '#d8e6f2' })
+  for (const k in stats) {
+    if (k === 'bspd') continue   // fixed weapon projectile speed, not a stat bonus
+    lines.push({ t: fmtStatLine(k, stats[k]), c: it.void && PCT_KEYS[k] ? '#b18bff' : '#d8e6f2' })
+  }
   const roll = (typeof it.rollPercent === 'number') ? it.rollPercent : it.rating
   if (typeof roll === 'number') lines.push({ t: `Roll ${roll}%`, c: '#ffd60a' })
 
@@ -726,8 +810,11 @@ function renderLootPreview(bag, offX, offY) {
   for (const r of rows) w = Math.max(w, ctx.measureText(r.label).width)
   const panelW = w + padX * 2 + 14
   const panelH = rows.length * lineH + padY * 2 + header
-  let px = bag.x + offX - panelW / 2
-  let py = bag.y + offY - 34 - panelH
+  // Drawn outside the world transform → anchor via worldToScreen so the panel
+  // points at the bag's true rotated screen position.
+  const [bsx, bsy] = worldToScreen(bag.x, bag.y)
+  let px = bsx - panelW / 2
+  let py = bsy - 34 - panelH
   px = Math.max(8, Math.min(canvas.width - panelW - 8, px))
   py = Math.max(8, py)
 
@@ -774,17 +861,19 @@ function renderLootHUD(char, acct) {
     ctx.globalAlpha = 1
   }
 
-  // Inventory list (compact, last ~8)
+  // Inventory list (compact, last ~8). Inventory is slot-stable so it may
+  // contain empty holes (null) — skip those.
   const inv = char.inventory || []
+  const present = inv.filter(Boolean)
   y += 6
   ctx.fillStyle = '#9fb3c8'
   ctx.font = 'bold 10px monospace'
-  ctx.fillText(`INVENTORY ${inv.length}/${INVENTORY_CAP}`, x, y)
+  ctx.fillText(`INVENTORY ${present.length}/${INVENTORY_CAP}`, x, y)
   y += 15
   ctx.font = '10px monospace'
-  const start = Math.max(0, inv.length - 8)
-  for (let i = start; i < inv.length; i++) {
-    const it = inv[i]
+  const start = Math.max(0, present.length - 8)
+  for (let i = start; i < present.length; i++) {
+    const it = present[i]
     ctx.fillStyle = it.color || '#ccc'
     ctx.fillText(itemDisplayName(it), x, y)
     y += 13
@@ -819,6 +908,9 @@ window.renderLootBag = renderLootBag
 window.renderLootHUD = renderLootHUD
 window.pickupLootBag = pickupLootBag
 window.addItemToInventory = addItemToInventory
+window.invItemCount = invItemCount
+window.firstEmptySlot = firstEmptySlot
+window.RARITY_RANK = rarityRank
 window.addMaterial = addMaterial
 window.addDust = addDust
 window.ensureDust = ensureDust

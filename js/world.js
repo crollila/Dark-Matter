@@ -120,6 +120,9 @@ const WorldZone = (() => {
       if (keys['KeyA'] || keys['ArrowLeft'])  vx = -spd
       if (keys['KeyD'] || keys['ArrowRight']) vx =  spd
       if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707 }
+      // Screen-relative: W always moves toward the top of the screen, etc.,
+      // regardless of the current screen rotation.
+      ;[vx, vy] = inputToWorld(vx, vy)
     }
     const curTile = map.get((char.x / TILE) | 0, (char.y / TILE) | 0)
     const wf = tileSpeedFactor(map, char.x, char.y)
@@ -369,7 +372,12 @@ const WorldZone = (() => {
 
     // Portal drop — dropped portals are temporary (expire after 30s). Tracked
     // only in pendingPortals (NOT map.dungeonPortals, which are permanent).
-    if (e.portalDrop && Math.random() < Math.min(0.9, e.portalDrop.chance * PORTAL_MULT)) {
+    // Biome mobs use their portalDrop.chance directly (tuned to 25%). World
+    // dungeon mobs (forest_sprite/goblin_scout) keep the legacy multiplier.
+    const portalChance = isBiome
+      ? Math.min(0.95, (e.portalDrop ? e.portalDrop.chance : 0))
+      : Math.min(0.9, (e.portalDrop ? e.portalDrop.chance : 0) * PORTAL_MULT)
+    if (e.portalDrop && Math.random() < portalChance) {
       const ptx = (e.x/TILE)|0, pty = (e.y/TILE)|0
       map.set(ptx, pty, T_PORTAL_DUNGEON)
       pendingPortals.push({ x: e.x, y: e.y, tx: ptx, ty: pty, dungeonKey: e.portalDrop.type, timer: 30 })
@@ -461,14 +469,21 @@ const WorldZone = (() => {
       seen.add(id)
       const def = DUNGEONS[p.key]
       const name = (def && def.name) || p.key
-      const sx = p.tx * TILE + TILE/2 + offX
-      const sy = p.ty * TILE + offY - 6
-      if (sx < -40 || sx > canvas.width + 40 || sy < -10 || sy > canvas.height + 10) continue
+      // Anchor at the portal CENTER (pre-rotation offset coords). Cull on the
+      // true rotated screen position so off-screen portals are skipped.
+      const ax = p.tx * TILE + TILE/2 + offX
+      const ay = p.ty * TILE + TILE/2 + offY
+      const [rsx, rsy] = worldToScreen(p.tx * TILE + TILE/2, p.ty * TILE + TILE/2)
+      if (rsx < -60 || rsx > canvas.width + 60 || rsy < -30 || rsy > canvas.height + 30) continue
       const label = name + (def && def.stars ? ' ' + starString(def.stars) : '')
       const tw = ctx.measureText(label).width
-      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(sx - tw/2 - 4, sy - 10, tw + 8, 13)
-      ctx.fillStyle = (def && def.color) || '#cc88ff'
-      ctx.fillText(label, sx, sy)
+      // Counter-rotated, placed BELOW the portal relative to the rotated screen.
+      drawUpright(ax, ay, () => {
+        const ly = TILE/2 + 12   // below the portal tile, screen-down
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(-tw/2 - 4, ly - 10, tw + 8, 13)
+        ctx.fillStyle = (def && def.color) || '#cc88ff'
+        ctx.fillText(label, 0, ly)
+      })
     }
     ctx.textAlign = 'left'
   }

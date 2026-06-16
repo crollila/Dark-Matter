@@ -56,6 +56,14 @@ const G = {
 // thrash; the Options +/- and reset buttons persist explicit changes.
 function updateScreenRotation(dt) {
   if (typeof Settings === 'undefined') return
+  // Z instantly resets rotation to 0° (mirrors the Options reset button).
+  if (keys['KeyZ']) {
+    keys['KeyZ'] = false
+    if (Settings.screenRotation) {
+      Settings.screenRotation = 0
+      if (window.Options && Options.save) Options.save()
+    }
+  }
   let d = 0
   if (keys['KeyQ']) d -= 1
   if (keys['KeyE']) d += 1

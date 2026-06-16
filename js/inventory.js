@@ -99,12 +99,11 @@ const Inventory = (() => {
       spawnFloatText(char.x, char.y - 40, 'Cannot equip there', UI.bad)
       return
     }
+    // Slot-stable swap: the equipped item (if any) returns to the EXACT slot N
+    // the new item left from. Nothing else shifts. Net inventory count is
+    // unchanged, so this always fits.
     const prev = char.gear[slot] || null
-    inv.splice(idx, 1)
-    if (prev) {
-      if (inv.length >= CAP()) { inv.splice(idx, 0, item); flash('Inventory full — cannot swap', UI.bad); return }
-      inv.push(prev)
-    }
+    inv[idx] = prev   // null if the gear slot was empty → leaves a hole at N
     char.gear[slot] = item
     recalcStats(char)
     clampVitals(char)
@@ -118,14 +117,43 @@ const Inventory = (() => {
     const it = char.gear[key]
     if (!it) return
     const inv = char.inventory
-    if (inv.length >= CAP()) { flash('Inventory full — cannot unequip', UI.bad); return }
+    // Place into the first empty slot (preserve holes); don't compact others.
+    const idx = (window.firstEmptySlot ? firstEmptySlot(inv, CAP()) : inv.length)
+    if (idx < 0) { flash('Inventory full — cannot unequip', UI.bad); return }
     char.gear[key] = null
-    inv.push(it)
+    inv[idx] = it
     recalcStats(char)
     clampVitals(char)
     if (window.saveGame) saveGame()
     flash(`Unequipped ${it.name}`, it.color || UI.text)
     spawnFloatText(char.x, char.y - 40, `Unequipped ${it.name}`, it.color || UI.text)
+  }
+
+  // ---- organize / sort ----
+  // The ONLY action that intentionally moves many items. Compacts the grid and
+  // sorts by: rarity desc → slot/type → name → rollPercent desc.
+  const RARITY_ORDER = ['void', 'mythic', 'legendary', 'epic', 'rare', 'common']
+  function rarityIndex(r) { const i = RARITY_ORDER.indexOf(r); return i < 0 ? RARITY_ORDER.length : i }
+  function organize(char) {
+    if (!ensureChar(char)) return
+    const items = char.inventory.filter(Boolean)
+    items.sort((a, b) => {
+      const ra = rarityIndex(a.rarity), rb = rarityIndex(b.rarity)
+      if (ra !== rb) return ra - rb
+      const sa = a.slot || '', sb = b.slot || ''
+      if (sa !== sb) return sa < sb ? -1 : 1
+      const na = a.name || '', nb = b.name || ''
+      if (na !== nb) return na < nb ? -1 : 1
+      const pa = (typeof a.rollPercent === 'number') ? a.rollPercent : (a.rating || 0)
+      const pb = (typeof b.rollPercent === 'number') ? b.rollPercent : (b.rating || 0)
+      return pb - pa
+    })
+    const cap = CAP()
+    const next = new Array(cap).fill(null)
+    for (let i = 0; i < items.length && i < cap; i++) next[i] = items[i]
+    char.inventory = next
+    if (window.saveGame) saveGame()
+    flash('Inventory organized', UI.accent)
   }
 
   function update(char) {
@@ -189,8 +217,9 @@ const Inventory = (() => {
     const statsFits = (px - SW - 10) >= 8
     const statsPanel = { x: Math.max(8, px - SW - 10), y: py, w: SW, h: PH }
 
+    const organizeBtn = { x: px + PW - 18 - 70, y: gy - 8 - 13, w: 70, h: 16 }
     return { PW, PH, px, py, closeBtn, statsBtn, slots, silhouette, cells, gx, gy, cols, rows, cell,
-             gridLabel: { x: gx, y: gy - 8 }, statsPanel, statsFits }
+             gridLabel: { x: gx, y: gy - 8 }, organizeBtn, statsPanel, statsFits }
   }
 
   function hit(r, x, y) { return r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h }
@@ -201,6 +230,7 @@ const Inventory = (() => {
     const L = _layout
     if (hit(L.closeBtn, x, y)) { open = false; return true }
     if (hit(L.statsBtn, x, y)) { statsOpen = !statsOpen; return true }
+    if (hit(L.organizeBtn, x, y)) { organize(char); return true }
 
     // equipped slots → unequip
     for (const s of L.slots) {
@@ -236,6 +266,7 @@ const Inventory = (() => {
     const stats = item.stats || {}
     const cStats = (compareTo && compareTo.stats) || null
     for (const k in stats) {
+      if (k === 'bspd') continue   // fixed weapon projectile speed, not a stat bonus
       const base = (window.fmtStatLine) ? fmtStatLine(k, stats[k]) : `${k.toUpperCase()} ${fmtVal(stats[k])}`
       let t = base, c = (item.void && window.PCT_KEYS && PCT_KEYS[k]) ? '#b18bff' : '#d8e6f2'
       if (cStats && typeof stats[k] === 'number' && !(window.PCT_KEYS && PCT_KEYS[k])) {
@@ -427,7 +458,17 @@ const Inventory = (() => {
     // Inventory grid
     const inv = char.inventory || []
     ctx.fillStyle = UI.textDim; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'left'
-    ctx.fillText(`INVENTORY   ${inv.length}/${CAP()}`, L.gridLabel.x, L.gridLabel.y)
+    const invCount = window.invItemCount ? invItemCount(inv) : inv.length
+    ctx.fillText(`INVENTORY   ${invCount}/${CAP()}`, L.gridLabel.x, L.gridLabel.y)
+
+    // Organize button (top-right of the inventory grid header)
+    const ob = L.organizeBtn
+    const obHover = hit(ob, mouse.x, mouse.y)
+    uiPanel(ob.x, ob.y, ob.w, ob.h, 5, UI.accent + (obHover ? '' : '88'),
+            obHover ? 'rgba(76,201,240,0.22)' : 'rgba(76,201,240,0.10)')
+    ctx.fillStyle = UI.accent; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'
+    ctx.fillText('ORGANIZE', ob.x + ob.w / 2, ob.y + 12)
+    ctx.textAlign = 'left'
     let hoverGrid = null
     for (const c of L.cells) {
       const it = inv[c.i]

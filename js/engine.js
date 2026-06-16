@@ -69,6 +69,29 @@ function screenToWorld(sx, sy) {
   return [dx + cam.x, dy + cam.y]
 }
 
+// Convert a SCREEN-relative input vector (e.g. W = (0,-1) "up on screen") into a
+// WORLD-space velocity, so WASD/arrow movement is always screen-relative at any
+// rotation. Inverse of the world rotation: worldDir = R(-a) · screenDir.
+function inputToWorld(vx, vy) {
+  const a = screenRotationRad()
+  if (!a) return [vx, vy]
+  const c = Math.cos(a), s = Math.sin(a)
+  return [vx * c + vy * s, -vx * s + vy * c]
+}
+
+// Draw `fn()` at its local origin upright on screen while POSITIONED at the
+// already-offset world anchor (ax,ay). Cancels the active world rotation so the
+// content stays screen-upright (text/bars/bag) but still tracks the world point.
+// Must be called inside begin/endWorldTransform. Local +y = screen-down.
+function drawUpright(ax, ay, fn) {
+  const a = screenRotationRad()
+  ctx.save()
+  ctx.translate(ax, ay)
+  if (a) ctx.rotate(-a)
+  fn()
+  ctx.restore()
+}
+
 // --- TILE CONSTANTS ---
 const TILE = 32
 const T_VOID  = 0
@@ -375,10 +398,14 @@ function renderFloatTexts() {
   const offY = (canvas.height/2 - cam.y) | 0
   ctx.font = 'bold 12px monospace'
   for (const f of floatTexts) {
-    ctx.globalAlpha = f.life
-    ctx.fillStyle = f.color
-    ctx.textAlign = 'center'
-    ctx.fillText(f.text, f.x + offX, f.y + offY)
+    // Counter-rotate so damage/loot numbers stay upright while tracking the
+    // rotated world position they were spawned at.
+    drawUpright(f.x + offX, f.y + offY, () => {
+      ctx.globalAlpha = f.life
+      ctx.fillStyle = f.color
+      ctx.textAlign = 'center'
+      ctx.fillText(f.text, 0, 0)
+    })
   }
   ctx.globalAlpha = 1; ctx.textAlign = 'left'
 }

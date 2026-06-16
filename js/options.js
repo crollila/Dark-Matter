@@ -5,9 +5,9 @@
 // The "graphics" options are multiplayer placeholders: they are stored
 // and displayed, but there are no real other-player projectiles yet, so
 // they only take effect once multiplayer exists.
-// Screen rotation has a full settings UI + reset; APPLYING the rotation
-// to gameplay is intentionally deferred — the renderer is offset-based
-// and rotating it would break mouse aim/shooting. The value is stored.
+// Screen rotation is live: hold Q/E to rotate, Z to reset to 0° (or the
+// Options reset button). Movement is screen-relative and mouse aim is
+// converted back through the inverse rotation, so shooting stays correct.
 // ============================================================
 
 // Rebindable gameplay hotkeys (stored as KeyboardEvent.code values).
@@ -21,10 +21,21 @@ const DEFAULT_KEYS = {
   ring2:       'AltLeft',
 }
 
+// Fixed render/AI distances (world px, NOT window-size based). Mobs farther
+// than renderDistance from the camera aren't drawn; mobs farther than
+// aiWakeDistance from the player sleep (no AI). Bosses ignore both.
+const PERF_DEFAULTS = { renderDistance: 1500, aiWakeDistance: 1800 }
+const PERF_LIMITS = {
+  renderDistance: { min: 600, max: 3000, step: 100 },
+  aiWakeDistance: { min: 700, max: 4000, step: 100 },
+}
+
 const Settings = {
   hideOtherProjectiles: false,
   otherPlayerOpacity: 100,   // 0..100 (%)
   screenRotation: 0,         // degrees; Q/E rotate the view (applied in render)
+  renderDistance: PERF_DEFAULTS.renderDistance,
+  aiWakeDistance: PERF_DEFAULTS.aiWakeDistance,
   keys: { ...DEFAULT_KEYS },
 }
 window.Settings = Settings
@@ -82,6 +93,8 @@ const Options = (() => {
       if (typeof s.hideOtherProjectiles === 'boolean') Settings.hideOtherProjectiles = s.hideOtherProjectiles
       if (typeof s.otherPlayerOpacity === 'number') Settings.otherPlayerOpacity = clamp(Math.round(s.otherPlayerOpacity), 0, 100)
       if (typeof s.screenRotation === 'number') Settings.screenRotation = ((Math.round(s.screenRotation) % 360) + 360) % 360
+      if (typeof s.renderDistance === 'number') Settings.renderDistance = clamp(Math.round(s.renderDistance), PERF_LIMITS.renderDistance.min, PERF_LIMITS.renderDistance.max)
+      if (typeof s.aiWakeDistance === 'number') Settings.aiWakeDistance = clamp(Math.round(s.aiWakeDistance), PERF_LIMITS.aiWakeDistance.min, PERF_LIMITS.aiWakeDistance.max)
       if (s.keys && typeof s.keys === 'object') {
         for (const k in DEFAULT_KEYS) {
           if (typeof s.keys[k] === 'string') Settings.keys[k] = s.keys[k]
@@ -108,6 +121,7 @@ const Options = (() => {
     { label: 'Chat',            fixed: 'Enter' },
     { label: 'Command',         fixed: '/' },
     { label: 'Rotate screen',   fixed: 'Hold Q / E' },
+    { label: 'Reset rotation',  fixed: 'Z' },
     { label: 'Options',         fixed: 'Esc' },
   ]
 
@@ -133,7 +147,7 @@ const Options = (() => {
   function render() {
     if (!open) return
     const PW = 460
-    const PH = Math.min(canvas.height - 12, 524)
+    const PH = Math.min(canvas.height - 12, 612)
     const px = ((canvas.width - PW) / 2) | 0
     const py = Math.max(8, ((canvas.height - PH) / 2) | 0)
 
@@ -215,12 +229,32 @@ const Options = (() => {
     drawButton(rotReset, 'Reset rotation to 0°')
     y += 32
     ctx.fillStyle = UI.textFaint; ctx.font = '9px monospace'
-    ctx.fillText('Hold Q / E in-game to rotate. Aim stays correct while rotated.', px + 24, y)
+    ctx.fillText('Hold Q / E in-game to rotate · Z resets to 0°. Aim stays correct while rotated.', px + 24, y)
+    y += 18
+
+    // ---- PERFORMANCE (fixed render/AI distances, not window-size based) ----
+    y = sect('PERFORMANCE', y)
+    ctx.fillStyle = UI.text; ctx.font = '11px monospace'; ctx.fillText('Render distance', px + 24, y + 5)
+    const rdMinus = { x: px + PW - 170, y: y - 9, w: 24, h: 22 }
+    const rdPlus  = { x: px + PW - 54,  y: y - 9, w: 24, h: 22 }
+    drawStep(rdMinus, '-'); drawStep(rdPlus, '+')
+    ctx.fillStyle = UI.text; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'
+    ctx.fillText(Settings.renderDistance + '', px + PW - 100, y + 5); ctx.textAlign = 'left'
+    y += 30
+    ctx.fillStyle = UI.text; ctx.font = '11px monospace'; ctx.fillText('AI wake distance', px + 24, y + 5)
+    const awMinus = { x: px + PW - 170, y: y - 9, w: 24, h: 22 }
+    const awPlus  = { x: px + PW - 54,  y: y - 9, w: 24, h: 22 }
+    drawStep(awMinus, '-'); drawStep(awPlus, '+')
+    ctx.fillStyle = UI.text; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'
+    ctx.fillText(Settings.aiWakeDistance + '', px + PW - 100, y + 5); ctx.textAlign = 'left'
+    y += 28
+    ctx.fillStyle = UI.textFaint; ctx.font = '9px monospace'
+    ctx.fillText('Lower = better performance. Bosses always render/active.', px + 24, y)
 
     ctx.fillStyle = UI.textFaint; ctx.font = '10px monospace'; ctx.textAlign = 'center'
     ctx.fillText('Esc to close', px + PW / 2, py + PH - 10); ctx.textAlign = 'left'
 
-    _L = { px, py, PW, PH, closeBtn, keyRows, resetKeys, hideToggle, opMinus, opTrack, opPlus, rotMinus, rotPlus, rotReset }
+    _L = { px, py, PW, PH, closeBtn, keyRows, resetKeys, hideToggle, opMinus, opTrack, opPlus, rotMinus, rotPlus, rotReset, rdMinus, rdPlus, awMinus, awPlus }
   }
 
   function onClick(x, y) {
@@ -238,6 +272,11 @@ const Options = (() => {
     if (hit(L.rotMinus, x, y)) { Settings.screenRotation = ((Settings.screenRotation - 15) % 360 + 360) % 360; save(); return true }
     if (hit(L.rotPlus, x, y))  { Settings.screenRotation = (Settings.screenRotation + 15) % 360; save(); return true }
     if (hit(L.rotReset, x, y)) { Settings.screenRotation = 0; save(); return true }
+    const rd = PERF_LIMITS.renderDistance, aw = PERF_LIMITS.aiWakeDistance
+    if (hit(L.rdMinus, x, y)) { Settings.renderDistance = clamp(Settings.renderDistance - rd.step, rd.min, rd.max); save(); return true }
+    if (hit(L.rdPlus, x, y))  { Settings.renderDistance = clamp(Settings.renderDistance + rd.step, rd.min, rd.max); save(); return true }
+    if (hit(L.awMinus, x, y)) { Settings.aiWakeDistance = clamp(Settings.aiWakeDistance - aw.step, aw.min, aw.max); save(); return true }
+    if (hit(L.awPlus, x, y))  { Settings.aiWakeDistance = clamp(Settings.aiWakeDistance + aw.step, aw.min, aw.max); save(); return true }
     return true   // swallow all clicks while the menu is open
   }
 
@@ -272,7 +311,7 @@ const Options = (() => {
   }, true)
 
   load()
-  return { isOpen, render, toggle, close }
+  return { isOpen, render, toggle, close, save }
 })()
 
 window.Options = Options
