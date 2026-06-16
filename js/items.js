@@ -185,6 +185,58 @@ const BIOME_UNIQUES = {
     core: { mp: [160, 280], int: [4, 8] }, affixPool: [ { hpRegen: [3, 6] }, { hp: [80, 160] } ] },
 }
 
+// ---- DUNGEON-EXCLUSIVE DROPS ----
+// 3 signature items per biome dungeon (18 total). Flagged `unique:true` so
+// basesForSlot()/gamble never roll them; they ONLY drop inside their dungeon
+// (boss high chance, basic mobs rare — see generateBossLoot / rollMobDrop). The
+// `dungeon` tag maps each to its dungeon key. All class-agnostic (no weapons) so
+// any class can equip them, and they flow through equip/salvage/reforge/fusion
+// like any base.
+const DUNGEON_EXCLUSIVES = {
+  // Dark Matter Core
+  dx_horizon_amulet: { name: 'Event Horizon', slot: 'amulet', classes: null, unique: true, dungeon: 'dark_matter_core',
+    core: { hp: [200, 300], mp: [160, 280] }, affixPool: [ { int: [4, 8] }, { hpRegen: [3, 6] } ] },
+  dx_collapse_plate: { name: 'Collapse Plate', slot: 'chest', classes: null, unique: true, dungeon: 'dark_matter_core',
+    core: { hp: [260, 360], armor: [9, 15] }, affixPool: [ { hpRegen: [4, 7] }, { str: [4, 7] } ] },
+  dx_singularity_band: { name: 'Singularity Band', slot: 'ring', classes: null, unique: true, dungeon: 'dark_matter_core',
+    core: { str: [5, 9], int: [5, 9] }, affixPool: [ { hp: [100, 180] }, { spd: [3, 5] } ] },
+  // Frozen Catacombs
+  fz_glacial_crown: { name: 'Glacial Crown', slot: 'helmet', classes: null, unique: true, dungeon: 'frozen_catacombs',
+    core: { armor: [7, 12], hp: [140, 220], int: [3, 6] }, affixPool: [ { hpRegen: [3, 6] }, { mp: [100, 200] } ] },
+  fz_rime_gauntlets: { name: 'Rime Gauntlets', slot: 'hands', classes: null, unique: true, dungeon: 'frozen_catacombs',
+    core: { dex: [4, 8], armor: [4, 7] }, affixPool: [ { spd: [4, 7] }, { hp: [100, 180] } ] },
+  fz_permafrost_boots: { name: 'Permafrost Boots', slot: 'boots', classes: null, unique: true, dungeon: 'frozen_catacombs',
+    core: { spd: [9, 16], hp: [100, 180] }, affixPool: [ { armor: [3, 6] }, { dex: [3, 6] } ] },
+  // Infernal Pit
+  if_cinder_crown: { name: 'Cinder Crown', slot: 'helmet', classes: null, unique: true, dungeon: 'infernal_pit',
+    core: { armor: [7, 12], hp: [140, 220], str: [4, 7] }, affixPool: [ { hpRegen: [3, 6] }, { spd: [2, 5] } ] },
+  if_magmaheart_plate: { name: 'Magmaheart Plate', slot: 'chest', classes: null, unique: true, dungeon: 'infernal_pit',
+    core: { hp: [260, 360], armor: [8, 14] }, affixPool: [ { str: [4, 8] }, { hpRegen: [3, 6] } ] },
+  if_brimstone_band: { name: 'Brimstone Band', slot: 'ring', classes: null, unique: true, dungeon: 'infernal_pit',
+    core: { str: [6, 10], hp: [120, 200] }, affixPool: [ { armor: [3, 6] }, { spd: [3, 5] } ] },
+  // Plague Grotto
+  pg_toxin_mantle: { name: 'Toxin Mantle', slot: 'chest', classes: null, unique: true, dungeon: 'plague_grotto',
+    core: { hp: [240, 340], armor: [7, 12] }, affixPool: [ { hpRegen: [5, 8] }, { dex: [3, 6] } ] },
+  pg_sporeweave_gloves: { name: 'Sporeweave Gloves', slot: 'hands', classes: null, unique: true, dungeon: 'plague_grotto',
+    core: { dex: [5, 9], armor: [3, 6] }, affixPool: [ { spd: [4, 7] }, { hp: [100, 180] } ] },
+  pg_rot_amulet: { name: 'Rot Amulet', slot: 'amulet', classes: null, unique: true, dungeon: 'plague_grotto',
+    core: { hp: [200, 300], hpRegen: [5, 9] }, affixPool: [ { armor: [3, 6] }, { dex: [3, 6] } ] },
+  // Fallen Keep
+  fk_revenant_helm: { name: 'Revenant Helm', slot: 'helmet', classes: null, unique: true, dungeon: 'fallen_keep',
+    core: { armor: [8, 13], hp: [150, 230], str: [4, 7] }, affixPool: [ { hpRegen: [3, 6] }, { spd: [2, 5] } ] },
+  fk_oathbreaker_greaves: { name: 'Oathbreaker Greaves', slot: 'pants', classes: null, unique: true, dungeon: 'fallen_keep',
+    core: { hp: [200, 300], armor: [6, 11] }, affixPool: [ { str: [4, 7] }, { hpRegen: [3, 6] } ] },
+  fk_wraithguard_ring: { name: 'Wraithguard Signet', slot: 'ring', classes: null, unique: true, dungeon: 'fallen_keep',
+    core: { str: [5, 9], int: [5, 9] }, affixPool: [ { hp: [100, 180] }, { mp: [100, 200] } ] },
+  // Astral Tomb
+  at_starfall_circlet: { name: 'Starfall Circlet', slot: 'helmet', classes: null, unique: true, dungeon: 'astral_tomb',
+    core: { armor: [6, 11], hp: [140, 220], int: [4, 8] }, affixPool: [ { mp: [120, 220] }, { hpRegen: [3, 6] } ] },
+  at_dunewalker_boots: { name: 'Dunewalker Boots', slot: 'boots', classes: null, unique: true, dungeon: 'astral_tomb',
+    core: { spd: [10, 17], hp: [100, 180] }, affixPool: [ { dex: [4, 7] }, { armor: [3, 6] } ] },
+  at_cosmic_relic: { name: 'Cosmic Relic', slot: 'ability', classes: null, unique: true, dungeon: 'astral_tomb',
+    core: { mp: [180, 300], int: [5, 9] }, affixPool: [ { hpRegen: [4, 7] }, { hp: [100, 180] } ] },
+}
+
 // Void multiplier templates per slot (% based; recalcStats applies these as
 // multipliers instead of additive stats). Void items "break" the additive rules.
 const VOID_MULT = {
@@ -204,9 +256,21 @@ const VOID_AFFIXES = {
   hpPct: [6, 14], mpPct: [6, 16], dmgPct: [5, 12], spdPct: [4, 10], armorPct: [5, 12],
 }
 
-// Fold biome uniques into the base registry so equip/salvage/reforge resolve
-// them by baseKey. They're flagged `unique` and filtered out of random rolls.
+// Fold biome uniques + dungeon exclusives into the base registry so
+// equip/salvage/reforge resolve them by baseKey. Both are flagged `unique` and
+// filtered out of random/gamble rolls.
 Object.assign(ITEM_BASES, BIOME_UNIQUES)
+Object.assign(ITEM_BASES, DUNGEON_EXCLUSIVES)
+
+// Dungeon key → its exclusive base keys (built from the `dungeon` tag). Used by
+// boss/mob loot to roll a dungeon's signature gear. Unknown keys → undefined,
+// so non-biome dungeons (goblin_warren, etc.) safely have no exclusives.
+const EXCLUSIVES_BY_DUNGEON = {}
+for (const k in DUNGEON_EXCLUSIVES) {
+  const dk = DUNGEON_EXCLUSIVES[k].dungeon
+  if (!dk) continue
+  ;(EXCLUSIVES_BY_DUNGEON[dk] || (EXCLUSIVES_BY_DUNGEON[dk] = [])).push(k)
+}
 
 // Legacy alias so older callers referencing ITEM_DEFS keep resolving bases.
 const ITEM_DEFS = ITEM_BASES
@@ -435,16 +499,34 @@ function gambleItem(acct, char, slot) {
   return it ? { item: it } : { error: 'Gamble failed' }
 }
 
-// Generate boss loot for a dungeon: often an item (boss loot is biased toward
-// higher rarity tiers). Materials removed — loot is items only.
+// Roll one of a dungeon's exclusive signature items (boosted rarity). Returns
+// null for dungeons with no exclusives (e.g. goblin_warren) — safe, no crash.
+function rollDungeonExclusive(dungeonKey, boost) {
+  const keys = EXCLUSIVES_BY_DUNGEON[dungeonKey]
+  if (!keys || !keys.length) return null
+  const baseKey = keys[Math.random() * keys.length | 0]
+  return rollItem(baseKey, rollRarity(boost || 0), null, dungeonKey)
+}
+
+// Generate boss loot for a dungeon: a high chance at the dungeon's exclusive
+// signature gear PLUS the usual higher-tier generic item. Materials removed.
 function generateBossLoot(dungeonKey) {
   const loot = { items: [], materials: {} }
+  // Bosses have the best shot at their dungeon-exclusive drops.
+  if (Math.random() < 0.7) {
+    const ex = rollDungeonExclusive(dungeonKey, 0.7)
+    if (ex) loot.items.push(ex)
+  }
   if (Math.random() < 0.85) {
     const it = randomItem(dungeonKey, { boost: 0.6 })
     if (it) loot.items.push(it)
   }
   return loot
 }
+
+// Basic dungeon mobs occasionally drop a dungeon-exclusive too (much rarer than
+// the boss). World/non-dungeon sources have none, so they're unaffected.
+const EXCLUSIVE_MOB_CHANCE = 0.05
 
 // Small chance loot for a non-boss mob kill. stars bias rarity upward.
 // opts: { chance, source, matKey }
@@ -455,6 +537,11 @@ function rollMobDrop(stars, opts) {
   const loot = { items: [], materials: {} }
   const it = randomItem(opts.source || 'world', { boost: (stars || 0) * 0.12 })
   if (it) loot.items.push(it)
+  // Rare bonus: dungeon basic mobs can drop their dungeon-exclusive gear.
+  if (EXCLUSIVES_BY_DUNGEON[opts.source] && Math.random() < EXCLUSIVE_MOB_CHANCE) {
+    const ex = rollDungeonExclusive(opts.source, (stars || 0) * 0.1)
+    if (ex) loot.items.push(ex)
+  }
   return loot
 }
 
@@ -725,6 +812,8 @@ window.randomItem = randomItem
 window.rollRarity = rollRarity
 window.rollItemInstance = rollItemInstance
 window.generateBossLoot = generateBossLoot
+window.rollDungeonExclusive = rollDungeonExclusive
+window.EXCLUSIVES_BY_DUNGEON = EXCLUSIVES_BY_DUNGEON
 window.createLootBag = createLootBag
 window.renderLootBag = renderLootBag
 window.renderLootHUD = renderLootHUD

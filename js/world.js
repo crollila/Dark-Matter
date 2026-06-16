@@ -168,6 +168,7 @@ const WorldZone = (() => {
     for (const e of mobs) if (e.alive) grid.add(e)
 
     // Update mobs
+    MobDebug.reset()
     for (let i = mobs.length - 1; i >= 0; i--) {
       const e = mobs[i]
       if (!e.alive) { mobs.splice(i, 1); continue }
@@ -312,9 +313,10 @@ const WorldZone = (() => {
       portalPrompt = { key: nearPortal.dungeonKey, name: (def && def.name) || nearPortal.dungeonKey, stars: (def && def.stars) || 0 }
       // Loot pickup takes priority over portal entry when overlapping.
       if (eDown && !eLatchW && !inputBlocked && !nearBag) {
-        // Biome dungeons are placeholders for now — entry deferred (no crash).
-        if (def && def.placeholder) {
-          spawnFloatText(char.x, char.y - 30, `${def.name}: not yet open`, '#ffb000')
+        // Enter only valid, real dungeons. Unknown/placeholder keys (e.g. a
+        // stale runtime portal) show a notice instead of crashing the zone.
+        if (!def || def.placeholder) {
+          spawnFloatText(char.x, char.y - 30, `${(def && def.name) || 'Dungeon'}: not yet open`, '#ffb000')
         } else {
           G.enterZone('dungeon', nearPortal.dungeonKey); return
         }

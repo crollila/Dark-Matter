@@ -18,6 +18,9 @@ const DungeonZone = (() => {
   function init(char, dungeonKey = 'goblin_warren') {
     defKey = dungeonKey
     map = buildDungeon(dungeonKey)
+    // Safety: unknown dungeon key → buildDungeon returns null. Bail back to the
+    // world instead of crashing on a null map.
+    if (!map) { console.warn('Unknown dungeon key:', dungeonKey); G.enterZone('world'); return }
     mobs = []
     bossDefeated = false
     lootBags = []
@@ -84,6 +87,7 @@ const DungeonZone = (() => {
     for (const e of mobs) if (e.alive) grid.add(e)
 
     // Update mobs
+    MobDebug.reset()
     for (let i = mobs.length - 1; i >= 0; i--) {
       const e = mobs[i]
       if (!e.alive) { mobs.splice(i, 1); continue }

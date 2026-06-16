@@ -163,6 +163,7 @@ Use for:
 - Loot table helpers.
 - Item tooltip/loot preview helpers if present.
 - Salvage/reforge/fusion/gamble item logic if implemented here.
+- `BIOME_UNIQUES` (mob-only) + `DUNGEON_EXCLUSIVES` (3 per biome dungeon, tagged `dungeon:<key>`, `unique:true`): both folded into `ITEM_BASES`, skipped by random/gamble. `EXCLUSIVES_BY_DUNGEON` lookup; `generateBossLoot` rolls exclusive (boss high chance), `rollMobDrop` adds a rare exclusive for dungeon basic mobs.
 
 Use for:
 - item stats/rarity/rollPercent
@@ -220,12 +221,16 @@ Use for:
 - Mob/boss AI patterns.
 - Dungeon definitions may currently live here.
 - Star ratings may be on dungeon defs here.
+- `DUNGEONS` includes 3 OG (goblin_warren/fungal_cavern/void_rift) + 6 biome dungeons (dark_matter_core, frozen_catacombs, infernal_pit, plague_grotto, fallen_keep, astral_tomb), each with tileColor/mobs/boss/rooms/roomSize/mobsPerRoom. Biome dungeon bosses reuse boss_void/boss_mycelian/boss_goblin AI. Unknown key → `buildDungeon` returns null → DungeonZone.init bails to world.
+
+- Perf: `updateMob`/`renderMob` do offscreen culling + AI sleep. Normal mobs far from player (`MOB_WAKE_MARGIN` past view) sleep — exist but skip AI (no shooting/movement, `e.asleep=true`) until player nears; normal mobs past view (`MOB_CULL_MARGIN`) aren't drawn. Bosses never sleep/cull. Counters in `MobDebug` (`MobDebug.reset()` each zone update); `mobStats()` logs active/sleeping/rendered. Minimap unaffected (reads `mobs` array directly).
 
 Use for:
 - mob stats/AI
 - boss bullet patterns
 - dungeon metadata like stars if located here
 - XP/drop source data if stored on mobs
+- offscreen culling / AI sleep / mob perf tuning
 
 ### `js/world.js`
 - Open world zone.
@@ -379,11 +384,12 @@ Keep updated.
 - [x] World map: large (200×200), low wall density, grass-heavy neutral terrain between biomes
 - [x] World biomes (6): dark_matter, snow, hell, toxic, ruined, astral — SEPARATED clusters (grass gaps), palette, minimap tint, biome name label
 - [x] Biome mobs spawned throughout each biome at world-gen; respawn 1–30s inside same biome (random of its 3); never next to player
+- [x] Perf: offscreen render culling + far-mob AI sleep (bosses exempt; minimap still shows all mobs; `mobStats()` debug)
 - [x] Minimap mouse-wheel zoom (hover, clamped 1–6x, in-memory)
 - [x] Biome terrain: ice (slippery), lava (DoT+slow)
 - [x] Biome mobs (3/biome) spawn in-biome (spread at world-gen, ~9/biome) + leash back if they wander out
 - [x] Biome drops: shared biome dungeon-portal drop per biome + one unique mob-only item per monster (`u_*` bases, `unique:true`, mob-only)
-- [ ] Biome dungeons (dm_rift, snow_keep, hell_pit, toxic_hollow, ruined_keep, astral_dunes): PLACEHOLDERS — `placeholder:true`, entry deferred ("not yet open"), excluded from fixed world scatter
+- [x] Biome dungeons (dark_matter_core, frozen_catacombs, infernal_pit, plague_grotto, fallen_keep, astral_tomb): REAL/enterable — themed palette, biome's 3 mobs + dedicated boss (reuses existing boss AIs), 3 dungeon-exclusive drops each. Biome mobs drop their portal; fixed world portals scatter too. Old placeholder keys removed.
 
 ---
 

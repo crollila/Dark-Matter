@@ -10,34 +10,34 @@ const BIOMES = {
   dark_matter: {
     id: 1, name: 'Dark Matter Expanse',
     floor: '#16121f', floorAlt: '#1c1628', accent: '#9b7bff', mini: [44, 30, 70],
-    mobs: ['matter_wraith', 'gravity_maw', 'null_apostle'], dungeon: 'dm_rift',
+    mobs: ['matter_wraith', 'gravity_maw', 'null_apostle'], dungeon: 'dark_matter_core',
   },
   snow: {
     id: 2, name: 'Frozen Wastes',
     floor: '#33414d', floorAlt: '#3a4954', accent: '#bfe6f5', mini: [120, 150, 172],
-    mobs: ['frost_skater', 'icebound_archer', 'snow_golem'], dungeon: 'snow_keep',
+    mobs: ['frost_skater', 'icebound_archer', 'snow_golem'], dungeon: 'frozen_catacombs',
     hazard: T_ICE, hazardChance: 0.18,
   },
   hell: {
     id: 3, name: 'Infernal Reach',
     floor: '#39140f', floorAlt: '#2c0f0b', accent: '#ff7a3c', mini: [128, 42, 28],
-    mobs: ['ember_imp', 'chainscourge', 'lava_brute'], dungeon: 'hell_pit',
+    mobs: ['ember_imp', 'chainscourge', 'lava_brute'], dungeon: 'infernal_pit',
     hazard: T_LAVA, hazardChance: 0.15,
   },
   toxic: {
     id: 4, name: 'Fungal Mire',
     floor: '#1d2a15', floorAlt: '#22331a', accent: '#9be84a', mini: [78, 120, 44],
-    mobs: ['spore_crawler', 'venom_cap', 'mycelium_horror'], dungeon: 'toxic_hollow',
+    mobs: ['spore_crawler', 'venom_cap', 'mycelium_horror'], dungeon: 'plague_grotto',
   },
   ruined: {
     id: 5, name: 'Ruined Kingdom',
     floor: '#2b2820', floorAlt: '#333026', accent: '#d8c9a0', mini: [120, 108, 84],
-    mobs: ['fallen_squire', 'cursed_archer', 'grave_priest'], dungeon: 'ruined_keep',
+    mobs: ['fallen_squire', 'cursed_archer', 'grave_priest'], dungeon: 'fallen_keep',
   },
   astral: {
     id: 6, name: 'Astral Desert',
     floor: '#332a40', floorAlt: '#3b3049', accent: '#ffe08a', mini: [168, 144, 96],
-    mobs: ['star_scarab', 'mirage_stalker', 'sunseer'], dungeon: 'astral_dunes',
+    mobs: ['star_scarab', 'mirage_stalker', 'sunseer'], dungeon: 'astral_tomb',
   },
 }
 

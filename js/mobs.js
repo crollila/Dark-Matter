@@ -261,106 +261,106 @@ const MOB_DEFS = {
     portalDrop: null
   },
 
-  // === BIOME: DARK MATTER (dungeon drop → dm_rift) ===
+  // === BIOME: DARK MATTER (dungeon drop → dark_matter_core) ===
   matter_wraith: {
     name: 'Matter Wraith', color: '#9b7bff', ai: 'skirmisher',
     hp: 2400, spd: 95, dmg: 190, bspd: 300, atkSpd: 1.3, range: 280, radius: 12, xp: 30,
-    portalDrop: { type: 'dm_rift', chance: 0.05 }, uniqueDrop: { base: 'u_wraith_shroud', chance: 0.03 }
+    portalDrop: { type: 'dark_matter_core', chance: 0.05 }, uniqueDrop: { base: 'u_wraith_shroud', chance: 0.03 }
   },
   gravity_maw: {
     name: 'Gravity Maw', color: '#6a4bff', ai: 'charger',
     hp: 4200, spd: 60, dmg: 260, bspd: 180, atkSpd: 1.8, range: 200, radius: 18, xp: 42,
-    portalDrop: { type: 'dm_rift', chance: 0.05 }, uniqueDrop: { base: 'u_gravity_core', chance: 0.03 }
+    portalDrop: { type: 'dark_matter_core', chance: 0.05 }, uniqueDrop: { base: 'u_gravity_core', chance: 0.03 }
   },
   null_apostle: {
     name: 'Null Apostle', color: '#b59bff', ai: 'orbiter',
     hp: 3000, spd: 40, dmg: 200, bspd: 230, atkSpd: 2.2, range: 250, radius: 15, xp: 38,
-    portalDrop: { type: 'dm_rift', chance: 0.05 }, uniqueDrop: { base: 'u_null_sigil', chance: 0.03 }
+    portalDrop: { type: 'dark_matter_core', chance: 0.05 }, uniqueDrop: { base: 'u_null_sigil', chance: 0.03 }
   },
 
-  // === BIOME: SNOW (dungeon drop → snow_keep) ===
+  // === BIOME: SNOW (dungeon drop → frozen_catacombs) ===
   frost_skater: {
     name: 'Frost Skater', color: '#bfe6f5', ai: 'skirmisher',
     hp: 1800, spd: 130, dmg: 160, bspd: 320, atkSpd: 1.1, range: 270, radius: 11, xp: 28,
-    portalDrop: { type: 'snow_keep', chance: 0.05 }, uniqueDrop: { base: 'u_frost_treads', chance: 0.03 }
+    portalDrop: { type: 'frozen_catacombs', chance: 0.05 }, uniqueDrop: { base: 'u_frost_treads', chance: 0.03 }
   },
   icebound_archer: {
     name: 'Icebound Archer', color: '#8fd0e8', ai: 'chaser',
     hp: 2200, spd: 70, dmg: 200, bspd: 300, atkSpd: 1.4, range: 300, radius: 12, xp: 32,
-    portalDrop: { type: 'snow_keep', chance: 0.05 }, uniqueDrop: { base: 'u_icebound_charm', chance: 0.03 }
+    portalDrop: { type: 'frozen_catacombs', chance: 0.05 }, uniqueDrop: { base: 'u_icebound_charm', chance: 0.03 }
   },
   snow_golem: {
     name: 'Snow Golem', color: '#d8eef7', ai: 'charger',
     hp: 5000, spd: 55, dmg: 280, bspd: 170, atkSpd: 2.0, range: 190, radius: 19, xp: 46,
-    portalDrop: { type: 'snow_keep', chance: 0.05 }, uniqueDrop: { base: 'u_glacier_plate', chance: 0.03 }
+    portalDrop: { type: 'frozen_catacombs', chance: 0.05 }, uniqueDrop: { base: 'u_glacier_plate', chance: 0.03 }
   },
 
-  // === BIOME: HELL (dungeon drop → hell_pit) ===
+  // === BIOME: HELL (dungeon drop → infernal_pit) ===
   ember_imp: {
     name: 'Ember Imp', color: '#ff9a3c', ai: 'chaser',
     hp: 1600, spd: 115, dmg: 170, bspd: 320, atkSpd: 1.1, range: 250, radius: 10, xp: 28,
-    portalDrop: { type: 'hell_pit', chance: 0.05 }, uniqueDrop: { base: 'u_ember_band', chance: 0.03 }
+    portalDrop: { type: 'infernal_pit', chance: 0.05 }, uniqueDrop: { base: 'u_ember_band', chance: 0.03 }
   },
   chainscourge: {
     name: 'Chainscourge', color: '#d4541a', ai: 'spreader',
     hp: 3000, spd: 65, dmg: 210, bspd: 260, atkSpd: 1.9, range: 290, radius: 14, xp: 38,
-    portalDrop: { type: 'hell_pit', chance: 0.05 }, uniqueDrop: { base: 'u_chain_girdle', chance: 0.03 }
+    portalDrop: { type: 'infernal_pit', chance: 0.05 }, uniqueDrop: { base: 'u_chain_girdle', chance: 0.03 }
   },
   lava_brute: {
     name: 'Lava Brute', color: '#ff6a28', ai: 'charger',
     hp: 5200, spd: 58, dmg: 300, bspd: 180, atkSpd: 1.9, range: 190, radius: 19, xp: 48,
-    portalDrop: { type: 'hell_pit', chance: 0.05 }, uniqueDrop: { base: 'u_magma_helm', chance: 0.03 }
+    portalDrop: { type: 'infernal_pit', chance: 0.05 }, uniqueDrop: { base: 'u_magma_helm', chance: 0.03 }
   },
 
-  // === BIOME: TOXIC / FUNGAL (dungeon drop → toxic_hollow) ===
+  // === BIOME: TOXIC / FUNGAL (dungeon drop → plague_grotto) ===
   spore_crawler: {
     name: 'Spore Crawler', color: '#9be84a', ai: 'chaser',
     hp: 2000, spd: 85, dmg: 180, bspd: 280, atkSpd: 1.5, range: 250, radius: 12, xp: 30,
-    portalDrop: { type: 'toxic_hollow', chance: 0.05 }, uniqueDrop: { base: 'u_spore_gloves', chance: 0.03 }
+    portalDrop: { type: 'plague_grotto', chance: 0.05 }, uniqueDrop: { base: 'u_spore_gloves', chance: 0.03 }
   },
   venom_cap: {
     name: 'Venom Cap', color: '#6abf3a', ai: 'orbiter',
     hp: 3200, spd: 32, dmg: 190, bspd: 200, atkSpd: 2.3, range: 230, radius: 16, xp: 34,
-    portalDrop: { type: 'toxic_hollow', chance: 0.05 }, uniqueDrop: { base: 'u_venom_amulet', chance: 0.03 }
+    portalDrop: { type: 'plague_grotto', chance: 0.05 }, uniqueDrop: { base: 'u_venom_amulet', chance: 0.03 }
   },
   mycelium_horror: {
     name: 'Mycelium Horror', color: '#3f7a2a', ai: 'spreader',
     hp: 4400, spd: 50, dmg: 240, bspd: 240, atkSpd: 1.9, range: 280, radius: 18, xp: 44,
-    portalDrop: { type: 'toxic_hollow', chance: 0.05 }, uniqueDrop: { base: 'u_myco_plate', chance: 0.03 }
+    portalDrop: { type: 'plague_grotto', chance: 0.05 }, uniqueDrop: { base: 'u_myco_plate', chance: 0.03 }
   },
 
-  // === BIOME: RUINED KINGDOM (dungeon drop → ruined_keep) ===
+  // === BIOME: RUINED KINGDOM (dungeon drop → fallen_keep) ===
   fallen_squire: {
     name: 'Fallen Squire', color: '#d8c9a0', ai: 'charger',
     hp: 3400, spd: 62, dmg: 230, bspd: 180, atkSpd: 1.8, range: 190, radius: 15, xp: 36,
-    portalDrop: { type: 'ruined_keep', chance: 0.05 }, uniqueDrop: { base: 'u_squire_helm', chance: 0.03 }
+    portalDrop: { type: 'fallen_keep', chance: 0.05 }, uniqueDrop: { base: 'u_squire_helm', chance: 0.03 }
   },
   cursed_archer: {
     name: 'Cursed Archer', color: '#b8a878', ai: 'chaser',
     hp: 2400, spd: 72, dmg: 200, bspd: 300, atkSpd: 1.3, range: 300, radius: 12, xp: 34,
-    portalDrop: { type: 'ruined_keep', chance: 0.05 }, uniqueDrop: { base: 'u_cursed_ring', chance: 0.03 }
+    portalDrop: { type: 'fallen_keep', chance: 0.05 }, uniqueDrop: { base: 'u_cursed_ring', chance: 0.03 }
   },
   grave_priest: {
     name: 'Grave Priest', color: '#9aa0b8', ai: 'spreader',
     hp: 3000, spd: 48, dmg: 210, bspd: 250, atkSpd: 2.0, range: 290, radius: 14, xp: 38,
-    portalDrop: { type: 'ruined_keep', chance: 0.05 }, uniqueDrop: { base: 'u_grave_charm', chance: 0.03 }
+    portalDrop: { type: 'fallen_keep', chance: 0.05 }, uniqueDrop: { base: 'u_grave_charm', chance: 0.03 }
   },
 
-  // === BIOME: ASTRAL DESERT (dungeon drop → astral_dunes) ===
+  // === BIOME: ASTRAL DESERT (dungeon drop → astral_tomb) ===
   star_scarab: {
     name: 'Star Scarab', color: '#ffe08a', ai: 'charger',
     hp: 3600, spd: 70, dmg: 240, bspd: 190, atkSpd: 1.7, range: 200, radius: 15, xp: 38,
-    portalDrop: { type: 'astral_dunes', chance: 0.05 }, uniqueDrop: { base: 'u_scarab_band', chance: 0.03 }
+    portalDrop: { type: 'astral_tomb', chance: 0.05 }, uniqueDrop: { base: 'u_scarab_band', chance: 0.03 }
   },
   mirage_stalker: {
     name: 'Mirage Stalker', color: '#ffd166', ai: 'skirmisher',
     hp: 2200, spd: 135, dmg: 180, bspd: 330, atkSpd: 1.0, range: 280, radius: 11, xp: 34,
-    portalDrop: { type: 'astral_dunes', chance: 0.05 }, uniqueDrop: { base: 'u_mirage_cloak', chance: 0.03 }
+    portalDrop: { type: 'astral_tomb', chance: 0.05 }, uniqueDrop: { base: 'u_mirage_cloak', chance: 0.03 }
   },
   sunseer: {
     name: 'Sunseer', color: '#ffbf47', ai: 'orbiter',
     hp: 3200, spd: 42, dmg: 210, bspd: 240, atkSpd: 2.1, range: 250, radius: 15, xp: 40,
-    portalDrop: { type: 'astral_dunes', chance: 0.05 }, uniqueDrop: { base: 'u_sunseer_amulet', chance: 0.03 }
+    portalDrop: { type: 'astral_tomb', chance: 0.05 }, uniqueDrop: { base: 'u_sunseer_amulet', chance: 0.03 }
   },
 
   // === BOSSES ===
@@ -377,6 +377,38 @@ const MOB_DEFS = {
   void_harbinger: {
     name: 'The Rift Harbinger', color: '#c04bff', ai: 'boss_void',
     hp: 95000, spd: 45,  dmg: 400,  bspd: 280, atkSpd: 0.85, range: 9999, radius: 30, xp: 600,
+    portalDrop: null, isBoss: true
+  },
+
+  // === BIOME DUNGEON BOSSES (reuse existing boss AIs; distinct colors/stats) ===
+  singularity_tyrant: {
+    name: 'Singularity Tyrant', color: '#7a3bff', ai: 'boss_void',
+    hp: 110000, spd: 45, dmg: 440, bspd: 290, atkSpd: 0.85, range: 9999, radius: 32, xp: 720,
+    portalDrop: null, isBoss: true
+  },
+  frost_monarch: {
+    name: 'Frost Monarch', color: '#7fd8f5', ai: 'boss_mycelian',
+    hp: 66000, spd: 38, dmg: 340, bspd: 250, atkSpd: 1.1, range: 9999, radius: 28, xp: 430,
+    portalDrop: null, isBoss: true
+  },
+  infernal_lord: {
+    name: 'Infernal Lord', color: '#ff5a2a', ai: 'boss_goblin',
+    hp: 88000, spd: 52, dmg: 420, bspd: 290, atkSpd: 0.9, range: 9999, radius: 30, xp: 560,
+    portalDrop: null, isBoss: true
+  },
+  plague_mother: {
+    name: 'Plague Mother', color: '#7bd33a', ai: 'boss_mycelian',
+    hp: 70000, spd: 34, dmg: 350, bspd: 250, atkSpd: 1.1, range: 9999, radius: 30, xp: 450,
+    portalDrop: null, isBoss: true
+  },
+  fallen_monarch: {
+    name: 'The Fallen King', color: '#c9bd8a', ai: 'boss_goblin',
+    hp: 72000, spd: 50, dmg: 360, bspd: 270, atkSpd: 1.0, range: 9999, radius: 29, xp: 470,
+    portalDrop: null, isBoss: true
+  },
+  astral_pharaoh: {
+    name: 'Astral Pharaoh', color: '#ffd166', ai: 'boss_void',
+    hp: 90000, spd: 46, dmg: 410, bspd: 280, atkSpd: 0.9, range: 9999, radius: 30, xp: 590,
     portalDrop: null, isBoss: true
   }
 }
@@ -405,9 +437,41 @@ function spawnMob(key, x, y) {
   }
 }
 
-// Update a single mob — moves, shoots, wall collision
+// --- Offscreen culling & AI sleep (large biome world perf) ---------------
+// Tunable margins past the screen edge. Bosses ignore both (always active/drawn).
+// WAKE margin > CULL margin guarantees any rendered mob is also awake, so
+// visible mobs always behave exactly as before.
+const MOB_WAKE_MARGIN = 460   // px past the camera view: normal mobs run full AI
+const MOB_CULL_MARGIN = 160   // px past the camera view: normal mobs still drawn
+// Tiny debug counters — inspect from the console with mobStats().
+const MobDebug = { active: 0, sleeping: 0, rendered: 0,
+  reset() { this.active = 0; this.sleeping = 0; this.rendered = 0 } }
+function mobStats() {
+  console.log(`mobs — active:${MobDebug.active} sleeping:${MobDebug.sleeping} rendered:${MobDebug.rendered}`)
+  return { ...MobDebug }
+}
+function mobWakeRadius2() {
+  const r = Math.hypot(canvas.width, canvas.height) / 2 + MOB_WAKE_MARGIN
+  return r * r
+}
+
+// Update a single mob — moves, shoots, wall collision.
+// Normal mobs far from the player sleep: they keep existing but skip expensive
+// AI (so they don't shoot) and hold still until the player gets close again.
 function updateMob(e, dt, char, tileMap) {
   if (!e.alive) return
+  if (!e.isBoss && char) {
+    const dx = char.x - e.x, dy = char.y - e.y
+    if (dx * dx + dy * dy > mobWakeRadius2()) {
+      e.asleep = true
+      e.vx = 0; e.vy = 0                 // no drift while sleeping
+      if (e.hitFlash > 0) e.hitFlash -= dt
+      MobDebug.sleeping++
+      return
+    }
+  }
+  e.asleep = false
+  MobDebug.active++
   MOB_AI[e.ai](e, dt, char, tileMap)
   moveWithCollision(e, e.vx, e.vy, dt, e.radius, tileMap)
   if (e.hitFlash > 0) e.hitFlash -= dt
@@ -416,6 +480,15 @@ function updateMob(e, dt, char, tileMap) {
 // Render a single mob (world-space coords, cam applied externally via offX/offY)
 function renderMob(e, offX, offY) {
   const sx = e.x + offX, sy = e.y + offY
+  // Offscreen culling: skip normal mobs well outside the camera view. Radial
+  // test about screen center keeps it correct under screen rotation. Bosses
+  // always render so dungeon fights are never affected.
+  if (!e.isBoss) {
+    const cx = sx - canvas.width / 2, cy = sy - canvas.height / 2
+    const cull = Math.hypot(canvas.width, canvas.height) / 2 + MOB_CULL_MARGIN
+    if (cx * cx + cy * cy > cull * cull) return
+  }
+  MobDebug.rendered++
   const flash = e.hitFlash > 0
 
   // Shadow
@@ -495,14 +568,50 @@ const DUNGEONS = {
     mobsPerRoom: { min: 2, max: 4 }
   },
 
-  // === BIOME DUNGEONS (PLACEHOLDERS) ===
-  // Deferred: these drop as portals from biome mobs but entry is disabled in
-  // world.js (shows a "not yet open" notice). Only label fields are needed.
-  // Fill in mobs/boss/rooms/etc. later to turn any of these into a real dungeon.
-  dm_rift:       { name: 'Dark Matter Rift',  stars: 6, color: '#9b7bff', placeholder: true },
-  snow_keep:     { name: 'Frostspire Keep',   stars: 5, color: '#bfe6f5', placeholder: true },
-  hell_pit:      { name: 'Infernal Pit',      stars: 6, color: '#ff7a3c', placeholder: true },
-  toxic_hollow:  { name: 'Spore Hollow',      stars: 5, color: '#9be84a', placeholder: true },
-  ruined_keep:   { name: 'Ruined Throne',     stars: 5, color: '#d8c9a0', placeholder: true },
-  astral_dunes:  { name: 'Astral Tomb',       stars: 6, color: '#ffe08a', placeholder: true }
+  // === BIOME DUNGEONS (real, enterable) ===
+  // Each reuses its biome's 3 mobs + a dedicated boss, with a themed palette.
+  // Short layouts (6–10 rooms) → ~30s–3min runs. Exclusive loot via items.js
+  // EXCLUSIVES_BY_DUNGEON (boss high chance, basic mobs rare).
+  dark_matter_core: {
+    name: 'Dark Matter Core', stars: 6, color: '#9b7bff',
+    tileColor: { floor: '#16121f', wall: '#0a0712', accent: '#3a1f6e' },
+    mobs: ['matter_wraith', 'gravity_maw', 'null_apostle'],
+    boss: 'singularity_tyrant',
+    rooms: { min: 6, max: 9 }, roomSize: { min: 5, max: 9 }, mobsPerRoom: { min: 2, max: 4 }
+  },
+  frozen_catacombs: {
+    name: 'Frozen Catacombs', stars: 4, color: '#bfe6f5',
+    tileColor: { floor: '#2a3742', wall: '#16222b', accent: '#5b8aa6' },
+    mobs: ['frost_skater', 'icebound_archer', 'snow_golem'],
+    boss: 'frost_monarch',
+    rooms: { min: 6, max: 9 }, roomSize: { min: 5, max: 9 }, mobsPerRoom: { min: 2, max: 3 }
+  },
+  infernal_pit: {
+    name: 'Infernal Pit', stars: 5, color: '#ff7a3c',
+    tileColor: { floor: '#2c0f0b', wall: '#180704', accent: '#6e2410' },
+    mobs: ['ember_imp', 'chainscourge', 'lava_brute'],
+    boss: 'infernal_lord',
+    rooms: { min: 6, max: 10 }, roomSize: { min: 5, max: 9 }, mobsPerRoom: { min: 2, max: 4 }
+  },
+  plague_grotto: {
+    name: 'Plague Grotto', stars: 4, color: '#9be84a',
+    tileColor: { floor: '#1d2a15', wall: '#0e1709', accent: '#3f7a2a' },
+    mobs: ['spore_crawler', 'venom_cap', 'mycelium_horror'],
+    boss: 'plague_mother',
+    rooms: { min: 6, max: 9 }, roomSize: { min: 5, max: 10 }, mobsPerRoom: { min: 2, max: 3 }
+  },
+  fallen_keep: {
+    name: 'Fallen Keep', stars: 4, color: '#d8c9a0',
+    tileColor: { floor: '#2b2820', wall: '#171510', accent: '#5a5238' },
+    mobs: ['fallen_squire', 'cursed_archer', 'grave_priest'],
+    boss: 'fallen_monarch',
+    rooms: { min: 6, max: 10 }, roomSize: { min: 5, max: 9 }, mobsPerRoom: { min: 2, max: 4 }
+  },
+  astral_tomb: {
+    name: 'Astral Tomb', stars: 5, color: '#ffe08a',
+    tileColor: { floor: '#2a2238', wall: '#150f22', accent: '#6e5aa0' },
+    mobs: ['star_scarab', 'mirage_stalker', 'sunseer'],
+    boss: 'astral_pharaoh',
+    rooms: { min: 6, max: 10 }, roomSize: { min: 5, max: 9 }, mobsPerRoom: { min: 2, max: 4 }
+  }
 }
