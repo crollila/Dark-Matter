@@ -124,7 +124,7 @@ Use for:
 - Bullet/particle/floating text helpers.
 - Utility helpers like compact number/star rendering if present.
 
-- Screen rotation: `beginWorldTransform`/`endWorldTransform` wrap world-space drawing (rotates about screen center); `screenToWorld`/`worldToScreen` invert/apply the rotation so mouse aim stays correct. HUD/prompts drawn outside the transform. `renderTileMap` pads its tile-draw span to half the screen diagonal when rotated so rotated corners are filled (no black wedges). Player body (`renderPlayer` in ui.js) is inside the transform so it rotates with the world; a world-anchored facing pip makes that visible for symmetric class shapes; aim dot still uses `screenToWorld(mouse)`. Rotation dir: **Q = left/CCW, E = right/CW** (main.js `updateScreenRotation`), Z resets.
+- Screen rotation: `beginWorldTransform`/`endWorldTransform` wrap world-space drawing (rotates about screen center); `screenToWorld`/`worldToScreen` invert/apply the rotation so mouse aim stays correct. HUD/prompts drawn outside the transform. `renderTileMap` pads its tile-draw span to half the screen diagonal when rotated so rotated corners are filled (no black wedges). `renderTileMap` also caps the span at `Settings.tileRenderRadius` (tiles→px) and circular-culls tiles beyond that radius from the camera (visual only; collision/minimap read full map). Default 60 tiles. Player body (`renderPlayer` in ui.js) is inside the transform so it rotates with the world; a world-anchored facing pip makes that visible for symmetric class shapes; aim dot still uses `screenToWorld(mouse)`. Rotation dir: **Q = left/CCW, E = right/CW** (main.js `updateScreenRotation`), Z resets.
 - `inputToWorld(vx,vy)`: converts SCREEN-relative WASD/arrow input → world velocity (W always = up on screen at any rotation). Used by all zone movement.
 - `drawUpright(ax,ay,fn)`: inside the world transform, draws `fn()` upright (counter-rotated) anchored at offset point `ax,ay` (local +y = screen-down). Used for under-char HP/MP bars (ui.js), loot bags + beam/bounce (items.js `renderLootBag`), portal labels (world.js, now BELOW portal), float texts (engine.js). Loot preview (outside transform) anchors via `worldToScreen`.
 
@@ -261,7 +261,7 @@ Use for:
 ### `js/dungeon.js`
 - Dungeon zone runtime.
 - Dungeon combat loop.
-- Boss kill hook. `bossDamage = {[charId]: total}` (per-player damage map, reset in `init`) accumulated on each player-bullet boss hit. `onBossKill` gates loot: only spawns if `dealt >= 0.02 * boss.maxHp` (single-player passes naturally), else float "No loot: not enough boss contribution". Boss bag is PRIVATE (owner=char.id, source 'boss'). Mob drops are PUBLIC mob bags. Empty bags (single-item picked) removed in the loot loop via `bagIsEmpty`. `init` registers `window.activeLootZone`.
+- Boss kill hook. `bossDamage = {[charId]: total}` (per-player damage map, reset in `init`) accumulated on each player-bullet boss hit. `onBossKill` first spawns a return portal (sets boss tile to `T_PORTAL_DUNGEON`, BEFORE the loot gate so it always appears; reuses the exit-tile prompt + enter-to-`world` logic, which already yields to loot pickup via `!nearBag`), then gates loot: only spawns if `dealt >= 0.02 * boss.maxHp` (single-player passes naturally), else float "No loot: not enough boss contribution". Boss bag is PRIVATE (owner=char.id, source 'boss'). Mob drops are PUBLIC mob bags. Empty bags (single-item picked) removed in the loot loop via `bagIsEmpty`. `init` registers `window.activeLootZone`.
 - Boss loot bag spawning.
 - Dungeon loot bags/previews.
 - Dungeon exit portal behavior.
@@ -329,8 +329,8 @@ Use for:
 
 ### `js/options.js`
 - ESC options menu (gameplay zones only).
-- Rebindable hotkeys: click a row → press a key (stored as `KeyboardEvent.code`). Graphics placeholders, screen rotation +/- + reset, reset-hotkeys button. PERFORMANCE section: render distance + AI wake distance +/- steppers (clamped via `PERF_LIMITS`, defaults `PERF_DEFAULTS` 1500/1800).
-- `Settings` global (incl. `Settings.keys`, `renderDistance`, `aiWakeDistance`) + localStorage persistence (`realm_settings`); unknown/old settings fall back to defaults.
+- Rebindable hotkeys: click a row → press a key (stored as `KeyboardEvent.code`). Graphics placeholders, screen rotation +/- + reset, reset-hotkeys button. PERFORMANCE section: render distance + AI wake distance + tile render radius (blocks) +/- steppers (clamped via `PERF_LIMITS`, defaults `PERF_DEFAULTS` 1500/1800/60). `tileRenderRadius` (tiles) feeds `renderTileMap` circular tile cull.
+- `Settings` global (incl. `Settings.keys`, `renderDistance`, `aiWakeDistance`, `tileRenderRadius`) + localStorage persistence (`realm_settings`); unknown/old settings fall back to defaults.
 - `DEFAULT_KEYS`: interact=Control, inventory=I, returnNexus=R, ability=Space, ring2=Alt. Move/Shoot/Chat/Command/Options are fixed (Esc/Enter/'/' can't be bound).
 - Global `Hotkeys` helper: `Hotkeys.code/name/down(action)` (modifier-side-agnostic). Zones use this instead of hardcoded `keys['KeyE']` etc.
 - Screen rotation is now LIVE: hold Q/E to rotate (handled in `main.js` `updateScreenRotation`); render transform + aim conversion live in `engine.js`.
@@ -405,6 +405,9 @@ Keep updated.
 - [x] Item drag/drop: drag a grid item to another cell (move/swap, slot-stable), to an equipment slot (equip), or outside the window to DROP it on the ground as a private loot bag. Plain click still equips.
 - [x] Loot chest single-item pickup: click an item row in the chest preview to take just that item (inventory room permitting); pick-all ([E]) still works; chest removes only the picked item; empty chests vanish.
 - [x] Boss loot contribution gate: per-player `bossDamage` map; loot only for a player who dealt ≥2% of boss max HP (solo passes), else "No loot" feedback. Boss flow unaffected.
+- [x] Boss death return portal: `onBossKill` sets the boss tile to `T_PORTAL_DUNGEON` (return to world), spawned before the loot gate so it appears even with no loot; loot pickup keeps interaction priority (portal entry only when not on a loot bag).
+- [x] Tile render radius option (`Settings.tileRenderRadius`, blocks/tiles, default 60, clamped 20–120): `renderTileMap` caps span + circular-culls distant tiles (visual only; collision + minimap unaffected).
+- [x] Player body rotates with world rotation: a bright world-anchored facing wedge on the body makes rotation visible for all class shapes; HP/MP bars stay upright via `drawUpright`; aim dot/shooting still use mouse aim.
 - [x] Loot ownership: bags carry `ownerId`/`visibility`/`source`. Boss bags PRIVATE to earner; mob/common bags PUBLIC (first to pick). Access checks (`lootBagAccessible`) default old/partial bags to safe-accessible. Data-only, no networking.
 
 ---

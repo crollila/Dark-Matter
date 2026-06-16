@@ -24,10 +24,15 @@ const DEFAULT_KEYS = {
 // Fixed render/AI distances (world px, NOT window-size based). Mobs farther
 // than renderDistance from the camera aren't drawn; mobs farther than
 // aiWakeDistance from the player sleep (no AI). Bosses ignore both.
-const PERF_DEFAULTS = { renderDistance: 1500, aiWakeDistance: 1800 }
+// tileRenderRadius is in TILES (blocks): only tiles within this circular radius
+// of the camera are drawn (visual only — collision/gameplay data is untouched,
+// minimap unaffected). Caps tile count when zoomed/large windows. Default sized
+// to fully cover normal screens (60 tiles = 1920px radius).
+const PERF_DEFAULTS = { renderDistance: 1500, aiWakeDistance: 1800, tileRenderRadius: 60 }
 const PERF_LIMITS = {
   renderDistance: { min: 600, max: 3000, step: 100 },
   aiWakeDistance: { min: 700, max: 4000, step: 100 },
+  tileRenderRadius: { min: 20, max: 120, step: 4 },
 }
 
 const Settings = {
@@ -36,6 +41,7 @@ const Settings = {
   screenRotation: 0,         // degrees; Q/E rotate the view (applied in render)
   renderDistance: PERF_DEFAULTS.renderDistance,
   aiWakeDistance: PERF_DEFAULTS.aiWakeDistance,
+  tileRenderRadius: PERF_DEFAULTS.tileRenderRadius,
   keys: { ...DEFAULT_KEYS },
 }
 window.Settings = Settings
@@ -95,6 +101,7 @@ const Options = (() => {
       if (typeof s.screenRotation === 'number') Settings.screenRotation = ((Math.round(s.screenRotation) % 360) + 360) % 360
       if (typeof s.renderDistance === 'number') Settings.renderDistance = clamp(Math.round(s.renderDistance), PERF_LIMITS.renderDistance.min, PERF_LIMITS.renderDistance.max)
       if (typeof s.aiWakeDistance === 'number') Settings.aiWakeDistance = clamp(Math.round(s.aiWakeDistance), PERF_LIMITS.aiWakeDistance.min, PERF_LIMITS.aiWakeDistance.max)
+      if (typeof s.tileRenderRadius === 'number') Settings.tileRenderRadius = clamp(Math.round(s.tileRenderRadius), PERF_LIMITS.tileRenderRadius.min, PERF_LIMITS.tileRenderRadius.max)
       if (s.keys && typeof s.keys === 'object') {
         for (const k in DEFAULT_KEYS) {
           if (typeof s.keys[k] === 'string') Settings.keys[k] = s.keys[k]
@@ -147,7 +154,7 @@ const Options = (() => {
   function render() {
     if (!open) return
     const PW = 460
-    const PH = Math.min(canvas.height - 12, 612)
+    const PH = Math.min(canvas.height - 12, 648)
     const px = ((canvas.width - PW) / 2) | 0
     const py = Math.max(8, ((canvas.height - PH) / 2) | 0)
 
@@ -247,6 +254,13 @@ const Options = (() => {
     drawStep(awMinus, '-'); drawStep(awPlus, '+')
     ctx.fillStyle = UI.text; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'
     ctx.fillText(Settings.aiWakeDistance + '', px + PW - 100, y + 5); ctx.textAlign = 'left'
+    y += 30
+    ctx.fillStyle = UI.text; ctx.font = '11px monospace'; ctx.fillText('Tile render radius (blocks)', px + 24, y + 5)
+    const trMinus = { x: px + PW - 170, y: y - 9, w: 24, h: 22 }
+    const trPlus  = { x: px + PW - 54,  y: y - 9, w: 24, h: 22 }
+    drawStep(trMinus, '-'); drawStep(trPlus, '+')
+    ctx.fillStyle = UI.text; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'
+    ctx.fillText(Settings.tileRenderRadius + '', px + PW - 100, y + 5); ctx.textAlign = 'left'
     y += 28
     ctx.fillStyle = UI.textFaint; ctx.font = '9px monospace'
     ctx.fillText('Lower = better performance. Bosses always render/active.', px + 24, y)
@@ -254,7 +268,7 @@ const Options = (() => {
     ctx.fillStyle = UI.textFaint; ctx.font = '10px monospace'; ctx.textAlign = 'center'
     ctx.fillText('Esc to close', px + PW / 2, py + PH - 10); ctx.textAlign = 'left'
 
-    _L = { px, py, PW, PH, closeBtn, keyRows, resetKeys, hideToggle, opMinus, opTrack, opPlus, rotMinus, rotPlus, rotReset, rdMinus, rdPlus, awMinus, awPlus }
+    _L = { px, py, PW, PH, closeBtn, keyRows, resetKeys, hideToggle, opMinus, opTrack, opPlus, rotMinus, rotPlus, rotReset, rdMinus, rdPlus, awMinus, awPlus, trMinus, trPlus }
   }
 
   function onClick(x, y) {
@@ -272,11 +286,13 @@ const Options = (() => {
     if (hit(L.rotMinus, x, y)) { Settings.screenRotation = ((Settings.screenRotation - 15) % 360 + 360) % 360; save(); return true }
     if (hit(L.rotPlus, x, y))  { Settings.screenRotation = (Settings.screenRotation + 15) % 360; save(); return true }
     if (hit(L.rotReset, x, y)) { Settings.screenRotation = 0; save(); return true }
-    const rd = PERF_LIMITS.renderDistance, aw = PERF_LIMITS.aiWakeDistance
+    const rd = PERF_LIMITS.renderDistance, aw = PERF_LIMITS.aiWakeDistance, tr = PERF_LIMITS.tileRenderRadius
     if (hit(L.rdMinus, x, y)) { Settings.renderDistance = clamp(Settings.renderDistance - rd.step, rd.min, rd.max); save(); return true }
     if (hit(L.rdPlus, x, y))  { Settings.renderDistance = clamp(Settings.renderDistance + rd.step, rd.min, rd.max); save(); return true }
     if (hit(L.awMinus, x, y)) { Settings.aiWakeDistance = clamp(Settings.aiWakeDistance - aw.step, aw.min, aw.max); save(); return true }
     if (hit(L.awPlus, x, y))  { Settings.aiWakeDistance = clamp(Settings.aiWakeDistance + aw.step, aw.min, aw.max); save(); return true }
+    if (hit(L.trMinus, x, y)) { Settings.tileRenderRadius = clamp(Settings.tileRenderRadius - tr.step, tr.min, tr.max); save(); return true }
+    if (hit(L.trPlus, x, y))  { Settings.tileRenderRadius = clamp(Settings.tileRenderRadius + tr.step, tr.min, tr.max); save(); return true }
     return true   // swallow all clicks while the menu is open
   }
 

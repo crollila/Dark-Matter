@@ -240,6 +240,17 @@ const DungeonZone = (() => {
   function onBossKill(char, boss) {
     spawnFloatText(G.char.x, G.char.y - 50, 'BOSS DEFEATED!', '#ffd700')
 
+    // Return portal under the boss body → back to the world. Spawned BEFORE the
+    // loot gate so it always appears, even when loot is withheld for low boss
+    // contribution. Reuses the dungeon-exit tile, so the existing [interact]
+    // prompt + enter logic apply — and that logic already yields to loot pickup
+    // (it only fires when the player isn't standing on a loot bag).
+    if (boss && map) {
+      const ptx = (boss.x / TILE) | 0, pty = (boss.y / TILE) | 0
+      const ut = map.get(ptx, pty)
+      if (ut !== T_WALL && ut !== T_VOID) map.set(ptx, pty, T_PORTAL_DUNGEON)
+    }
+
     // Loot-contribution gate: a player only earns boss loot if they dealt at
     // least 2% of the boss's max HP. Single-player solo kills pass naturally;
     // the per-player bossDamage map is what multiplayer would consult per player.

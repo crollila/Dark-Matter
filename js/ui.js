@@ -609,12 +609,18 @@ function renderPlayer(char, offX, offY) {
   }
   ctx.shadowBlur = 0
 
-  // World-anchored facing pip: a fixed marker on the body that rotates WITH the
-  // world (drawn inside the world transform, no counter-rotation), so the body
-  // visibly stays attached to the map even for the rotationally-symmetric class
-  // shapes. Distinct from the mouse aim dot below.
-  ctx.fillStyle = 'rgba(0,0,0,0.45)'
-  ctx.beginPath(); ctx.arc(sx, sy - PLAYER_RADIUS * 0.5, 2.5, 0, Math.PI*2); ctx.fill()
+  // World-anchored facing marker: a bright wedge on the body's forward edge,
+  // drawn inside the world transform with NO counter-rotation, so it rotates
+  // WITH the map/screen rotation (Q/E). This makes the body's rotation clearly
+  // visible even for the rotationally-symmetric (circle) class shapes — the
+  // body now visibly turns with the world. Distinct from the mouse aim dot.
+  ctx.fillStyle = '#0a0a12'
+  ctx.beginPath()
+  ctx.moveTo(sx, sy - PLAYER_RADIUS - 5)
+  ctx.lineTo(sx - 5, sy - PLAYER_RADIUS + 4)
+  ctx.lineTo(sx + 5, sy - PLAYER_RADIUS + 4)
+  ctx.closePath(); ctx.fill()
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.2; ctx.stroke()
 
   // Direction dot (toward mouse)
   const [wx, wy] = screenToWorld(mouse.x, mouse.y)

@@ -275,17 +275,26 @@ function renderTileMap(tileMap, labels) {
   // span out to that radius so rotated corners are filled (no black wedges).
   const reach = screenRotationRad()
     ? Math.sqrt(canvas.width*canvas.width + canvas.height*canvas.height) / 2 : 0
-  const spanX = canvas.width/2 + reach
-  const spanY = canvas.height/2 + reach
+  // Tile render radius (Options, in tiles → world px): cap how far out tiles are
+  // drawn so a huge/zoomed-out view doesn't paint thousands of tiles. Visual
+  // only — collision/gameplay/minimap read the full map and are unaffected.
+  const maxR = ((typeof Settings !== 'undefined' && Settings.tileRenderRadius) || 60) * TILE
+  const spanX = Math.min(canvas.width/2 + reach, maxR)
+  const spanY = Math.min(canvas.height/2 + reach, maxR)
   const startX = Math.max(0, ((cam.x - spanX) / TILE) | 0)
   const endX   = Math.min(tileMap.w, (((cam.x + spanX) / TILE) | 0) + 2)
   const startY = Math.max(0, ((cam.y - spanY) / TILE) | 0)
   const endY   = Math.min(tileMap.h, (((cam.y + spanY) / TILE) | 0) + 2)
+  // Circular cull: skip tiles whose center is beyond the radius (+1 tile pad so
+  // edge tiles aren't clipped). Cheaper than the square span when zoomed out.
+  const cullR2 = (maxR + TILE) * (maxR + TILE)
 
   for (let ty = startY; ty < endY; ty++) {
     for (let tx = startX; tx < endX; tx++) {
       const t = tileMap.get(tx, ty)
       if (t === T_VOID) continue
+      const cdx = tx * TILE + TILE/2 - cam.x, cdy = ty * TILE + TILE/2 - cam.y
+      if (cdx*cdx + cdy*cdy > cullR2) continue
       const px = tx * TILE + offX, py = ty * TILE + offY
       const alt = (tx + ty) % 2 === 0
       let color = TILE_COLORS[t] || '#111'
