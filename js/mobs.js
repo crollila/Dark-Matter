@@ -428,6 +428,11 @@ function spawnMob(key, x, y) {
     ai: def.ai, isBoss: !!def.isBoss,
     portalDrop: def.portalDrop,
     uniqueDrop: def.uniqueDrop || null,
+    // Aggro/leash (optional per-def overrides; helpers supply safe defaults).
+    aggroRange: def.aggroRange != null ? def.aggroRange : null,
+    deAggroRange: def.deAggroRange != null ? def.deAggroRange : null,
+    homeLeash: def.homeLeash != null ? def.homeLeash : null,
+    aggro: false,
     // ai state
     shootTimer: Math.random() * 2,
     phase: Math.random() * Math.PI * 2,
@@ -466,18 +471,85 @@ function mobWakeRadius2() {
   return r * r
 }
 
+// --- Aggro / leash ranges (world px) -------------------------------------
+// Per-mob overrides (def.aggroRange etc.) win; otherwise safe defaults by AI
+// type. Bosses use a large activation range. deAggro adds hysteresis so mobs
+// don't flicker at the edge. homeLeash caps how far a mob strays from its
+// spawn before giving up the chase (biome mobs are kept tight to their cluster).
+function _aggroRange(e) {
+  if (e.aggroRange != null) return e.aggroRange
+  if (e.isBoss) return 1400
+  switch (e.ai) {
+    case 'chaser':     return 360   // small/basic
+    case 'spreader':   return 440   // ranged
+    case 'orbiter':    return 440   // ranged
+    case 'skirmisher': return 480   // ranged/skirmisher
+    case 'charger':    return 540   // brute/charger
+    default:           return 420
+  }
+}
+function _deAggroRange(e) {
+  if (e.deAggroRange != null) return e.deAggroRange
+  return _aggroRange(e) + 260
+}
+function _homeLeash(e) {
+  if (e.homeLeash != null) return e.homeLeash
+  if (e.isBoss) return Infinity
+  return e.biome ? 900 : 1500
+}
+
 // Update a single mob — moves, shoots, wall collision.
 // Normal mobs far from the player sleep: they keep existing but skip expensive
 // AI (so they don't shoot) and hold still until the player gets close again.
 function updateMob(e, dt, char, tileMap) {
   if (!e.alive) return
+  // Bosses are always active (never sleep/leash) so arena fights are unaffected.
   if (!e.isBoss && char) {
     const dx = char.x - e.x, dy = char.y - e.y
-    if (dx * dx + dy * dy > mobWakeRadius2()) {
-      e.asleep = true
+    const d2 = dx * dx + dy * dy
+    // Far-away perf sleep (radial): keep existing, but also drop aggro so a
+    // re-approached mob must re-acquire. Sleeping mobs never shoot.
+    if (d2 > mobWakeRadius2()) {
+      e.asleep = true; e.aggro = false
       e.vx = 0; e.vy = 0                 // no drift while sleeping
       if (e.hitFlash > 0) e.hitFlash -= dt
       MobDebug.sleeping++
+      return
+    }
+    e.asleep = false
+
+    // Leash checks: dragged too far from home, or pulled out of its biome.
+    let outOfHome = false
+    if (e.homeX != null) {
+      const hx = e.x - e.homeX, hy = e.y - e.homeY
+      const lr = _homeLeash(e)
+      if (lr !== Infinity && hx * hx + hy * hy > lr * lr) outOfHome = true
+    }
+    if (e.biome && tileMap && tileMap.biomeAt) {
+      const tx = (e.x / TILE) | 0, ty = (e.y / TILE) | 0
+      if (tileMap.biomeAt(tx, ty) !== e.biome) outOfHome = true
+    }
+
+    // Aggro state machine with hysteresis. Out-of-leash forces de-aggro.
+    const agr = _aggroRange(e)
+    if (!e.aggro) {
+      if (!outOfHome && d2 < agr * agr) e.aggro = true
+    } else {
+      const der = _deAggroRange(e)
+      if (outOfHome || d2 > der * der) e.aggro = false
+    }
+
+    // Not aggroed → return toward home (or hold still), no attacks.
+    if (!e.aggro) {
+      MobDebug.active++
+      const hx = (e.homeX != null) ? e.homeX : e.x
+      const hy = (e.homeY != null) ? e.homeY : e.y
+      const rx = hx - e.x, ry = hy - e.y
+      const rd = Math.sqrt(rx * rx + ry * ry)
+      if (rd > 6) { e.vx = rx / rd * e.spd * 0.6; e.vy = ry / rd * e.spd * 0.6 }
+      else { e.vx = 0; e.vy = 0 }
+      moveWithCollision(e, e.vx, e.vy, dt, e.radius, tileMap)
+      if (e.hitFlash > 0) e.hitFlash -= dt
       return
     }
   }
@@ -523,22 +595,25 @@ function renderMob(e, offX, offY) {
   }
   ctx.shadowBlur = 0
 
-  // HP bar
+  // HP bar (+ boss name) — anchored at the mob but drawn upright via drawUpright
+  // so it stays readable and pinned above the enemy at any screen rotation
+  // (matches the under-player HP/MP bars). Its POSITION still tracks the world.
   const bw = e.radius * 2.4, bh = 4
-  const bx = sx - bw/2, by = sy - e.radius - 9
-  ctx.fillStyle = '#111'
-  ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2)
-  ctx.fillStyle = e.isBoss ? '#ff6b6b' : '#4caf50'
-  ctx.fillRect(bx, by, bw * (e.hp / e.maxHp), bh)
-
-  // Boss name
-  if (e.isBoss) {
-    ctx.fillStyle = '#ffd700'
-    ctx.font = 'bold 11px monospace'
-    ctx.textAlign = 'center'
-    ctx.fillText(e.name, sx, sy - e.radius - 14)
-    ctx.textAlign = 'left'
-  }
+  const hpFrac = e.maxHp ? Math.max(0, Math.min(1, e.hp / e.maxHp)) : 0
+  drawUpright(sx, sy, () => {
+    const bx = -bw/2, by = -e.radius - 9
+    ctx.fillStyle = '#111'
+    ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2)
+    ctx.fillStyle = e.isBoss ? '#ff6b6b' : '#4caf50'
+    ctx.fillRect(bx, by, bw * hpFrac, bh)
+    if (e.isBoss) {
+      ctx.fillStyle = '#ffd700'
+      ctx.font = 'bold 11px monospace'
+      ctx.textAlign = 'center'
+      ctx.fillText(e.name, 0, by - 5)
+      ctx.textAlign = 'left'
+    }
+  })
 }
 
 // --- DUNGEON DEFINITIONS ---

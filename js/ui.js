@@ -609,6 +609,13 @@ function renderPlayer(char, offX, offY) {
   }
   ctx.shadowBlur = 0
 
+  // World-anchored facing pip: a fixed marker on the body that rotates WITH the
+  // world (drawn inside the world transform, no counter-rotation), so the body
+  // visibly stays attached to the map even for the rotationally-symmetric class
+  // shapes. Distinct from the mouse aim dot below.
+  ctx.fillStyle = 'rgba(0,0,0,0.45)'
+  ctx.beginPath(); ctx.arc(sx, sy - PLAYER_RADIUS * 0.5, 2.5, 0, Math.PI*2); ctx.fill()
+
   // Direction dot (toward mouse)
   const [wx, wy] = screenToWorld(mouse.x, mouse.y)
   const ang = Math.atan2(wy - char.y, wx - char.x)

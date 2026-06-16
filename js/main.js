@@ -65,8 +65,9 @@ function updateScreenRotation(dt) {
     }
   }
   let d = 0
-  if (keys['KeyQ']) d -= 1
-  if (keys['KeyE']) d += 1
+  // Q = rotate view left / counter-clockwise; E = rotate view right / clockwise.
+  if (keys['KeyQ']) d += 1
+  if (keys['KeyE']) d -= 1
   if (!d) return
   const SPD = 100 // degrees / second
   Settings.screenRotation = (((Settings.screenRotation || 0) + d * SPD * dt) % 360 + 360) % 360

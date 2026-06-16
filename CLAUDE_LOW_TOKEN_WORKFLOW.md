@@ -124,7 +124,7 @@ Use for:
 - Bullet/particle/floating text helpers.
 - Utility helpers like compact number/star rendering if present.
 
-- Screen rotation: `beginWorldTransform`/`endWorldTransform` wrap world-space drawing (rotates about screen center); `screenToWorld`/`worldToScreen` invert/apply the rotation so mouse aim stays correct. HUD/prompts drawn outside the transform.
+- Screen rotation: `beginWorldTransform`/`endWorldTransform` wrap world-space drawing (rotates about screen center); `screenToWorld`/`worldToScreen` invert/apply the rotation so mouse aim stays correct. HUD/prompts drawn outside the transform. `renderTileMap` pads its tile-draw span to half the screen diagonal when rotated so rotated corners are filled (no black wedges). Player body (`renderPlayer` in ui.js) is inside the transform so it rotates with the world; a world-anchored facing pip makes that visible for symmetric class shapes; aim dot still uses `screenToWorld(mouse)`. Rotation dir: **Q = left/CCW, E = right/CW** (main.js `updateScreenRotation`), Z resets.
 - `inputToWorld(vx,vy)`: converts SCREEN-relative WASD/arrow input → world velocity (W always = up on screen at any rotation). Used by all zone movement.
 - `drawUpright(ax,ay,fn)`: inside the world transform, draws `fn()` upright (counter-rotated) anchored at offset point `ax,ay` (local +y = screen-down). Used for under-char HP/MP bars (ui.js), loot bags + beam/bounce (items.js `renderLootBag`), portal labels (world.js, now BELOW portal), float texts (engine.js). Loot preview (outside transform) anchors via `worldToScreen`.
 
@@ -229,7 +229,9 @@ Use for:
 - Star ratings may be on dungeon defs here.
 - `DUNGEONS` includes 3 OG (goblin_warren/fungal_cavern/void_rift) + 6 biome dungeons (dark_matter_core, frozen_catacombs, infernal_pit, plague_grotto, fallen_keep, astral_tomb, each tagged `biome: true`), each with tileColor/mobs/boss/rooms/roomSize/mobsPerRoom. Biome dungeon bosses reuse boss_void/boss_mycelian/boss_goblin AI. Unknown key → `buildDungeon` returns null → DungeonZone.init bails to world. `biome: true` keeps them out of world scatter (map.js) — they enter only via biome mob portal drops. Biome mob `portalDrop.chance` = 0.25 (used raw in world.js, no multiplier).
 
-- Perf: `updateMob`/`renderMob` do offscreen culling + AI sleep using FIXED world-px distances from Options (`Settings.renderDistance`/`aiWakeDistance`, NOT window size). `_mobRenderDist()` (cull radius from camera) + `_mobWakeDist()` (sleep radius from player; forced ≥ render+200 so visible mobs stay awake). Mobs past render dist aren't drawn; past wake dist sleep (`e.asleep=true`, skip AI). Bosses never sleep/cull. Mobs are NEVER removed from arrays when culled. Counters in `MobDebug`; `mobStats()` logs. Minimap unaffected (reads `mobs` array directly).
+- Perf: `updateMob`/`renderMob` do offscreen culling + AI sleep using FIXED world-px distances from Options (`Settings.renderDistance`/`aiWakeDistance`, NOT window size). `_mobRenderDist()` (cull radius from camera) + `_mobWakeDist()` (sleep radius from player; forced ≥ render+200 so visible mobs stay awake). Cull/sleep are RADIAL (distance², not viewport rect) so rotation-safe. Mobs past render dist aren't drawn; past wake dist sleep (`e.asleep=true`, skip AI). Bosses never sleep/cull. Mobs are NEVER removed from arrays when culled. Counters in `MobDebug`; `mobStats()` logs. Minimap unaffected (reads `mobs` array directly).
+- Aggro/leash (in `updateMob`, applies to world+dungeon): per-mob `aggroRange`/`deAggroRange`/`homeLeash` (optional def overrides) with safe AI-type defaults (`_aggroRange`/`_deAggroRange`/`_homeLeash`; bosses ALWAYS active, never sleep/leash). Mob idles/returns toward `homeX/homeY` until player enters aggro range (no shots while non-aggro or asleep). De-aggros past `deAggroRange` (hysteresis) OR when dragged off `homeLeash` / out of its `biome` tile → walks home. Getting hit by a player bullet sets `e.aggro=true` (world.js/dungeon.js). Dungeon mobs/bosses have no biome/home → idle-in-place then fight; bosses unaffected.
+- Enemy HP bar + boss name in `renderMob` use `drawUpright(sx,sy,…)` (like player bars) — pinned above the mob, readable/upright, position tracks world under rotation.
 
 Use for:
 - mob stats/AI
@@ -395,6 +397,8 @@ Keep updated.
 - [x] Minimap mouse-wheel zoom (hover, clamped 1–6x, in-memory)
 - [x] Biome terrain: ice (slippery), lava (DoT+slow)
 - [x] Biome mobs (3/biome) spawn in-biome (spread at world-gen, ~9/biome) + leash back if they wander out
+- [x] Enemy aggro/leash: per-mob aggro/de-aggro ranges (AI-type defaults, larger for bosses), idle/return-home until aggroed, de-aggro when player too far or biome mob pulled out of biome/home; player hits force-aggro; bosses always active
+- [x] Rotation polish: Q=CCW/E=CW, player body rotates with world (facing pip), enemy HP bars/boss names upright-but-attached via drawUpright, rotated tile corners filled (no black wedges)
 - [x] Biome drops: shared biome dungeon-portal drop per biome + one unique mob-only item per monster (`u_*` bases, `unique:true`, mob-only)
 - [x] Biome dungeons (dark_matter_core, frozen_catacombs, infernal_pit, plague_grotto, fallen_keep, astral_tomb): REAL/enterable — themed palette, biome's 3 mobs + dedicated boss (reuses existing boss AIs), 4 dungeon-exclusive drops each (3 armor/accessory + 1 class-locked weapon). Mob-drop-ONLY entry (25% biome mob portal drop); NOT in fixed world scatter. World scatter = OG dungeons only.
 - [x] Class-targeted loot: weapons hard class-locked; armor/accessory drops biased toward class stats via `CLASS_AFFINITY`/`baseAffinityWeight`; gamble + exclusive rolls class-filtered.

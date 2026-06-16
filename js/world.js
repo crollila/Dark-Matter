@@ -177,17 +177,8 @@ const WorldZone = (() => {
     for (let i = mobs.length - 1; i >= 0; i--) {
       const e = mobs[i]
       if (!e.alive) { mobs.splice(i, 1); continue }
+      // Aggro/leash (incl. biome return-home) is handled inside updateMob.
       updateMob(e, dt, char, map)
-      // Leash: biome mobs that drift outside their home biome get steered back
-      // toward their spawn tile (collision-respecting), so they don't wander off.
-      if (e.biome && map.biomeAt) {
-        const etx = (e.x / TILE) | 0, ety = (e.y / TILE) | 0
-        if (map.biomeAt(etx, ety) !== e.biome) {
-          const dx = e.homeX - e.x, dy = e.homeY - e.y
-          const d = Math.sqrt(dx * dx + dy * dy) || 1
-          moveWithCollision(e, dx / d * e.spd * 1.6, dy / d * e.spd * 1.6, dt, e.radius, map)
-        }
-      }
     }
 
     // Player bullets vs mobs
@@ -199,7 +190,7 @@ const WorldZone = (() => {
         if (!e.alive) continue
         const dx = b.x - e.x, dy = b.y - e.y
         if (dx*dx + dy*dy < (BULLET_RADIUS + e.radius)**2) {
-          e.hp -= b.dmg; e.hitFlash = 0.08; b.alive = false
+          e.hp -= b.dmg; e.hitFlash = 0.08; b.alive = false; e.aggro = true
           spawnFloatText(e.x, e.y - e.radius, `-${b.dmg}`, '#ff6')
           if (e.hp <= 0) killMob(e, char)
           break

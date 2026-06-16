@@ -270,10 +270,17 @@ function moveWithCollision(obj, vx, vy, dt, radius, tileMap) {
 function renderTileMap(tileMap, labels) {
   const offX = (canvas.width/2  - cam.x) | 0
   const offY = (canvas.height/2 - cam.y) | 0
-  const startX = Math.max(0, (cam.x - canvas.width/2)  / TILE | 0)
-  const endX   = Math.min(tileMap.w, startX + (canvas.width  / TILE | 0) + 2)
-  const startY = Math.max(0, (cam.y - canvas.height/2) / TILE | 0)
-  const endY   = Math.min(tileMap.h, startY + (canvas.height / TILE | 0) + 2)
+  // When the view is rotated, the visible region is the rotated viewport, whose
+  // corners reach up to half the screen diagonal from center. Pad the tile draw
+  // span out to that radius so rotated corners are filled (no black wedges).
+  const reach = screenRotationRad()
+    ? Math.sqrt(canvas.width*canvas.width + canvas.height*canvas.height) / 2 : 0
+  const spanX = canvas.width/2 + reach
+  const spanY = canvas.height/2 + reach
+  const startX = Math.max(0, ((cam.x - spanX) / TILE) | 0)
+  const endX   = Math.min(tileMap.w, (((cam.x + spanX) / TILE) | 0) + 2)
+  const startY = Math.max(0, ((cam.y - spanY) / TILE) | 0)
+  const endY   = Math.min(tileMap.h, (((cam.y + spanY) / TILE) | 0) + 2)
 
   for (let ty = startY; ty < endY; ty++) {
     for (let tx = startX; tx < endX; tx++) {

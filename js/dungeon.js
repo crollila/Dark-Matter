@@ -110,7 +110,7 @@ const DungeonZone = (() => {
         if (!e.alive) continue
         const dx = b.x - e.x, dy = b.y - e.y
         if (dx*dx + dy*dy < (BULLET_RADIUS + e.radius)**2) {
-          e.hp -= b.dmg; e.hitFlash = 0.08; b.alive = false
+          e.hp -= b.dmg; e.hitFlash = 0.08; b.alive = false; e.aggro = true
           // Track per-player damage to the boss for the loot-contribution gate.
           if (e.isBoss) bossDamage[char.id] = (bossDamage[char.id] || 0) + b.dmg
           spawnFloatText(e.x, e.y - e.radius, `-${b.dmg}`, '#ff6')
