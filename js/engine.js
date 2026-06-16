@@ -24,11 +24,49 @@ function camFollow(tx, ty, dt) {
   cam.x += (tx - cam.x) * Math.min(1, dt * 8)
   cam.y += (ty - cam.y) * Math.min(1, dt * 8)
 }
+// --- SCREEN ROTATION ---
+// Hold Q/E rotates the view (value stored in Settings.screenRotation, degrees).
+// World drawing is wrapped in begin/endWorldTransform so the whole scene rotates
+// about screen center while the HUD (drawn outside) stays upright. Mouse aim is
+// converted back through the inverse rotation in screenToWorld, so shooting and
+// the facing indicator stay correct at any angle.
+function screenRotationRad() {
+  return (typeof Settings !== 'undefined' && Settings.screenRotation)
+    ? Settings.screenRotation * Math.PI / 180 : 0
+}
+let _worldXf = false
+function beginWorldTransform() {
+  const a = screenRotationRad()
+  if (!a) { _worldXf = false; return }
+  ctx.save()
+  ctx.translate(canvas.width / 2, canvas.height / 2)
+  ctx.rotate(a)
+  ctx.translate(-canvas.width / 2, -canvas.height / 2)
+  _worldXf = true
+}
+function endWorldTransform() {
+  if (_worldXf) { ctx.restore(); _worldXf = false }
+}
+
 function worldToScreen(wx, wy) {
-  return [wx - cam.x + canvas.width/2, wy - cam.y + canvas.height/2]
+  let dx = wx - cam.x, dy = wy - cam.y
+  const a = screenRotationRad()
+  if (a) {
+    const c = Math.cos(a), s = Math.sin(a)
+    const rx = dx * c - dy * s, ry = dx * s + dy * c
+    dx = rx; dy = ry
+  }
+  return [dx + canvas.width/2, dy + canvas.height/2]
 }
 function screenToWorld(sx, sy) {
-  return [sx + cam.x - canvas.width/2, sy + cam.y - canvas.height/2]
+  let dx = sx - canvas.width/2, dy = sy - canvas.height/2
+  const a = screenRotationRad()
+  if (a) {
+    const c = Math.cos(-a), s = Math.sin(-a)
+    const rx = dx * c - dy * s, ry = dx * s + dy * c
+    dx = rx; dy = ry
+  }
+  return [dx + cam.x, dy + cam.y]
 }
 
 // --- TILE CONSTANTS ---

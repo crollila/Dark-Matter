@@ -43,7 +43,8 @@ const NexusZone = (() => {
     // Prompt timer
     if (promptTimer > 0) promptTimer -= dt
 
-    const eDown = !!keys['KeyE'] && !chatOpen
+    const ik = Hotkeys.name('interact')
+    const eDown = Hotkeys.down('interact') && !chatOpen
     const tx = (char.x / TILE) | 0, ty = (char.y / TILE) | 0
     const tile = map.get(tx, ty)
 
@@ -51,11 +52,11 @@ const NexusZone = (() => {
     const STATION_MODE = { gamble: 'gamble', upgrade: 'reforge', destroy: 'salvage', transmute: 'fusion', vault: 'vault' }
 
     if (tile === T_PORTAL_WORLD) {
-      promptLabel = '[E] Enter World'
+      promptLabel = `[${ik}] Enter World`
       promptTimer = 0.4
       if (eDown && !eLatch) { G.enterZone('world'); return }
     } else if (tile === T_PORTAL_VAULT) {
-      promptLabel = '[E] Enter Vault'
+      promptLabel = `[${ik}] Enter Vault`
       promptTimer = 0.4
       if (eDown && !eLatch) { G.enterZone('vault'); return }
     } else if (tile === T_PORTAL_RAID) {
@@ -65,7 +66,7 @@ const NexusZone = (() => {
       const st = map.stations && map.stations.find(s => s.x === tx && s.y === ty)
       if (st) {
         const mode = STATION_MODE[st.key]
-        promptLabel = mode ? `[E] ${st.label}` : `[E] ${st.label} — Coming soon`
+        promptLabel = mode ? `[${ik}] ${st.label}` : `[${ik}] ${st.label} — Coming soon`
         promptTimer = 0.4
         if (eDown && !eLatch && mode && window.Stations) Stations.open(mode)
       }
@@ -73,13 +74,14 @@ const NexusZone = (() => {
       promptLabel = ''
     }
 
-    eLatch = !!keys['KeyE']
+    eLatch = Hotkeys.down('interact')
   }
 
   function render(char) {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, canvas.width, canvas.height)
 
+    beginWorldTransform()
     renderTileMap(map, true)
 
     // Station labels
@@ -106,6 +108,7 @@ const NexusZone = (() => {
     renderParticles()
     renderPlayer(char, offX, offY)
     renderFloatTexts()
+    endWorldTransform()
 
     // Prompt
     if (promptLabel && promptTimer > 0) {

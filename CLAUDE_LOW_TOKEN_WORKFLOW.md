@@ -107,7 +107,7 @@ Update this map after each patch so future prompts can point Claude to exact fil
 
 ### `js/biomes.js`
 - Data-driven world biome defs (`BIOMES`, `BIOME_BY_ID`): palette, mob pool, hazard tile, minimap tint, related dungeon-drop key.
-- `assignBiomes(map, rng)`: paints Voronoi biome regions onto the world map (`map.biome` Uint8Array, `map.biomeAt`), scatters ice/lava hazard tiles, keeps spawn/home neutral.
+- `assignBiomes(map, rng)`: paints SEPARATED biome clusters (one spaced blob per biome, neutral grass id 0 in the gaps) onto the world map (`map.biome` Uint8Array, `map.biomeAt`, `map.biomeClusters = [{id,x,y,r}]` in tiles), scatters ice/lava hazard tiles, keeps spawn/home neutral. Defensive fallback placement never crashes.
 
 Use for:
 - biome palettes / regions
@@ -124,11 +124,14 @@ Use for:
 - Bullet/particle/floating text helpers.
 - Utility helpers like compact number/star rendering if present.
 
+- Screen rotation: `beginWorldTransform`/`endWorldTransform` wrap world-space drawing (rotates about screen center); `screenToWorld`/`worldToScreen` invert/apply the rotation so mouse aim stays correct. HUD/prompts drawn outside the transform.
+
 Use for:
 - movement/collision helpers
 - tile behavior
 - bullets/projectiles core helpers
 - global canvas utilities
+- screen rotation transform / aim conversion
 
 Do not use for:
 - item definitions
@@ -231,10 +234,14 @@ Use for:
 - Portal labels/interact-to-enter.
 - World loot bags and mob drops if implemented here.
 - Water movement in world update if zone-specific.
+- Spawning: `populateWorld` spreads biome mobs across each `map.biomeClusters` blob at world-gen (+ a few neutral wanderers); `spawnInBiome`/`spawnNeutral`/`findBiomeSpot` find valid tiles inside the right biome, away from player/home. NO spawn-near-player repop.
+- Respawn: dead biome mobs scheduled in `respawnQueue` (random 1–30s via `worldTime`), respawn as a random one of that biome's 3 mobs inside the same biome, not next to player.
+- Drop tuning consts in `killMob`: `BIOME_LOOT_CHANCE`/`NEUTRAL_LOOT_CHANCE`, `PORTAL_MULT`, `UNIQUE_MULT`. Biome mobs still share common drops + keep their unique.
 
 Use for:
 - world portal behavior
-- world mob drops
+- world mob drops / drop rates
+- biome mob spawn distribution + respawn timing
 - world movement/input bugs
 - portal expiry
 
@@ -309,9 +316,11 @@ Use for:
 
 ### `js/options.js`
 - ESC options menu (gameplay zones only).
-- Hotkeys list, graphics placeholders (hide other projectiles, other-player opacity), screen rotation + reset.
-- `Settings` global + localStorage persistence (`realm_settings`).
-- Screen rotation is stored/displayed only; gameplay rotation deferred (would break offset-based aim).
+- Rebindable hotkeys: click a row → press a key (stored as `KeyboardEvent.code`). Graphics placeholders, screen rotation +/- + reset, reset-hotkeys button.
+- `Settings` global (incl. `Settings.keys`) + localStorage persistence (`realm_settings`); unknown/old settings fall back to `DEFAULT_KEYS`.
+- `DEFAULT_KEYS`: interact=Control, inventory=I, returnNexus=R, ability=Space, ring2=Alt. Move/Shoot/Chat/Command/Options are fixed (Esc/Enter/'/' can't be bound).
+- Global `Hotkeys` helper: `Hotkeys.code/name/down(action)` (modifier-side-agnostic). Zones use this instead of hardcoded `keys['KeyE']` etc.
+- Screen rotation is now LIVE: hold Q/E to rotate (handled in `main.js` `updateScreenRotation`); render transform + aim conversion live in `engine.js`.
 - Zones gate input via `Options.isOpen()`.
 
 Use for:
@@ -359,16 +368,20 @@ Keep updated.
 - [x] Fusion
 - [x] Gamble
 - [x] Void multiplier stats
-- [x] Account stash via Nexus VAULT station (old vault zone code retained but unused)
-- [x] ESC options menu + persisted client settings
+- [x] Account stash via Nexus VAULT station (now on a hallway `???` alcove at tile 29,16; standalone spawn-room vault tile removed; old vault zone code retained but unused)
+- [x] ESC options menu + persisted client settings + rebindable hotkeys
+- [x] Screen rotation (hold Q/E; render transform + aim conversion; reset in Options)
 - [x] HP/MP bars under the player character
 - [x] Chat/debug commands + in-game error log
 - [x] Water slows player
 - [x] Dungeon portals require E
 - [x] Dungeons: goblin_warren, fungal_cavern, void_rift
-- [x] World biomes (6): dark_matter, snow, hell, toxic, ruined, astral — Voronoi regions, palette, minimap tint, biome name label
+- [x] World map: large (200×200), low wall density, grass-heavy neutral terrain between biomes
+- [x] World biomes (6): dark_matter, snow, hell, toxic, ruined, astral — SEPARATED clusters (grass gaps), palette, minimap tint, biome name label
+- [x] Biome mobs spawned throughout each biome at world-gen; respawn 1–30s inside same biome (random of its 3); never next to player
+- [x] Minimap mouse-wheel zoom (hover, clamped 1–6x, in-memory)
 - [x] Biome terrain: ice (slippery), lava (DoT+slow)
-- [x] Biome mobs (18, 3/biome) spawn only in-biome + leash back if they wander out
+- [x] Biome mobs (3/biome) spawn in-biome (spread at world-gen, ~9/biome) + leash back if they wander out
 - [x] Biome drops: shared biome dungeon-portal drop per biome + one unique mob-only item per monster (`u_*` bases, `unique:true`, mob-only)
 - [ ] Biome dungeons (dm_rift, snow_keep, hell_pit, toxic_hollow, ruined_keep, astral_dunes): PLACEHOLDERS — `placeholder:true`, entry deferred ("not yet open"), excluded from fixed world scatter
 

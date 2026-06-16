@@ -13,8 +13,13 @@ const WorldZone = (() => {
   let eLatchLoot = false    // edge latch for [E] loot pickup
   let nearBag = null        // closest pickupable bag (for preview)
   let currentBiome = null   // biome def the player is currently standing in (or null)
-  const MAX_MOBS = 18
+  let worldTime = 0         // seconds since this world was generated
+  let respawnQueue = []     // [{ biome, at }] — scheduled biome respawns
   const WORLD_MOB_POOL = ['slime', 'forest_sprite', 'goblin_scout']
+  const BIOME_SPAWN = 9     // biome mobs spawned per biome at world-gen
+  const NEUTRAL_SPAWN = 12  // wandering neutral mobs scattered in open terrain
+  const RESPAWN_MIN = 1, RESPAWN_MAX = 30   // seconds
+  const RESPAWN_PLAYER_GAP2 = 360 * 360      // don't respawn this close to player
 
   function init(char) {
     map = buildWorld()
@@ -26,45 +31,85 @@ const WorldZone = (() => {
     eLatchLoot = false
     nearBag = null
     currentBiome = null
+    worldTime = 0
+    respawnQueue = []
     pBullets.reset(); eBullets.reset()
     particles.length = 0; floatTexts.length = 0
     char.x = map.spawnPos.x; char.y = map.spawnPos.y
     cam.x = char.x; cam.y = char.y
     grid = makeGrid(WORLD_W, WORLD_H)
 
-    // Initial mob fill
-    for (let i = 0; i < MAX_MOBS; i++) spawnWorldMob()
+    populateWorld(char)
   }
 
-  function spawnWorldMob() {
-    let x, y, attempts = 0
-    do {
-      const a = Math.random() * Math.PI * 2
-      const r = 320 + Math.random() * 240
-      x = G.char.x + Math.cos(a) * r
-      y = G.char.y + Math.sin(a) * r
-      attempts++
-    } while (map.blocked(x, y) && attempts < 20)
-    // Biome at the spawn tile decides the mob pool. Neutral home (id 0) uses the
-    // default world pool; inside a biome only that biome's 3 mobs can spawn.
-    const bid = map.biomeAt ? map.biomeAt((x / TILE) | 0, (y / TILE) | 0) : 0
-    const bdef = bid && BIOME_BY_ID[bid]
-    const pool = (bdef && bdef.mobs) || WORLD_MOB_POOL
-    const key = pool[Math.random() * pool.length | 0]
-    const mob = spawnMob(key, x, y)
-    if (mob) {
-      mob.biome = bid           // leash key (0 = roams freely)
-      mob.homeX = x; mob.homeY = y
-      mobs.push(mob)
+  // Spread biome mobs throughout each biome cluster + a few neutral wanderers.
+  function populateWorld(char) {
+    for (const c of (map.biomeClusters || [])) {
+      for (let i = 0; i < BIOME_SPAWN; i++) spawnInBiome(c.id, char, true)
     }
+    for (let i = 0; i < NEUTRAL_SPAWN; i++) spawnNeutral(char, true)
+  }
+
+  // Find a valid walkable tile (world coords) inside `biomeId`, away from the
+  // player on respawn. Biased to the biome's cluster for efficiency. Returns
+  // null if none found (no crash — just fewer mobs).
+  function findBiomeSpot(biomeId, char, initial) {
+    const c = (map.biomeClusters || []).find(k => k.id === biomeId)
+    const gap2 = initial ? 0 : RESPAWN_PLAYER_GAP2
+    for (let attempt = 0; attempt < 70; attempt++) {
+      let tx, ty
+      if (c) {
+        const a = Math.random() * Math.PI * 2, r = Math.random() * c.r
+        tx = (c.x + Math.cos(a) * r) | 0; ty = (c.y + Math.sin(a) * r) | 0
+      } else {
+        tx = (Math.random() * WORLD_W) | 0; ty = (Math.random() * WORLD_H) | 0
+      }
+      if ((map.biomeAt ? map.biomeAt(tx, ty) : 0) !== biomeId) continue
+      const wx = tx * TILE + TILE / 2, wy = ty * TILE + TILE / 2
+      if (map.blocked(wx, wy)) continue
+      if (gap2) { const dx = wx - char.x, dy = wy - char.y; if (dx * dx + dy * dy < gap2) continue }
+      return { x: wx, y: wy }
+    }
+    return null
+  }
+
+  function spawnInBiome(biomeId, char, initial) {
+    if (!biomeId) return spawnNeutral(char, initial)
+    const spot = findBiomeSpot(biomeId, char, initial)
+    if (!spot) return null
+    const bdef = BIOME_BY_ID[biomeId]
+    const pool = (bdef && bdef.mobs) || WORLD_MOB_POOL   // random of the 3 biome mobs
+    const key = pool[Math.random() * pool.length | 0]
+    const mob = spawnMob(key, spot.x, spot.y)
+    if (mob) { mob.biome = biomeId; mob.homeX = spot.x; mob.homeY = spot.y; mobs.push(mob) }
+    return mob
+  }
+
+  // Neutral wanderer in open (id 0) terrain, clear of home + player.
+  function spawnNeutral(char, initial) {
+    const gap2 = initial ? 0 : RESPAWN_PLAYER_GAP2
+    const homeGap2 = (TILE * 12) * (TILE * 12)
+    for (let attempt = 0; attempt < 70; attempt++) {
+      const tx = (Math.random() * WORLD_W) | 0, ty = (Math.random() * WORLD_H) | 0
+      if ((map.biomeAt ? map.biomeAt(tx, ty) : 0) !== 0) continue
+      const wx = tx * TILE + TILE / 2, wy = ty * TILE + TILE / 2
+      if (map.blocked(wx, wy)) continue
+      const hx = wx - map.spawnPos.x, hy = wy - map.spawnPos.y
+      if (hx * hx + hy * hy < homeGap2) continue           // keep home clear
+      if (gap2) { const dx = wx - char.x, dy = wy - char.y; if (dx * dx + dy * dy < gap2) continue }
+      const key = WORLD_MOB_POOL[Math.random() * WORLD_MOB_POOL.length | 0]
+      const mob = spawnMob(key, wx, wy)
+      if (mob) { mob.biome = 0; mob.homeX = wx; mob.homeY = wy; mobs.push(mob); return mob }
+    }
+    return null
   }
 
   function update(dt, char) {
     const chatOpen = (window.Chat && Chat.isOpen()) || (window.Options && Options.isOpen())
     const inputBlocked = chatOpen || (window.Inventory && Inventory.isOpen())
 
-    // R key → nexus (permadeath escape)
-    if (keys['KeyR'] && !chatOpen) { G.enterZone('nexus'); return }
+    // Return to nexus (permadeath escape)
+    if (Hotkeys.down('returnNexus') && !chatOpen) { G.enterZone('nexus'); return }
 
     // Player movement (water slows)
     let vx = 0, vy = 0
@@ -109,9 +154,9 @@ const WorldZone = (() => {
     }
 
     // Ability
-    if (keys['Space'] && char.abilityCooldown <= 0 && !chatOpen) {
+    if (Hotkeys.down('ability') && char.abilityCooldown <= 0 && !chatOpen) {
       CLASSES[char.classKey].ability(char)
-      keys['Space'] = false
+      keys[Hotkeys.code('ability')] = false
     }
 
     // Update bullets
@@ -221,16 +266,23 @@ const WorldZone = (() => {
       const dx = b.x - char.x, dy = b.y - char.y, d2 = dx*dx + dy*dy
       if (d2 < nd) { nd = d2; nearBag = b }
     }
-    if (nearBag && keys['KeyE'] && !eLatchLoot && !inputBlocked) {
+    if (nearBag && Hotkeys.down('interact') && !eLatchLoot && !inputBlocked) {
       const empty = pickupLootBag(char, account, nearBag)
       if (empty) { const idx = lootBags.indexOf(nearBag); if (idx >= 0) lootBags.splice(idx, 1); nearBag = null }
       if (window.saveGame) saveGame()
       eLatchLoot = true
     }
-    if (!keys['KeyE']) eLatchLoot = false
+    if (!Hotkeys.down('interact')) eLatchLoot = false
 
-    // Repop mobs
-    if (mobs.filter(e => e.alive).length < MAX_MOBS) spawnWorldMob()
+    // Respawn timing — dead biome mobs come back after a random 1–30s delay,
+    // somewhere valid inside the same biome (never instantly next to the player).
+    worldTime += dt
+    for (let i = respawnQueue.length - 1; i >= 0; i--) {
+      if (worldTime >= respawnQueue[i].at) {
+        const r = respawnQueue.splice(i, 1)[0]
+        spawnInBiome(r.biome | 0, char, false)
+      }
+    }
 
     // Pending (dropped) portal timers — expire after 30s and restore the tile.
     for (let i = pendingPortals.length - 1; i >= 0; i--) {
@@ -254,7 +306,7 @@ const WorldZone = (() => {
         if (nearPortal) break
       }
     }
-    const eDown = !!keys['KeyE']
+    const eDown = Hotkeys.down('interact')
     if (nearPortal) {
       const def = DUNGEONS[nearPortal.dungeonKey]
       portalPrompt = { key: nearPortal.dungeonKey, name: (def && def.name) || nearPortal.dungeonKey, stars: (def && def.stars) || 0 }
@@ -275,16 +327,27 @@ const WorldZone = (() => {
     updateFloatTexts(dt)
   }
 
+  // Drop-rate tuning. Biome mobs drop common loot more often and roll their
+  // portal/unique a bit higher; rates stay moderate to avoid inventory flooding.
+  const BIOME_LOOT_CHANCE = 0.22
+  const NEUTRAL_LOOT_CHANCE = 0.12
+  const PORTAL_MULT = 2.0
+  const UNIQUE_MULT = 1.5
+
   function killMob(e, char) {
     e.alive = false
+    const isBiome = !!e.biome
     const xp = mobKillXp(e.xp, char, 0)
     char.xp += xp
     if (char.level >= LEVEL_CAP) char.glory += xp
     spawnParticles(e.x, e.y, e.color, 14)
     spawnFloatText(e.x, e.y - 20, `+${xp} XP`, '#ffd60a')
 
-    // Small mob loot drop (tier 1–2 in open world)
-    const drop = rollMobDrop(0, { source: 'world' })
+    // Schedule this biome to repopulate after a random 1–30s delay.
+    if (isBiome) respawnQueue.push({ biome: e.biome, at: worldTime + RESPAWN_MIN + Math.random() * (RESPAWN_MAX - RESPAWN_MIN) })
+
+    // Common mob loot drop (shared by all world mobs; biome mobs a bit higher).
+    const drop = rollMobDrop(0, { source: 'world', chance: isBiome ? BIOME_LOOT_CHANCE : NEUTRAL_LOOT_CHANCE })
     if (drop) {
       const bag = createLootBag(e.x, e.y, drop, 60)
       lootBags.push(bag)
@@ -292,7 +355,7 @@ const WorldZone = (() => {
     }
 
     // Unique mob-only biome drop — one signature item per biome monster.
-    if (e.uniqueDrop && Math.random() < e.uniqueDrop.chance) {
+    if (e.uniqueDrop && Math.random() < e.uniqueDrop.chance * UNIQUE_MULT) {
       const it = rollItem(e.uniqueDrop.base, e.uniqueDrop.rarity || 'epic', null, e.uniqueDrop.source || 'biome')
       if (it) {
         const bag = createLootBag(e.x, e.y, { items: [it] }, 90)
@@ -304,7 +367,7 @@ const WorldZone = (() => {
 
     // Portal drop — dropped portals are temporary (expire after 30s). Tracked
     // only in pendingPortals (NOT map.dungeonPortals, which are permanent).
-    if (e.portalDrop && Math.random() < e.portalDrop.chance) {
+    if (e.portalDrop && Math.random() < Math.min(0.9, e.portalDrop.chance * PORTAL_MULT)) {
       const ptx = (e.x/TILE)|0, pty = (e.y/TILE)|0
       map.set(ptx, pty, T_PORTAL_DUNGEON)
       pendingPortals.push({ x: e.x, y: e.y, tx: ptx, ty: pty, dungeonKey: e.portalDrop.type, timer: 30 })
@@ -317,6 +380,7 @@ const WorldZone = (() => {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.fillStyle = '#0a0a10'; ctx.fillRect(0, 0, canvas.width, canvas.height)
 
+    beginWorldTransform()
     renderTileMap(map, false)
 
     const offX = (canvas.width/2 - cam.x) | 0
@@ -342,10 +406,11 @@ const WorldZone = (() => {
     renderParticles()
     renderPlayer(char, offX, offY)
     renderFloatTexts()
+    endWorldTransform()
 
-    // [E] Enter <Dungeon> ★★ prompt (bottom-center) when near a portal
+    // [interact] Enter <Dungeon> ★★ prompt (bottom-center) when near a portal
     if (portalPrompt) {
-      const txt = `[E] Enter ${portalPrompt.name}${portalPrompt.stars ? '  ' + starString(portalPrompt.stars) : ''}`
+      const txt = `[${Hotkeys.name('interact')}] Enter ${portalPrompt.name}${portalPrompt.stars ? '  ' + starString(portalPrompt.stars) : ''}`
       ctx.font = 'bold 14px monospace'
       const tw = ctx.measureText(txt).width
       ctx.fillStyle = 'rgba(0,0,0,0.7)'
@@ -361,7 +426,7 @@ const WorldZone = (() => {
       ctx.fillStyle = 'rgba(0,0,0,0.7)'
       ctx.fillRect(canvas.width/2 - 110, canvas.height - 120, 220, 30)
       ctx.fillStyle = '#ffd60a'; ctx.font = 'bold 14px monospace'; ctx.textAlign = 'center'
-      ctx.fillText('[E] Pick up loot', canvas.width/2, canvas.height - 100)
+      ctx.fillText(`[${Hotkeys.name('interact')}] Pick up loot`, canvas.width/2, canvas.height - 100)
       ctx.textAlign = 'left'
     }
 

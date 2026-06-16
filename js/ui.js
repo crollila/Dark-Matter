@@ -116,10 +116,13 @@ const MainMenu = (() => {
     hoverChar = -1
     hoverNew = false
 
+    // When empty, the "+ NEW CHARACTER" button is pushed down so this hint
+    // sits cleanly above it instead of overlapping.
+    const emptyOffset = account.characters.length === 0 ? 40 : 0
     if (account.characters.length === 0) {
-      ctx.fillStyle = '#555'
+      ctx.fillStyle = '#888'
       ctx.font = '12px monospace'
-      ctx.fillText('No characters yet.', canvas.width/2, panelY + 80)
+      ctx.fillText('No characters yet — create one below.', canvas.width/2, panelY + 64)
     }
 
     // Character slots
@@ -160,7 +163,7 @@ const MainMenu = (() => {
     }
 
     // New character button
-    const btnY = panelY + 40 + account.characters.length * 76 + 8
+    const btnY = panelY + 40 + account.characters.length * 76 + 8 + emptyOffset
     const isHoverNew = mouse.y > btnY && mouse.y < btnY + 40 && mouse.x > panelX + 10 && mouse.x < panelX + panelW - 10
     hoverNew = isHoverNew
     ctx.fillStyle = isHoverNew ? 'rgba(76,201,240,0.2)' : 'rgba(76,201,240,0.07)'
@@ -391,7 +394,7 @@ function renderHUD(char, zoneName, map, mobs) {
   }
   ctx.textAlign = 'center'
   ctx.fillStyle = ready ? cls.color : UI.textFaint; ctx.font = 'bold 8px monospace'
-  ctx.fillText('SPACE', ax + slot / 2, ay + 13)
+  ctx.fillText((window.Hotkeys ? Hotkeys.name('ability') : 'Space').toUpperCase(), ax + slot / 2, ay + 13)
   ctx.fillStyle = ready ? UI.text : UI.textFaint; ctx.font = '7px monospace'
   ctx.fillText(cls.abilityName.split(' ')[0].toUpperCase(), ax + slot / 2, ay + 26)
   if (!ready) {
@@ -411,14 +414,16 @@ function renderHUD(char, zoneName, map, mobs) {
   ctx.fillText(zoneName, w / 2, pad + 11)
   ctx.textAlign = 'left'
 
-  // ---- [R] return hint (top-left; clear of minimap) ----
+  // ---- return hint (top-left; clear of minimap) ----
+  const rKey = window.Hotkeys ? Hotkeys.name('returnNexus') : 'R'
+  const iKey = window.Hotkeys ? Hotkeys.name('inventory') : 'I'
   if (zoneName !== 'NEXUS') {
     ctx.fillStyle = UI.textFaint; ctx.font = '10px monospace'
-    ctx.fillText('[R] Return to Nexus', pad, pad + 11)
+    ctx.fillText(`[${rKey}] Return to Nexus`, pad, pad + 11)
   }
-  // [I] inventory hint just under it
+  // inventory hint just under it
   ctx.fillStyle = UI.textFaint; ctx.font = '10px monospace'
-  ctx.fillText('[I] Inventory', pad, pad + 26)
+  ctx.fillText(`[${iKey}] Inventory`, pad, pad + 26)
 
   // ---- Minimap (top-right) ----
   if (typeof Minimap !== 'undefined' && map) Minimap.render(char, map, mobs || [])
@@ -432,6 +437,9 @@ function renderHUD(char, zoneName, map, mobs) {
 // canvas), player position + facing, enemy dots, bosses as gold diamonds.
 const Minimap = (() => {
   const SIZE = 172
+  let zoom = 1                 // in-memory minimap zoom (1 = whole map)
+  const ZMIN = 1, ZMAX = 6
+  let _rect = null             // last drawn minimap bounds (for wheel hover test)
 
   function tileRGBA(t) {
     switch (t) {
@@ -481,19 +489,26 @@ const Minimap = (() => {
     if (!map._mini) map._mini = build(map)
 
     const x = canvas.width - SIZE - 14, y = 14
+    _rect = { x: x - 3, y: y - 3, w: SIZE + 6, h: SIZE + 6 }
     uiPanel(x - 3, y - 3, SIZE + 6, SIZE + 6, 8)
 
-    const sc = SIZE / Math.max(map.w, map.h)
-    const dw = map.w * sc, dh = map.h * sc
+    // Visible window in TILES. zoom=1 shows the whole map; higher zoom shows a
+    // smaller area centered on the player, clamped to the map bounds.
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
+    const viewW = map.w / zoom, viewH = map.h / zoom
+    const vx0 = clamp(char.x / TILE - viewW / 2, 0, Math.max(0, map.w - viewW))
+    const vy0 = clamp(char.y / TILE - viewH / 2, 0, Math.max(0, map.h - viewH))
+    const sc = SIZE / Math.max(viewW, viewH)
+    const dw = viewW * sc, dh = viewH * sc
     const ox = x + (SIZE - dw) / 2, oy = y + (SIZE - dh) / 2
 
     ctx.save()
     uiRoundRect(x, y, SIZE, SIZE, 6); ctx.clip()
     ctx.fillStyle = '#05060c'; ctx.fillRect(x, y, SIZE, SIZE)
     ctx.imageSmoothingEnabled = false
-    ctx.drawImage(map._mini, ox, oy, dw, dh)
+    ctx.drawImage(map._mini, vx0, vy0, viewW, viewH, ox, oy, dw, dh)
 
-    const w2m = (wx, wy) => [ox + (wx / TILE) * sc, oy + (wy / TILE) * sc]
+    const w2m = (wx, wy) => [ox + (wx / TILE - vx0) * sc, oy + (wy / TILE - vy0) * sc]
 
     // Enemies
     for (const e of mobs) {
@@ -524,11 +539,24 @@ const Minimap = (() => {
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke()
     ctx.restore()
 
-    // Label
+    // Label + zoom readout
     ctx.fillStyle = UI.textFaint; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'left'
     ctx.fillText('MAP', x + 4, y + 11)
+    if (zoom > 1.001) {
+      ctx.textAlign = 'right'; ctx.fillText(zoom.toFixed(1) + 'x', x + SIZE - 4, y + 11)
+    }
     ctx.textAlign = 'left'
   }
+
+  // Mouse-wheel zoom while hovering the minimap (in-memory; clamped).
+  canvas.addEventListener('wheel', e => {
+    if (!_rect) return
+    if (mouse.x >= _rect.x && mouse.x <= _rect.x + _rect.w &&
+        mouse.y >= _rect.y && mouse.y <= _rect.y + _rect.h) {
+      zoom = Math.max(ZMIN, Math.min(ZMAX, zoom * (e.deltaY < 0 ? 1.2 : 1 / 1.2)))
+      e.preventDefault(); e.stopPropagation()
+    }
+  }, { passive: false })
 
   return { render }
 })()

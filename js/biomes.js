@@ -45,28 +45,57 @@ const BIOMES = {
 const BIOME_BY_ID = {}
 for (const k in BIOMES) BIOME_BY_ID[BIOMES[k].id] = BIOMES[k]
 
-// Assign biome regions onto a world map via Voronoi blobs around scattered
-// seeds. The central spawn area is left neutral (id 0) so the home region is
-// hazard-free. Also scatters each biome's hazard floor tiles. Additive — does
-// not touch the existing cave generation.
+// Assign biome regions onto a world map as SEPARATED clusters. Each biome gets
+// one blob region placed apart from the others, with neutral grass (id 0) in
+// the gaps so the player must explore to find each biome. The central spawn
+// area is left neutral so the home region is hazard-free. Also scatters each
+// biome's hazard floor tiles. Additive — does not touch the cave generation.
+// Records `m.biomeClusters` for world spawn distribution.
 function assignBiomes(m, rng) {
   const W = m.w, H = m.h
   m.biome = new Uint8Array(W * H)
-  const seeds = []
-  for (const k in BIOMES) {
-    const id = BIOMES[k].id
-    for (let s = 0; s < 2; s++)
-      seeds.push({ x: (rng() * W) | 0, y: (rng() * H) | 0, id })
+  const cx = W / 2, cy = H / 2
+
+  // --- Place one spaced-out cluster per biome ---
+  const ids = []
+  for (const k in BIOMES) ids.push(BIOMES[k].id)
+  const minDim = Math.min(W, H)
+  const homeR = Math.max(18, minDim * 0.11)     // neutral home radius (tiles)
+  const minSep = minDim * 0.26                  // min distance between centers
+  const clusters = []
+  for (const id of ids) {
+    let placed = null
+    for (let attempt = 0; attempt < 240; attempt++) {
+      const r = (0.08 + rng() * 0.05) * minDim  // blob radius (tiles)
+      const margin = r + 4
+      const x = margin + rng() * (W - 2 * margin)
+      const y = margin + rng() * (H - 2 * margin)
+      if (Math.hypot(x - cx, y - cy) < homeR + r + 6) continue   // clear of home
+      let ok = true
+      for (const c of clusters) if (Math.hypot(x - c.x, y - c.y) < minSep) { ok = false; break }
+      if (ok) { placed = { id, x, y, r }; break }
+    }
+    // Defensive fallback: relaxed placement still produces a valid cluster.
+    if (!placed) {
+      const r = 0.09 * minDim
+      placed = { id, x: r + 4 + rng() * (W - 2 * (r + 4)), y: r + 4 + rng() * (H - 2 * (r + 4)), r }
+    }
+    clusters.push(placed)
   }
-  const homeR2 = 16 * 16
+  m.biomeClusters = clusters
+
+  // --- Paint each blob (noisy edge); tiles outside every blob stay neutral ---
   for (let y = 1; y < H - 1; y++)
     for (let x = 1; x < W - 1; x++) {
-      const hx = x - W / 2, hy = y - H / 2
-      if (hx * hx + hy * hy < homeR2) continue   // keep spawn neutral
-      let best = 0, bd = Infinity
-      for (const sd of seeds) {
-        const dx = x - sd.x, dy = y - sd.y, d = dx * dx + dy * dy
-        if (d < bd) { bd = d; best = sd.id }
+      const hx = x - cx, hy = y - cy
+      if (hx * hx + hy * hy < homeR * homeR) continue   // keep spawn neutral
+      let best = 0, bestD = Infinity
+      for (const c of clusters) {
+        const dx = x - c.x, dy = y - c.y
+        const d = Math.hypot(dx, dy)
+        // wobble the boundary so blobs aren't perfect circles
+        const wobble = 1 + 0.16 * Math.sin(Math.atan2(dy, dx) * 3 + c.id * 1.7)
+        if (d < c.r * wobble && d < bestD) { bestD = d; best = c.id }
       }
       m.biome[y * W + x] = best
     }

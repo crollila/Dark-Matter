@@ -50,6 +50,20 @@ const G = {
   }
 }
 
+// ---- SCREEN ROTATION INPUT ----
+// Hold Q (left) / E (right) to rotate the view. Value lives in Settings so the
+// Options menu can display/reset it. Not persisted per-frame to avoid storage
+// thrash; the Options +/- and reset buttons persist explicit changes.
+function updateScreenRotation(dt) {
+  if (typeof Settings === 'undefined') return
+  let d = 0
+  if (keys['KeyQ']) d -= 1
+  if (keys['KeyE']) d += 1
+  if (!d) return
+  const SPD = 100 // degrees / second
+  Settings.screenRotation = (((Settings.screenRotation || 0) + d * SPD * dt) % 360 + 360) % 360
+}
+
 // ---- GAME LOOP ----
 let lastTime = 0
 
@@ -103,6 +117,7 @@ function loop(ts) {
   if (G.char && (G.zone === 'nexus' || G.zone === 'world' || G.zone === 'dungeon' || G.zone === 'vault')) {
     // Suppress inventory hotkeys while the chat input or a station panel is open.
     const overlayOpen = (window.Chat && Chat.isOpen()) || (window.Stations && Stations.isOpen()) || (window.Options && Options.isOpen())
+    if (!overlayOpen) updateScreenRotation(dt)
     if (!overlayOpen) Inventory.update(G.char)
     Inventory.render(G.char)
     // Station panels (salvage/reforge/fusion/gamble/vault), then chat, then options on top.

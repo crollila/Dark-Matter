@@ -10,17 +10,60 @@
 // and rotating it would break mouse aim/shooting. The value is stored.
 // ============================================================
 
+// Rebindable gameplay hotkeys (stored as KeyboardEvent.code values).
+// Move/Shoot/Chat/Command/Options stay fixed — rebinding Esc/Enter/'/' would
+// break the menus. Interact defaults to Control (E is now screen-rotate).
+const DEFAULT_KEYS = {
+  ability:     'Space',
+  interact:    'ControlLeft',
+  inventory:   'KeyI',
+  returnNexus: 'KeyR',
+  ring2:       'AltLeft',
+}
+
 const Settings = {
   hideOtherProjectiles: false,
   otherPlayerOpacity: 100,   // 0..100 (%)
-  screenRotation: 0,         // degrees; gameplay application deferred
+  screenRotation: 0,         // degrees; Q/E rotate the view (applied in render)
+  keys: { ...DEFAULT_KEYS },
 }
 window.Settings = Settings
+
+// Friendly label for a KeyboardEvent.code (for prompts / options UI).
+function keyLabel(code) {
+  if (!code) return '?'
+  if (code.indexOf('Key') === 0)   return code.slice(3)
+  if (code.indexOf('Digit') === 0) return code.slice(5)
+  if (code.indexOf('Arrow') === 0) return code.slice(5)
+  const map = {
+    ControlLeft: 'Ctrl', ControlRight: 'Ctrl', AltLeft: 'Alt', AltRight: 'Alt',
+    ShiftLeft: 'Shift', ShiftRight: 'Shift', Space: 'Space', Enter: 'Enter',
+    Escape: 'Esc', Slash: '/', Tab: 'Tab', Backspace: 'Bksp',
+  }
+  return map[code] || code
+}
+
+// Central hotkey lookup used by gameplay zones. `down` is side-agnostic for
+// modifier keys (either Ctrl/Alt/Shift satisfies the bind).
+const Hotkeys = {
+  code(action) { return (Settings.keys && Settings.keys[action]) || DEFAULT_KEYS[action] },
+  name(action) { return keyLabel(this.code(action)) },
+  down(action) {
+    const code = this.code(action)
+    if (!code) return false
+    if (code === 'ControlLeft' || code === 'ControlRight') return !!(keys['ControlLeft'] || keys['ControlRight'])
+    if (code === 'AltLeft'     || code === 'AltRight')     return !!(keys['AltLeft']     || keys['AltRight'])
+    if (code === 'ShiftLeft'   || code === 'ShiftRight')   return !!(keys['ShiftLeft']   || keys['ShiftRight'])
+    return !!keys[code]
+  },
+}
+window.Hotkeys = Hotkeys
 
 const Options = (() => {
   const LS_KEY = 'realm_settings'
   let open = false
   let _L = null
+  let rebinding = null   // action currently waiting for a key press, or null
 
   function isOpen() { return open }
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
@@ -39,6 +82,11 @@ const Options = (() => {
       if (typeof s.hideOtherProjectiles === 'boolean') Settings.hideOtherProjectiles = s.hideOtherProjectiles
       if (typeof s.otherPlayerOpacity === 'number') Settings.otherPlayerOpacity = clamp(Math.round(s.otherPlayerOpacity), 0, 100)
       if (typeof s.screenRotation === 'number') Settings.screenRotation = ((Math.round(s.screenRotation) % 360) + 360) % 360
+      if (s.keys && typeof s.keys === 'object') {
+        for (const k in DEFAULT_KEYS) {
+          if (typeof s.keys[k] === 'string') Settings.keys[k] = s.keys[k]
+        }
+      }
     } catch (e) { /* ignore bad/old settings */ }
   }
   function save() {
@@ -46,19 +94,21 @@ const Options = (() => {
   }
 
   function toggle() { open = !open }
-  function close() { open = false }
+  function close() { open = false; rebinding = null }
 
-  const HOTKEYS = [
-    ['Move', 'WASD / Arrows'],
-    ['Shoot', 'Left Click'],
-    ['Ability', 'Space'],
-    ['Interact', 'E'],
-    ['Inventory', 'I'],
-    ['Return to Nexus', 'R'],
-    ['Chat', 'Enter'],
-    ['Command', '/'],
-    ['Compare / equip ring 2', 'Alt + hover / click'],
-    ['Options', 'Esc'],
+  // Rows with an `action` are rebindable; rows with `fixed` are display-only.
+  const HOTKEY_ROWS = [
+    { label: 'Move',            fixed: 'WASD / Arrows' },
+    { label: 'Shoot',           fixed: 'Left Click' },
+    { label: 'Ability',         action: 'ability' },
+    { label: 'Interact',        action: 'interact' },
+    { label: 'Inventory',       action: 'inventory' },
+    { label: 'Return to Nexus', action: 'returnNexus' },
+    { label: 'Ring 2 modifier', action: 'ring2' },
+    { label: 'Chat',            fixed: 'Enter' },
+    { label: 'Command',         fixed: '/' },
+    { label: 'Rotate screen',   fixed: 'Hold Q / E' },
+    { label: 'Options',         fixed: 'Esc' },
   ]
 
   // ---- small draw helpers ----
@@ -82,7 +132,8 @@ const Options = (() => {
 
   function render() {
     if (!open) return
-    const PW = 440, PH = 484
+    const PW = 460
+    const PH = Math.min(canvas.height - 12, 524)
     const px = ((canvas.width - PW) / 2) | 0
     const py = Math.max(8, ((canvas.height - PH) / 2) | 0)
 
@@ -105,15 +156,32 @@ const Options = (() => {
       return y + 16
     }
 
-    // ---- HOTKEYS ----
+    // ---- HOTKEYS (click a row, then press a key to rebind) ----
     let y = sect('HOTKEYS', py + 56)
     ctx.font = '10px monospace'
-    for (const [k, v] of HOTKEYS) {
-      ctx.fillStyle = UI.textDim; ctx.textAlign = 'left'; ctx.fillText(k, px + 24, y)
-      ctx.fillStyle = UI.text; ctx.textAlign = 'right'; ctx.fillText(v, px + PW - 24, y)
+    const keyRows = []
+    for (const row of HOTKEY_ROWS) {
+      ctx.fillStyle = UI.textDim; ctx.textAlign = 'left'; ctx.font = '10px monospace'
+      ctx.fillText(row.label, px + 24, y)
+      if (row.action) {
+        const isReb = rebinding === row.action
+        const r = { action: row.action, x: px + PW - 156, y: y - 11, w: 132, h: 15 }
+        const hov = hit(r, mouse.x, mouse.y)
+        uiPanel(r.x, r.y, r.w, r.h, 4,
+          isReb ? UI.accent : (hov ? UI.accent + '88' : '#33405e'),
+          isReb ? 'rgba(76,201,240,0.20)' : (hov ? 'rgba(76,201,240,0.10)' : UI.panelBg2))
+        ctx.fillStyle = isReb ? UI.accent : UI.text; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'
+        ctx.fillText(isReb ? 'press a key…' : keyLabel(Hotkeys.code(row.action)), r.x + r.w / 2, y)
+        keyRows.push(r)
+      } else {
+        ctx.fillStyle = UI.text; ctx.textAlign = 'right'; ctx.fillText(row.fixed, px + PW - 24, y)
+      }
       y += 15
     }
-    ctx.textAlign = 'left'; y += 12
+    ctx.textAlign = 'left'; y += 8
+    const resetKeys = { x: px + 24, y: y - 9, w: 200, h: 22 }
+    drawButton(resetKeys, 'Reset hotkeys to default')
+    y += 24
 
     // ---- GRAPHICS ----
     y = sect('GRAPHICS (multiplayer placeholders)', y)
@@ -141,24 +209,28 @@ const Options = (() => {
     const rotPlus  = { x: px + PW - 54,  y: y - 9, w: 24, h: 22 }
     drawStep(rotMinus, '-'); drawStep(rotPlus, '+')
     ctx.fillStyle = UI.text; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'
-    ctx.fillText(Settings.screenRotation + '°', px + PW - 90, y + 5); ctx.textAlign = 'left'
+    ctx.fillText(Math.round(Settings.screenRotation) + '°', px + PW - 90, y + 5); ctx.textAlign = 'left'
     y += 32
     const rotReset = { x: px + 24, y: y - 8, w: 180, h: 24 }
     drawButton(rotReset, 'Reset rotation to 0°')
     y += 32
     ctx.fillStyle = UI.textFaint; ctx.font = '9px monospace'
-    ctx.fillText('Gameplay rotation deferred (keeps mouse aim correct).', px + 24, y)
+    ctx.fillText('Hold Q / E in-game to rotate. Aim stays correct while rotated.', px + 24, y)
 
     ctx.fillStyle = UI.textFaint; ctx.font = '10px monospace'; ctx.textAlign = 'center'
-    ctx.fillText('Esc to close', px + PW / 2, py + PH - 12); ctx.textAlign = 'left'
+    ctx.fillText('Esc to close', px + PW / 2, py + PH - 10); ctx.textAlign = 'left'
 
-    _L = { px, py, PW, PH, closeBtn, hideToggle, opMinus, opTrack, opPlus, rotMinus, rotPlus, rotReset }
+    _L = { px, py, PW, PH, closeBtn, keyRows, resetKeys, hideToggle, opMinus, opTrack, opPlus, rotMinus, rotPlus, rotReset }
   }
 
   function onClick(x, y) {
     if (!open || !_L) return false
     const L = _L
     if (hit(L.closeBtn, x, y)) { close(); return true }
+    for (const r of (L.keyRows || [])) {
+      if (hit(r, x, y)) { rebinding = (rebinding === r.action) ? null : r.action; return true }
+    }
+    if (hit(L.resetKeys, x, y)) { Settings.keys = { ...DEFAULT_KEYS }; rebinding = null; save(); return true }
     if (hit(L.hideToggle, x, y)) { Settings.hideOtherProjectiles = !Settings.hideOtherProjectiles; save(); return true }
     if (hit(L.opMinus, x, y)) { Settings.otherPlayerOpacity = clamp(Settings.otherPlayerOpacity - 10, 0, 100); save(); return true }
     if (hit(L.opPlus, x, y))  { Settings.otherPlayerOpacity = clamp(Settings.otherPlayerOpacity + 10, 0, 100); save(); return true }
@@ -168,6 +240,18 @@ const Options = (() => {
     if (hit(L.rotReset, x, y)) { Settings.screenRotation = 0; save(); return true }
     return true   // swallow all clicks while the menu is open
   }
+
+  // ---- key rebinding (capture phase: claim the next key while listening) ----
+  window.addEventListener('keydown', e => {
+    if (!open || !rebinding) return
+    e.preventDefault(); e.stopPropagation()
+    if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation()
+    // Esc cancels; Enter/'/' are reserved for chat/command so can't be bound.
+    if (e.code === 'Escape' || e.code === 'Enter' || e.code === 'Slash') { rebinding = null; return }
+    Settings.keys[rebinding] = e.code
+    rebinding = null
+    save()
+  }, true)
 
   // ---- input ----
   // Esc on the BUBBLE phase: chat/stations consume Esc in the capture phase

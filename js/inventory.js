@@ -54,7 +54,7 @@ const Inventory = (() => {
     return true
   }
 
-  function altHeld() { return !!(keys['AltLeft'] || keys['AltRight']) }
+  function altHeld() { return window.Hotkeys ? Hotkeys.down('ring2') : !!(keys['AltLeft'] || keys['AltRight']) }
 
   // ---- equip target resolution ----
   // Rings: normally fill ring1 first, then ring2. With Alt, always target ring2.
@@ -130,7 +130,7 @@ const Inventory = (() => {
 
   function update(char) {
     if (!ensureChar(char)) { open = false; return }
-    const iDown = !!keys['KeyI']
+    const iDown = window.Hotkeys ? Hotkeys.down('inventory') : !!keys['KeyI']
     if (iDown && !iLatch) open = !open
     iLatch = iDown
   }
@@ -164,11 +164,18 @@ const Inventory = (() => {
     const silhouette = { x: leftX + ss, y: eqTop + 6, w: rightX - (leftX + ss), h: colY(3) + ss - (eqTop + 6) }
     const eqBottom = bottomY + ss
 
-    // Inventory grid (6 x 5 = 30), icon-only
-    const cols = 6, rows = 5, cell = 50, g = 6
+    // Inventory grid (6 x 5 = 30), icon-only. Cell size adapts so the whole grid
+    // stays inside the panel and never covers the footer helper text, even on
+    // short laptop windows.
+    const cols = 6, rows = 5, g = 6
+    const footerSpace = 30                 // reserved at the bottom for helper text
+    const gy = eqBottom + 22
+    const availH = (py + PH - footerSpace) - gy
+    const maxCellH = ((availH - (rows - 1) * g) / rows) | 0
+    const maxCellW = ((PW - 36 - (cols - 1) * g) / cols) | 0
+    const cell = Math.max(30, Math.min(50, maxCellH, maxCellW))
     const gridW = cols * cell + (cols - 1) * g
     const gx = px + ((PW - gridW) / 2) | 0
-    const gy = eqBottom + 26
     const cells = []
     for (let i = 0; i < cols * rows; i++) {
       const c = i % cols, r = (i / cols) | 0
@@ -445,7 +452,8 @@ const Inventory = (() => {
       ctx.fillText(_msg.text, px + 18, py + PH - 12)
     } else {
       ctx.fillStyle = UI.textFaint; ctx.font = '10px monospace'
-      ctx.fillText('[I] close   •   click item to equip   •   click slot to unequip', px + 18, py + PH - 12)
+      const ik = window.Hotkeys ? Hotkeys.name('inventory') : 'I'
+      ctx.fillText(`[${ik}] close   •   click item to equip   •   click slot to unequip`, px + 18, py + PH - 12)
     }
 
     // Narrow window: draw the stats popup on top as an overlay (no room beside).

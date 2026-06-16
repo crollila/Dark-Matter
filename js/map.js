@@ -41,21 +41,17 @@ function buildNexus() {
     set(29, row + 1, T_STATION)
   }
 
-  // Label each station (upgrade→Reforge, destroy→Salvage, transmute→Fusion)
+  // Label each station (upgrade→Reforge, destroy→Salvage, transmute→Fusion).
+  // The vault now occupies a former "???" hallway alcove instead of a standalone
+  // tile near spawn — interact opens the account stash panel (account.stash).
   m.stations = [
     { x: 10, y: 12, label: 'GAMBLE',  key: 'gamble' },
     { x: 10, y: 16, label: 'REFORGE', key: 'upgrade' },
     { x: 10, y: 20, label: 'SALVAGE', key: 'destroy' },
     { x: 29, y: 12, label: 'FUSION',  key: 'transmute' },
-    { x: 29, y: 16, label: '???',     key: 'tbd1' },
+    { x: 29, y: 16, label: 'VAULT',   key: 'vault' },
     { x: 29, y: 20, label: '???',     key: 'tbd2' },
-    // Vault is now a single stash station in the spawn room (no separate zone).
-    { x: 24, y: 32, label: 'VAULT',   key: 'vault' },
   ]
-
-  // Vault station (stash chest) — center of the bottom spawn room, beside spawn.
-  // Replaces the old purple vault portal/zone; press E here to open the stash.
-  set(24, 32, T_STATION)
 
   // ── UPPER BOX: cols 8-31, rows 1-10 ──
   fillRect(m, 8, 1, 32, 10, T_FLOOR)
@@ -116,17 +112,18 @@ function buildVault() {
 }
 
 // ---- OPEN WORLD (cellular automaton cave) ----
-const WORLD_W = 120, WORLD_H = 120
+// Large, open world so biomes sit far apart with neutral terrain between them.
+const WORLD_W = 200, WORLD_H = 200
 
 function buildWorld(seed = Date.now()) {
   const m = makeTileMap(WORLD_W, WORLD_H)
   const rng = mulberry32(seed)
 
-  // Random fill — 55% floor bias for open feel
+  // Random fill — high floor bias (low wall density) for an open, explorable map
   for (let y = 0; y < WORLD_H; y++)
     for (let x = 0; x < WORLD_W; x++)
       m.set(x, y, (x === 0 || y === 0 || x === WORLD_W-1 || y === WORLD_H-1) ? T_WALL
-        : rng() < 0.55 ? T_FLOOR : T_WALL)
+        : rng() < 0.62 ? T_FLOOR : T_WALL)
 
   // Only 3 smoothing passes (was 5), threshold 5→4 to keep more open space
   for (let pass = 0; pass < 3; pass++) {
@@ -168,11 +165,13 @@ function buildWorld(seed = Date.now()) {
     for (let x = 1; x < WORLD_W-1; x++)
       if (m.get(x,y)===T_FLOOR && !visited[y*WORLD_W+x]) m.set(x,y,T_WALL)
 
-  // Scatter water + grass patches (smaller, fewer)
-  for (let i = 0; i < 80; i++) {
+  // Scatter grass + water patches (grass-heavy so the neutral between-biome
+  // terrain reads as open fields). Count scales with the larger map area.
+  const patches = (WORLD_W * WORLD_H / 220) | 0
+  for (let i = 0; i < patches; i++) {
     const pcx = (rng() * (WORLD_W-4) + 2) | 0
     const pcy = (rng() * (WORLD_H-4) + 2) | 0
-    const type = rng() < 0.5 ? T_WATER : T_GRASS
+    const type = rng() < 0.65 ? T_GRASS : T_WATER
     const pr = (rng() * 2 + 1) | 0
     for (let dy = -pr; dy <= pr; dy++)
       for (let dx = -pr; dx <= pr; dx++)

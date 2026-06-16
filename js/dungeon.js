@@ -43,8 +43,8 @@ const DungeonZone = (() => {
     const chatOpen = (window.Chat && Chat.isOpen()) || (window.Options && Options.isOpen())
     const inputBlocked = chatOpen || (window.Inventory && Inventory.isOpen())
 
-    // R → nexus always
-    if (keys['KeyR'] && !chatOpen) { G.enterZone('nexus'); return }
+    // Return → nexus always
+    if (Hotkeys.down('returnNexus') && !chatOpen) { G.enterZone('nexus'); return }
 
     // Player movement (water slows)
     let vx = 0, vy = 0
@@ -71,9 +71,9 @@ const DungeonZone = (() => {
     }
 
     // Ability
-    if (keys['Space'] && char.abilityCooldown <= 0 && !chatOpen) {
+    if (Hotkeys.down('ability') && char.abilityCooldown <= 0 && !chatOpen) {
       CLASSES[char.classKey].ability(char)
-      keys['Space'] = false
+      keys[Hotkeys.code('ability')] = false
     }
 
     updateBullets(pBullets, (x, y) => map.blocked(x, y), dt)
@@ -194,7 +194,7 @@ const DungeonZone = (() => {
       // Edge-trigger: pick up only on the transition to E-down. We do NOT
       // clear keys['KeyE'] (browser key auto-repeat would re-set it and spam
       // pickups while held); instead the latch resets only on real key release.
-      if (keys['KeyE'] && !eLatch && !inputBlocked) {
+      if (Hotkeys.down('interact') && !eLatch && !inputBlocked) {
         const empty = pickupLootBag(char, account, nearBag)
         if (empty) {
           const idx = lootBags.indexOf(nearBag)
@@ -204,7 +204,7 @@ const DungeonZone = (() => {
         eLatch = true
       }
     }
-    if (!keys['KeyE']) eLatch = false
+    if (!Hotkeys.down('interact')) eLatch = false
 
     // Prompt timer
     if (promptTimer > 0) promptTimer -= dt
@@ -212,9 +212,9 @@ const DungeonZone = (() => {
     // Exit portal — press E to step back to the world (no longer instant).
     const tx = (char.x / TILE) | 0, ty = (char.y / TILE) | 0
     if (map.get(tx, ty) === T_PORTAL_DUNGEON) {
-      promptLabel = '[E] Exit dungeon — return to world'
+      promptLabel = `[${Hotkeys.name('interact')}] Exit dungeon — return to world`
       promptTimer = 0.3
-      if (keys['KeyE'] && !inputBlocked && !nearBag) { G.enterZone('world'); return }
+      if (Hotkeys.down('interact') && !inputBlocked && !nearBag) { G.enterZone('world'); return }
     }
 
     updateCharacter(char, dt)
@@ -245,6 +245,7 @@ const DungeonZone = (() => {
     const tc = map.tileColor || {}
     ctx.fillStyle = '#050508'; ctx.fillRect(0, 0, canvas.width, canvas.height)
 
+    beginWorldTransform()
     renderDungeonTiles()
 
     const offX = (canvas.width/2 - cam.x) | 0
@@ -256,14 +257,14 @@ const DungeonZone = (() => {
 
     renderBullets()
     for (const e of mobs) if (e.alive) renderMob(e, offX, offY)
-
-    // Boss HP bar (fullscreen top bar when boss is in view)
-    const boss = mobs.find(e => e.alive && e.isBoss)
-    if (boss) renderBossBar(boss)
-
     renderParticles()
     renderPlayer(char, offX, offY)
     renderFloatTexts()
+    endWorldTransform()
+
+    // Boss HP bar (screen-fixed top bar — drawn upright, outside the rotation)
+    const boss = mobs.find(e => e.alive && e.isBoss)
+    if (boss) renderBossBar(boss)
 
     if (promptLabel && promptTimer > 0) {
       // sits above the bottom-center HUD module (which occupies ~height-88..height-12)
@@ -283,7 +284,7 @@ const DungeonZone = (() => {
       ctx.fillStyle = 'rgba(0,0,0,0.7)'
       ctx.fillRect(canvas.width/2 - 110, canvas.height - 166, 220, 30)
       ctx.fillStyle = '#ffd60a'; ctx.font = 'bold 14px monospace'; ctx.textAlign = 'center'
-      ctx.fillText('[E] Pick up loot', canvas.width/2, canvas.height - 146)
+      ctx.fillText(`[${Hotkeys.name('interact')}] Pick up loot`, canvas.width/2, canvas.height - 146)
       ctx.textAlign = 'left'
     }
 

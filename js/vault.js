@@ -20,8 +20,8 @@ const VaultZone = (() => {
   function update(dt, char) {
     const blocked = (window.Chat && Chat.isOpen()) || (window.Stations && Stations.isOpen()) || (window.Options && Options.isOpen())
 
-    // R → nexus
-    if (keys['KeyR'] && !blocked) { G.enterZone('nexus'); return }
+    // Return to nexus
+    if (Hotkeys.down('returnNexus') && !blocked) { G.enterZone('nexus'); return }
 
     let vx = 0, vy = 0
     const spd = char.spd
@@ -37,12 +37,13 @@ const VaultZone = (() => {
     updateParticles(dt); updateFloatTexts(dt)
 
     prompt = ''
+    const ik = Hotkeys.name('interact')
     const tx = (char.x / TILE) | 0, ty = (char.y / TILE) | 0
-    const eDown = !!keys['KeyE'] && !blocked
+    const eDown = Hotkeys.down('interact') && !blocked
 
     // Return portal
     if (map.get(tx, ty) === T_PORTAL_VAULT) {
-      prompt = '[E] Return to Nexus'
+      prompt = `[${ik}] Return to Nexus`
       if (eDown && !eLatch) { G.enterZone('nexus'); return }
     } else {
       // Near a chest → open vault panel
@@ -52,16 +53,17 @@ const VaultZone = (() => {
         if (dx * dx + dy * dy < (TILE * 1.6) ** 2) { near = true; break }
       }
       if (near) {
-        prompt = '[E] Open Vault'
+        prompt = `[${ik}] Open Vault`
         if (eDown && !eLatch && window.Stations) Stations.open('vault')
       }
     }
-    eLatch = !!keys['KeyE']
+    eLatch = Hotkeys.down('interact')
   }
 
   function render(char) {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.fillStyle = '#0a0816'; ctx.fillRect(0, 0, canvas.width, canvas.height)
+    beginWorldTransform()
     renderTileMap(map, true)
 
     const offX = (canvas.width / 2 - cam.x) | 0
@@ -78,6 +80,7 @@ const VaultZone = (() => {
     renderParticles()
     renderPlayer(char, offX, offY)
     renderFloatTexts()
+    endWorldTransform()
 
     if (prompt) {
       ctx.font = 'bold 14px monospace'
