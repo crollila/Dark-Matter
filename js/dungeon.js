@@ -14,6 +14,9 @@ const DungeonZone = (() => {
   let lootPrompt = false
   let nearBag = null   // closest pickupable bag (for chest preview)
   let eLatch = false   // edge-trigger for [E] pickup (resists key auto-repeat)
+  // Boss damage attribution: { [charId]: totalDamageDealtToBoss }. Single-player
+  // today, but the per-player map is the seam future multiplayer plugs into.
+  let bossDamage = {}
 
   function init(char, dungeonKey = 'goblin_warren') {
     defKey = dungeonKey
@@ -27,6 +30,9 @@ const DungeonZone = (() => {
     lootPrompt = false
     nearBag = null
     eLatch = false
+    bossDamage = {}
+    // Register this zone as the active loot sink so dropped items land here.
+    window.activeLootZone = { addBag: (b) => lootBags.push(b) }
     pBullets.reset(); eBullets.reset()
     particles.length = 0; floatTexts.length = 0
     grid = makeGrid(80, 80)
@@ -105,6 +111,8 @@ const DungeonZone = (() => {
         const dx = b.x - e.x, dy = b.y - e.y
         if (dx*dx + dy*dy < (BULLET_RADIUS + e.radius)**2) {
           e.hp -= b.dmg; e.hitFlash = 0.08; b.alive = false
+          // Track per-player damage to the boss for the loot-contribution gate.
+          if (e.isBoss) bossDamage[char.id] = (bossDamage[char.id] || 0) + b.dmg
           spawnFloatText(e.x, e.y - e.radius, `-${b.dmg}`, '#ff6')
           if (e.hp <= 0) {
             e.alive = false
@@ -119,7 +127,8 @@ const DungeonZone = (() => {
               // Small mob loot drop (bosses still drop better loot via onBossKill)
               const drop = rollMobDrop(stars, { source: defKey, matKey: DUNGEON_MATERIAL[defKey], chance: 0.12 })
               if (drop) {
-                const bag = createLootBag(e.x, e.y, drop, 90)
+                // Basic mob loot is public (first to pick gets it).
+                const bag = createLootBag(e.x, e.y, drop, 90, { ownerId: null, visibility: 'public', source: 'mob' })
                 lootBags.push(bag)
                 spawnParticles(e.x, e.y, bag.color, 10, 90)
               }
@@ -190,6 +199,7 @@ const DungeonZone = (() => {
       const bag = lootBags[i]
       bag.life -= dt
       if (bag.life <= 0) { lootBags.splice(i, 1); continue }
+      if (bagIsEmpty(bag)) { lootBags.splice(i, 1); continue }  // emptied by single-item pick
       const dx = bag.x - char.x, dy = bag.y - char.y
       const d2 = dx*dx + dy*dy
       if (d2 < nearDist) { nearDist = d2; nearBag = bag }
@@ -229,13 +239,25 @@ const DungeonZone = (() => {
 
   function onBossKill(char, boss) {
     spawnFloatText(G.char.x, G.char.y - 50, 'BOSS DEFEATED!', '#ffd700')
-    // Spawn a loot bag at (or near) the boss position
-    const loot = generateBossLoot(defKey)
-    const bx = (boss ? boss.x : char.x) + (Math.random() * 24 - 12)
-    const by = (boss ? boss.y : char.y) + (Math.random() * 24 - 12)
-    const bag = createLootBag(bx, by, loot)
-    lootBags.push(bag)
-    spawnParticles(bx, by, bag.color, 24, 140)
+
+    // Loot-contribution gate: a player only earns boss loot if they dealt at
+    // least 2% of the boss's max HP. Single-player solo kills pass naturally;
+    // the per-player bossDamage map is what multiplayer would consult per player.
+    const maxHp = (boss && boss.maxHp) || 0
+    const required = maxHp * 0.02
+    const dealt = bossDamage[char.id] || 0
+    if (maxHp > 0 && dealt < required) {
+      spawnFloatText(char.x, char.y - 72, 'No loot: not enough boss contribution', '#ff7777')
+      LootLog.push('No loot: not enough boss contribution', '#ff7777')
+    } else {
+      // Boss loot is PRIVATE to the player who earned it.
+      const loot = generateBossLoot(defKey)
+      const bx = (boss ? boss.x : char.x) + (Math.random() * 24 - 12)
+      const by = (boss ? boss.y : char.y) + (Math.random() * 24 - 12)
+      const bag = createLootBag(bx, by, loot, 120, { ownerId: char.id, visibility: 'private', source: 'boss' })
+      lootBags.push(bag)
+      spawnParticles(bx, by, bag.color, 24, 140)
+    }
 
     // Dungeon completion tracking (account-side, data-driven; persisted).
     if (account.dungeonCompletions && typeof account.dungeonCompletions === 'object') {

@@ -606,10 +606,17 @@ function rollMobDrop(stars, opts) {
 }
 
 // ---- LOOT BAG / CHEST ----
-// Bag: { x, y, items[], materials{}, life, maxLife, color, rarity, bob }
-function createLootBag(x, y, loot, lifetime = 120) {
+// Bag: { x, y, items[], materials{}, life, maxLife, color, rarity, bob,
+//        ownerId, visibility, source }
+// Ownership (future multiplayer-ready, single-player safe):
+//   • visibility 'public'  + ownerId null      → anyone; first to pick gets it.
+//   • visibility 'private' + ownerId <charId>  → only that owner may access.
+//   • source 'mob' | 'boss' | 'drop' (where the bag came from).
+// `meta` is optional; old bags / unspecified bags default to a safe public shape.
+function createLootBag(x, y, loot, lifetime = 120, meta) {
   const items = (loot && loot.items) || []
   const materials = (loot && loot.materials) || {}
+  const m = meta || {}
 
   // Best contained item rarity → bag color/glow; fallback to material tone.
   let bestRarity = null
@@ -630,7 +637,31 @@ function createLootBag(x, y, loot, lifetime = 120) {
     color,
     life: lifetime, maxLife: lifetime,
     bob: Math.random() * Math.PI * 2,
+    ownerId: (m.ownerId !== undefined ? m.ownerId : null),
+    visibility: m.visibility || 'public',
+    source: m.source || 'mob',
   }
+}
+
+// ---- LOOT OWNERSHIP / ACCESS ----
+// Defensive access check that never crashes on old/partial bag shapes:
+//   • non-private (public/unknown/missing visibility) → always accessible.
+//   • private with no ownerId recorded → accessible (old shape, safest = allow).
+//   • private with an ownerId → only the matching character may access.
+function lootBagAccessible(bag, char) {
+  if (!bag) return false
+  if (bag.visibility !== 'private') return true   // public / unknown → open
+  if (bag.ownerId == null) return true            // private but ownerless → allow
+  const myId = char && char.id
+  return myId != null && bag.ownerId === myId
+}
+
+// A bag is "empty" (and should be removed) when it holds no items and no materials.
+function bagIsEmpty(bag) {
+  if (!bag) return true
+  const noItems = !Array.isArray(bag.items) || bag.items.length === 0
+  const noMats = !bag.materials || Object.keys(bag.materials).length === 0
+  return noItems && noMats
 }
 
 // ---- INVENTORY / MATERIAL MUTATION ----
@@ -673,6 +704,12 @@ function itemDisplayName(item) {
 // Leftover items remain in the bag. Spawns floating feedback text.
 // Returns true if the bag is now empty (caller should remove it).
 function pickupLootBag(char, acct, bag) {
+  // Access safety: refuse private bags that aren't this character's.
+  if (!lootBagAccessible(bag, char)) {
+    spawnFloatText(bag.x, bag.y - 30, 'Private loot', '#ff7777')
+    LootLog.push('Private loot', '#ff7777')
+    return false
+  }
   let fx = bag.x, fy = bag.y - 16
 
   // Materials → account crafting materials (always fit)
@@ -708,6 +745,31 @@ function pickupLootBag(char, acct, bag) {
   }
 
   return bag.items.length === 0 && Object.keys(bag.materials).length === 0
+}
+
+// Pick ONE item (by index) out of a bag into the character inventory. Used by
+// the loot-chest preview so the player can take items one at a time without
+// disturbing the rest of the chest. No duplication/deletion: the item only
+// leaves the bag once it is safely in the inventory.
+// Returns true on success (caller may remove the bag if it is now empty).
+function pickLootItem(char, acct, bag, index) {
+  if (!bag || !Array.isArray(bag.items)) return false
+  if (!lootBagAccessible(bag, char)) {
+    spawnFloatText(bag.x, bag.y - 30, 'Private loot', '#ff7777')
+    LootLog.push('Private loot', '#ff7777')
+    return false
+  }
+  const item = bag.items[index]
+  if (!item) return false
+  if (!addItemToInventory(char, item)) {
+    spawnFloatText(bag.x, bag.y - 30, 'Inventory full', '#ff5555')
+    LootLog.push('Inventory full', '#ff5555')
+    return false
+  }
+  bag.items.splice(index, 1)   // remove ONLY the picked item, keep the rest
+  spawnFloatText(bag.x, bag.y - 16, itemDisplayName(item), item.color)
+  LootLog.push(itemDisplayName(item), item.color)
+  return true
 }
 
 // ---- LOOT LOG (latest notifications for HUD) ----
@@ -795,21 +857,27 @@ function renderItemTooltip(it, x, y) {
 
 // ---- RENDER: loot chest preview (contents + rarity colors + ratings) ----
 // Drawn above a nearby loot bag. Hovering a row shows the item tooltip.
+// Last drawn preview hit-map: lets the click handler map a click onto a row so
+// the player can pick a single item from a multi-item chest. Rebuilt each frame.
+let _lootPreviewHit = null   // { bag, rows: [{ x, y, w, h, index }] }
+
 function renderLootPreview(bag, offX, offY) {
+  _lootPreviewHit = null
   if (!bag) return
   const rows = []
-  for (const it of bag.items) {
-    rows.push({ color: it.color || '#ccc', item: it,
+  for (let i = 0; i < bag.items.length; i++) {
+    const it = bag.items[i]
+    rows.push({ color: it.color || '#ccc', item: it, index: i,
       label: `${it.name}  ${typeof it.rating === 'number' ? it.rating + '%' : ''}` })
   }
   if (!rows.length) return
 
-  const lineH = 16, padX = 8, padY = 6, header = 14
+  const lineH = 16, padX = 8, padY = 6, header = 14, footer = 12
   ctx.font = '11px monospace'
   let w = 0
   for (const r of rows) w = Math.max(w, ctx.measureText(r.label).width)
   const panelW = w + padX * 2 + 14
-  const panelH = rows.length * lineH + padY * 2 + header
+  const panelH = rows.length * lineH + padY * 2 + header + footer
   // Drawn outside the world transform → anchor via worldToScreen so the panel
   // points at the bag's true rotated screen position.
   const [bsx, bsy] = worldToScreen(bag.x, bag.y)
@@ -826,17 +894,45 @@ function renderLootPreview(bag, offX, offY) {
 
   let y = py + header + padY + 8
   let hoverItem = null
+  const hitRows = []
   for (const r of rows) {
     const rx = px + padX, ry = y - lineH + 4, rw = panelW - padX * 2, rh = lineH
-    if (mouse.x >= rx && mouse.x <= rx + rw && mouse.y >= ry && mouse.y <= ry + rh && r.item) hoverItem = r.item
+    const over = mouse.x >= rx && mouse.x <= rx + rw && mouse.y >= ry && mouse.y <= ry + rh
+    if (over && r.item) hoverItem = r.item
+    if (over) { ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(rx, ry, rw, rh) }
     ctx.fillStyle = r.color
     ctx.beginPath(); ctx.arc(px + padX + 4, y - 4, 3, 0, Math.PI * 2); ctx.fill()
     ctx.font = '11px monospace'
     ctx.fillText(r.label, px + padX + 12, y)
+    hitRows.push({ x: rx, y: ry, w: rw, h: rh, index: r.index })
     y += lineH
   }
+  // Footer hint: click a row to take that single item.
+  ctx.fillStyle = '#6b7b90'; ctx.font = '8px monospace'
+  ctx.fillText('click an item to take it', px + padX, py + panelH - 4)
   ctx.textAlign = 'left'
+  _lootPreviewHit = { bag, rows: hitRows }
   if (hoverItem) renderItemTooltip(hoverItem, mouse.x + 12, mouse.y + 12)
+}
+
+// Click handler for the loot-chest preview (single-item pickup). Returns true if
+// a row was clicked (so the caller can swallow the click). Bag emptiness is
+// cleaned up by the owning zone's update loop.
+function handleLootPreviewClick(mx, my) {
+  const hit = _lootPreviewHit
+  if (!hit || !hit.bag) return false
+  for (const r of hit.rows) {
+    if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+      const char = (typeof G !== 'undefined') && G.char
+      const acct = (typeof account !== 'undefined') ? account : {}
+      if (char) {
+        pickLootItem(char, acct, hit.bag, r.index)
+        if (window.saveGame) saveGame()
+      }
+      return true
+    }
+  }
+  return false
 }
 
 // ---- RENDER: loot HUD (recent notifications + inventory + materials) ----
@@ -907,6 +1003,22 @@ window.createLootBag = createLootBag
 window.renderLootBag = renderLootBag
 window.renderLootHUD = renderLootHUD
 window.pickupLootBag = pickupLootBag
+window.pickLootItem = pickLootItem
+window.lootBagAccessible = lootBagAccessible
+window.bagIsEmpty = bagIsEmpty
+window.handleLootPreviewClick = handleLootPreviewClick
+
+// Single-item loot-chest pickup: clicking a preview row takes that one item.
+// Disabled while a blocking panel (inventory/options/stations/chat) is up so the
+// click doesn't fight those UIs.
+canvas.addEventListener('mousedown', e => {
+  if (e.button !== 0) return
+  if (window.Inventory && Inventory.isOpen()) return
+  if (window.Options && Options.isOpen()) return
+  if (window.Stations && Stations.isOpen && Stations.isOpen()) return
+  if (window.Chat && Chat.isOpen && Chat.isOpen()) return
+  if (handleLootPreviewClick(e.clientX, e.clientY)) e.stopPropagation()
+}, true)
 window.addItemToInventory = addItemToInventory
 window.invItemCount = invItemCount
 window.firstEmptySlot = firstEmptySlot

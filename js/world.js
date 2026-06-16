@@ -30,6 +30,8 @@ const WorldZone = (() => {
     lootBags = []
     eLatchLoot = false
     nearBag = null
+    // Register this zone as the active loot sink so dropped items land here.
+    window.activeLootZone = { addBag: (b) => lootBags.push(b) }
     currentBiome = null
     worldTime = 0
     respawnQueue = []
@@ -267,6 +269,7 @@ const WorldZone = (() => {
       const b = lootBags[i]
       b.life -= dt
       if (b.life <= 0) { lootBags.splice(i, 1); continue }
+      if (bagIsEmpty(b)) { lootBags.splice(i, 1); continue }  // emptied by single-item pick
       const dx = b.x - char.x, dy = b.y - char.y, d2 = dx*dx + dy*dy
       if (d2 < nd) { nd = d2; nearBag = b }
     }
@@ -354,7 +357,8 @@ const WorldZone = (() => {
     // Common mob loot drop (shared by all world mobs; biome mobs a bit higher).
     const drop = rollMobDrop(0, { source: 'world', chance: isBiome ? BIOME_LOOT_CHANCE : NEUTRAL_LOOT_CHANCE })
     if (drop) {
-      const bag = createLootBag(e.x, e.y, drop, 60)
+      // Common mob loot is public — first player to reach it gets it.
+      const bag = createLootBag(e.x, e.y, drop, 60, { ownerId: null, visibility: 'public', source: 'mob' })
       lootBags.push(bag)
       spawnParticles(e.x, e.y, bag.color, 10, 90)
     }
@@ -363,7 +367,7 @@ const WorldZone = (() => {
     if (e.uniqueDrop && Math.random() < e.uniqueDrop.chance * UNIQUE_MULT) {
       const it = rollItem(e.uniqueDrop.base, e.uniqueDrop.rarity || 'epic', null, e.uniqueDrop.source || 'biome')
       if (it) {
-        const bag = createLootBag(e.x, e.y, { items: [it] }, 90)
+        const bag = createLootBag(e.x, e.y, { items: [it] }, 90, { ownerId: null, visibility: 'public', source: 'mob' })
         lootBags.push(bag)
         spawnFloatText(e.x, e.y - 56, 'UNIQUE!', it.color)
         spawnParticles(e.x, e.y, it.color, 16, 110)

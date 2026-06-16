@@ -24,6 +24,10 @@ const Inventory = (() => {
   let iLatch = false
   let _layout = null
   let _msg = null
+  // Active drag: { fromIdx, item, sx, sy, x, y, moved, alt }. A drag that ends
+  // back on its own cell or as a plain click equips (old behavior); a drag to
+  // another cell moves/swaps; a drag released outside the window drops to ground.
+  let _drag = null
 
   // gear key → display label / single-letter icon
   const SLOT_META = {
@@ -156,6 +160,44 @@ const Inventory = (() => {
     flash('Inventory organized', UI.accent)
   }
 
+  // ---- slot-stable move/swap (drag a grid item onto another grid cell) ----
+  // Never compacts: moving onto an empty cell leaves the source empty; moving
+  // onto a filled cell swaps the two. Net item count unchanged → always valid.
+  function moveItem(char, from, to) {
+    if (from === to) return
+    const inv = char.inventory
+    const a = inv[from] || null, b = inv[to] || null
+    inv[to] = a; inv[from] = b
+    if (window.saveGame) saveGame()
+  }
+
+  // ---- drop a grid item out of the inventory onto the ground ----
+  // Creates a private (owner = this character) loot bag at the character's feet.
+  // The item only leaves the inventory AFTER the bag is created — if creation
+  // fails the item is kept (no deletion). Leaves a hole; never compacts.
+  function dropToGround(char, idx) {
+    const item = char.inventory[idx]
+    if (!item) return
+    // Only world/dungeon zones have a ground-loot system.
+    const z = (typeof G !== 'undefined') ? G.zone : null
+    const zone = window.activeLootZone
+    if ((z !== 'world' && z !== 'dungeon') || !zone || typeof zone.addBag !== 'function') {
+      flash('Cannot drop items here', UI.bad)
+      return
+    }
+    let bag = null
+    try {
+      bag = createLootBag(char.x, char.y + 12, { items: [item] }, 120,
+        { ownerId: char.id, visibility: 'private', source: 'drop' })
+    } catch (e) { bag = null }
+    if (!bag) { flash('Drop failed', UI.bad); return }   // keep the item
+    zone.addBag(bag)
+    char.inventory[idx] = null   // remove only after the bag exists; leave a hole
+    if (window.saveGame) saveGame()
+    flash('Dropped ' + item.name, item.color || UI.text)
+    spawnFloatText(char.x, char.y - 40, 'Dropped ' + item.name, item.color || UI.text)
+  }
+
   function update(char) {
     if (!ensureChar(char)) { open = false; return }
     const iDown = window.Hotkeys ? Hotkeys.down('inventory') : !!keys['KeyI']
@@ -246,6 +288,62 @@ const Inventory = (() => {
     if (statsOpen && hit(L.statsPanel, x, y)) return true
     if (x < L.px || x > L.px + L.PW || y < L.py || y > L.py + L.PH) { open = false }
     return true
+  }
+
+  // ---- drag-aware mouse handling ----
+  // Buttons and equipped-slot unequip act immediately on mousedown (old feel).
+  // Grid items begin a drag candidate; the real action is decided on mouseup so
+  // a plain click still equips, while a drag can move/swap/drop.
+  function onMouseDown(x, y, char, alt) {
+    if (window.Options && Options.isOpen()) return false
+    if (!open || !_layout) return false
+    const L = _layout
+    if (hit(L.closeBtn, x, y)) { open = false; return true }
+    if (hit(L.statsBtn, x, y)) { statsOpen = !statsOpen; return true }
+    if (hit(L.organizeBtn, x, y)) { organize(char); return true }
+    for (const s of L.slots) {
+      if (hit(s, x, y)) { if (char.gear[s.key]) unequip(char, s.key); return true }
+    }
+    const inv = char.inventory || []
+    for (const c of L.cells) {
+      if (hit(c, x, y)) {
+        _drag = { fromIdx: c.i, item: inv[c.i] || null, sx: x, sy: y, x, y, moved: false, alt }
+        return true   // action resolved on mouseup
+      }
+    }
+    if (statsOpen && hit(L.statsPanel, x, y)) return true
+    if (x < L.px || x > L.px + L.PW || y < L.py || y > L.py + L.PH) { open = false }
+    return true
+  }
+
+  function onMouseMove(x, y) {
+    if (!_drag) return
+    _drag.x = x; _drag.y = y
+    if (Math.abs(x - _drag.sx) > 4 || Math.abs(y - _drag.sy) > 4) _drag.moved = true
+  }
+
+  function onMouseUp(x, y, char, alt) {
+    const d = _drag
+    _drag = null
+    if (!d || !open || !_layout || !char) return
+    const item = d.item
+    if (!item) return                       // dragged an empty cell → nothing
+    const L = _layout
+    const a = (alt || d.alt)
+    if (!d.moved) { equip(char, d.fromIdx, a); return }   // plain click → equip
+    // Released over another grid cell → move/swap.
+    for (const c of L.cells) {
+      if (hit(c, x, y)) { moveItem(char, d.fromIdx, c.i); return }
+    }
+    // Released over an equipment slot → equip.
+    for (const s of L.slots) {
+      if (hit(s, x, y)) { equip(char, d.fromIdx, a); return }
+    }
+    // Released anywhere else inside the window/stats panel → cancel (no-op).
+    if (statsOpen && hit(L.statsPanel, x, y)) return
+    if (x >= L.px && x <= L.px + L.PW && y >= L.py && y <= L.py + L.PH) return
+    // Released fully outside the UI → drop to the ground.
+    dropToGround(char, d.fromIdx)
   }
 
   // ---- tooltip helpers ----
@@ -501,7 +599,21 @@ const Inventory = (() => {
     if (statsOpen && !L.statsFits) renderStatsPanel(L.statsPanel, char)
 
     // Tooltips (on top of everything). Alt compares a ring against ring2.
-    if (hoverGrid) {
+    if (_drag && _drag.moved && _drag.item) {
+      // Drag ghost follows the cursor; drop hint shows outside the window.
+      const it = _drag.item, gx = mouse.x, gy = mouse.y
+      uiPanel(gx - 18, gy - 18, 36, 36, 6, it.color || '#888', hexA(it.color, 0.32))
+      const meta = SLOT_META[it.slot] || SLOT_META[(it.slot === 'ring' ? 'ring1' : it.slot)] || { ic: '?' }
+      ctx.fillStyle = it.color || UI.text; ctx.font = 'bold 16px monospace'
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+      ctx.fillText(meta.ic || '?', gx, gy - 2)
+      ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left'
+      const outside = gx < L.px || gx > L.px + L.PW || gy < L.py || gy > L.py + L.PH
+      if (outside && !(statsOpen && hit(L.statsPanel, gx, gy))) {
+        ctx.fillStyle = UI.bad; ctx.font = '9px monospace'; ctx.textAlign = 'center'
+        ctx.fillText('drop', gx, gy + 26); ctx.textAlign = 'left'
+      }
+    } else if (hoverGrid) {
       const slot = compareSlot(char, hoverGrid, altHeld())
       drawHoverTooltips(char, hoverGrid, slot ? char.gear[slot] : null)
     } else if (hoverEquipped) {
@@ -548,13 +660,25 @@ const Inventory = (() => {
     } catch (e) { return { error: String(e) } }
   }
 
-  return { update, render, onClick, isOpen, equip, unequip, debugGiveItem, debugState }
+  return { update, render, onClick, onMouseDown, onMouseMove, onMouseUp, isOpen, equip, unequip, debugGiveItem, debugState }
 })()
 
+// Drag-aware input: down starts a drag/equip, move tracks it, up resolves it
+// (equip / move / swap / drop-to-ground). mouseup is on window so a drag that
+// ends off the panel (to drop) is still caught.
 canvas.addEventListener('mousedown', e => {
   if (e.button !== 0) return
   if (Inventory.isOpen() && typeof G !== 'undefined' && G.char) {
-    if (Inventory.onClick(e.clientX, e.clientY, G.char, e.altKey)) { e.stopPropagation() }
+    if (Inventory.onMouseDown(e.clientX, e.clientY, G.char, e.altKey)) { e.stopPropagation() }
+  }
+}, true)
+canvas.addEventListener('mousemove', e => {
+  if (Inventory.isOpen()) Inventory.onMouseMove(e.clientX, e.clientY)
+}, true)
+window.addEventListener('mouseup', e => {
+  if (e.button !== 0) return
+  if (Inventory.isOpen() && typeof G !== 'undefined' && G.char) {
+    Inventory.onMouseUp(e.clientX, e.clientY, G.char, e.altKey)
   }
 }, true)
 

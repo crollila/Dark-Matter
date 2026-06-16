@@ -167,6 +167,7 @@ Use for:
 - Salvage/reforge/fusion/gamble item logic if implemented here.
 - `BIOME_UNIQUES` (mob-only) + `DUNGEON_EXCLUSIVES` (now 4 per biome dungeon = 3 armor/accessory + 1 class-locked WEAPON, tagged `dungeon:<key>`, `unique:true`): both folded into `ITEM_BASES`, skipped by random/gamble. Exclusive weapons have FIXED `bspd` (single-value range → midpoint, never rerolls/reforges). `EXCLUSIVES_BY_DUNGEON` lookup; `rollDungeonExclusive(key, boost, classKey?)` filters class-locked exclusives to the active class (falls back to agnostic ones if none usable). `generateBossLoot` rolls exclusive (boss high chance), `rollMobDrop` adds a rare exclusive for dungeon basic mobs.
 - Class-targeted loot: `CLASS_AFFINITY` (per-class preferred stats) + `baseAffinityWeight` bias `randomItem`'s base pick toward class-fitting gear (weapons already hard class-locked). Old/agnostic bases keep weight 1 — safe.
+- Loot ownership: `createLootBag(x,y,loot,life,meta)` where `meta={ownerId,visibility,source}`. Bags carry `ownerId`/`visibility`('public'|'private')/`source`('mob'|'boss'|'drop'). `lootBagAccessible(bag,char)`: non-private→open; private+no owner→open (old shapes safe); private+owner→only matching `char.id`. `bagIsEmpty(bag)`. `pickupLootBag` (pick-all) + `pickLootItem(char,acct,bag,index)` (single item) both gate on access; no dup/delete. `renderLootPreview` rows are clickable (hit-map `_lootPreviewHit`); `handleLootPreviewClick` + a capture mousedown listener pick one item (disabled while inventory/options/stations/chat open).
 
 Use for:
 - item stats/rarity/rollPercent
@@ -185,10 +186,12 @@ Use for:
 - Inventory/stash transfer helpers if they live here.
 - Inventory debug helpers.
 
+- Drag/drop: grid items are drag-aware. `onMouseDown`/`onMouseMove`/`onMouseUp` (window-level mouseup so off-panel drops are caught). Plain click = equip (old feel). Drag to another grid cell = slot-stable `moveItem` (move/swap, never compacts). Drag to an equipment slot = equip. Drag released OUTSIDE the window = `dropToGround` → creates a PRIVATE (owner=char.id, source 'drop') loot bag at the character via `window.activeLootZone.addBag` (world/dungeon only; item kept if bag creation fails; leaves a hole). Drag ghost + "drop" hint rendered at cursor.
+
 Use for:
 - inventory UI bugs
 - item tooltips inside inventory
-- equip/unequip/swap issues
+- equip/unequip/swap issues / drag-drop / drop-to-ground
 - panel layout
 - removing vault access from character panel
 
@@ -256,7 +259,7 @@ Use for:
 ### `js/dungeon.js`
 - Dungeon zone runtime.
 - Dungeon combat loop.
-- Boss kill hook.
+- Boss kill hook. `bossDamage = {[charId]: total}` (per-player damage map, reset in `init`) accumulated on each player-bullet boss hit. `onBossKill` gates loot: only spawns if `dealt >= 0.02 * boss.maxHp` (single-player passes naturally), else float "No loot: not enough boss contribution". Boss bag is PRIVATE (owner=char.id, source 'boss'). Mob drops are PUBLIC mob bags. Empty bags (single-item picked) removed in the loot loop via `bagIsEmpty`. `init` registers `window.activeLootZone`.
 - Boss loot bag spawning.
 - Dungeon loot bags/previews.
 - Dungeon exit portal behavior.
@@ -395,6 +398,10 @@ Keep updated.
 - [x] Biome drops: shared biome dungeon-portal drop per biome + one unique mob-only item per monster (`u_*` bases, `unique:true`, mob-only)
 - [x] Biome dungeons (dark_matter_core, frozen_catacombs, infernal_pit, plague_grotto, fallen_keep, astral_tomb): REAL/enterable — themed palette, biome's 3 mobs + dedicated boss (reuses existing boss AIs), 4 dungeon-exclusive drops each (3 armor/accessory + 1 class-locked weapon). Mob-drop-ONLY entry (25% biome mob portal drop); NOT in fixed world scatter. World scatter = OG dungeons only.
 - [x] Class-targeted loot: weapons hard class-locked; armor/accessory drops biased toward class stats via `CLASS_AFFINITY`/`baseAffinityWeight`; gamble + exclusive rolls class-filtered.
+- [x] Item drag/drop: drag a grid item to another cell (move/swap, slot-stable), to an equipment slot (equip), or outside the window to DROP it on the ground as a private loot bag. Plain click still equips.
+- [x] Loot chest single-item pickup: click an item row in the chest preview to take just that item (inventory room permitting); pick-all ([E]) still works; chest removes only the picked item; empty chests vanish.
+- [x] Boss loot contribution gate: per-player `bossDamage` map; loot only for a player who dealt ≥2% of boss max HP (solo passes), else "No loot" feedback. Boss flow unaffected.
+- [x] Loot ownership: bags carry `ownerId`/`visibility`/`source`. Boss bags PRIVATE to earner; mob/common bags PUBLIC (first to pick). Access checks (`lootBagAccessible`) default old/partial bags to safe-accessible. Data-only, no networking.
 
 ---
 
