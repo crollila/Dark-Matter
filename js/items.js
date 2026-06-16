@@ -619,7 +619,7 @@ function renderLootPreview(bag, offX, offY) {
 function renderLootHUD(char, acct) {
   const w = canvas.width
   const pad = 12
-  let y = 92
+  let y = 206   // start below the top-right minimap module
   const x = w - pad
 
   ctx.textAlign = 'right'
