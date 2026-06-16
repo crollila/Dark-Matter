@@ -410,8 +410,56 @@ const MOB_DEFS = {
     name: 'Astral Pharaoh', color: '#ffd166', ai: 'boss_void',
     hp: 90000, spd: 46, dmg: 410, bspd: 280, atkSpd: 0.9, range: 9999, radius: 30, xp: 590,
     portalDrop: null, isBoss: true
+  },
+
+  // === WORLD BOSSES (roaming overworld events — every 6 normal world kills) ===
+  // Reuse existing boss AIs but each is distinct via color/HP/bullet speed/cadence.
+  // Beefier than dungeon bosses; solo-killable in ~30s–3min and easily passing the
+  // 2% loot-contribution gate. See WORLD_BOSSES below for biome/mythic/dungeon links.
+  wb_event_horizon: {
+    name: 'Event Horizon Devourer', color: '#a64bff', ai: 'boss_void',
+    hp: 150000, spd: 42, dmg: 440, bspd: 300, atkSpd: 0.80, range: 9999, radius: 32, xp: 1200,
+    portalDrop: null, isBoss: true
+  },
+  wb_frost_titan: {
+    name: 'Frost Titan Ymir', color: '#9fe8ff', ai: 'boss_mycelian',
+    hp: 165000, spd: 30, dmg: 460, bspd: 230, atkSpd: 1.00, range: 9999, radius: 34, xp: 1200,
+    portalDrop: null, isBoss: true
+  },
+  wb_ashen_worldeater: {
+    name: 'Ashen Worldeater', color: '#ff5a22', ai: 'boss_goblin',
+    hp: 155000, spd: 58, dmg: 480, bspd: 300, atkSpd: 0.85, range: 9999, radius: 32, xp: 1200,
+    portalDrop: null, isBoss: true
+  },
+  wb_plague_matriarch: {
+    name: 'Plague Matriarch', color: '#9be84a', ai: 'boss_mycelian',
+    hp: 150000, spd: 34, dmg: 440, bspd: 250, atkSpd: 1.00, range: 9999, radius: 32, xp: 1200,
+    portalDrop: null, isBoss: true
+  },
+  wb_hollow_king: {
+    name: 'The Hollow King', color: '#e6dcae', ai: 'boss_goblin',
+    hp: 158000, spd: 48, dmg: 460, bspd: 280, atkSpd: 0.90, range: 9999, radius: 31, xp: 1200,
+    portalDrop: null, isBoss: true
+  },
+  wb_astral_pharaoh: {
+    name: 'Astral Pharaoh', color: '#ffd166', ai: 'boss_void',
+    hp: 160000, spd: 46, dmg: 460, bspd: 290, atkSpd: 0.85, range: 9999, radius: 32, xp: 1200,
+    portalDrop: null, isBoss: true
   }
 }
+
+// World boss → boss biome id (biomes.js), signature mythic base (items.js), and
+// related dungeon key (DUNGEONS below). Spawn/biome-paint/loot logic in world.js.
+const WORLD_BOSSES = {
+  wb_event_horizon:    { mob: 'wb_event_horizon',    biome: 7,  mythic: 'm_singularity_crown',     dungeon: 'event_horizon_vault' },
+  wb_frost_titan:      { mob: 'wb_frost_titan',      biome: 8,  mythic: 'm_ymir_heart',            dungeon: 'titan_glacier' },
+  wb_ashen_worldeater: { mob: 'wb_ashen_worldeater', biome: 9,  mythic: 'm_worldeater_emberplate', dungeon: 'worldeater_forge' },
+  wb_plague_matriarch: { mob: 'wb_plague_matriarch', biome: 10, mythic: 'm_matriarch_sporeveil',   dungeon: 'plague_hive' },
+  wb_hollow_king:      { mob: 'wb_hollow_king',      biome: 11, mythic: 'm_hollow_signet',         dungeon: 'cursed_throne' },
+  wb_astral_pharaoh:   { mob: 'wb_astral_pharaoh',   biome: 12, mythic: 'm_pharaoh_ankh',          dungeon: 'starfall_pyramid' },
+}
+const WORLD_BOSS_KEYS = Object.keys(WORLD_BOSSES)
+if (typeof window !== 'undefined') window.WORLD_BOSSES = WORLD_BOSSES
 
 // Spawn an enemy instance from a definition key
 function spawnMob(key, x, y) {
@@ -705,6 +753,47 @@ const DUNGEONS = {
     tileColor: { floor: '#2a2238', wall: '#150f22', accent: '#6e5aa0' },
     mobs: ['star_scarab', 'mirage_stalker', 'sunseer'],
     boss: 'astral_pharaoh',
+    rooms: { min: 6, max: 10 }, roomSize: { min: 5, max: 9 }, mobsPerRoom: { min: 2, max: 4 }
+  },
+
+  // === WORLD-BOSS DUNGEONS (real/enterable; entered ONLY via the portal dropped
+  // when the matching world boss dies). `biome: true` keeps them out of fixed
+  // world scatter (map.js). Reuse each theme's 3 biome mobs + a dungeon boss;
+  // 3 exclusive drops each via items.js EXCLUSIVES_BY_DUNGEON. ===
+  event_horizon_vault: {
+    biome: true, name: 'Event Horizon Vault', stars: 7, color: '#a64bff',
+    tileColor: { floor: '#120a1f', wall: '#070310', accent: '#5a2a9e' },
+    mobs: ['matter_wraith', 'gravity_maw', 'null_apostle'], boss: 'singularity_tyrant',
+    rooms: { min: 6, max: 9 }, roomSize: { min: 5, max: 9 }, mobsPerRoom: { min: 2, max: 4 }
+  },
+  titan_glacier: {
+    biome: true, name: 'Titan Glacier', stars: 6, color: '#9fe8ff',
+    tileColor: { floor: '#22323d', wall: '#101c24', accent: '#5b8aa6' },
+    mobs: ['frost_skater', 'icebound_archer', 'snow_golem'], boss: 'frost_monarch',
+    rooms: { min: 6, max: 9 }, roomSize: { min: 5, max: 9 }, mobsPerRoom: { min: 2, max: 3 }
+  },
+  worldeater_forge: {
+    biome: true, name: 'Worldeater Forge', stars: 6, color: '#ff5a22',
+    tileColor: { floor: '#280d09', wall: '#160603', accent: '#7a2a12' },
+    mobs: ['ember_imp', 'chainscourge', 'lava_brute'], boss: 'infernal_lord',
+    rooms: { min: 6, max: 10 }, roomSize: { min: 5, max: 9 }, mobsPerRoom: { min: 2, max: 4 }
+  },
+  plague_hive: {
+    biome: true, name: 'Plague Hive', stars: 6, color: '#9be84a',
+    tileColor: { floor: '#16240f', wall: '#0a1307', accent: '#3f7a2a' },
+    mobs: ['spore_crawler', 'venom_cap', 'mycelium_horror'], boss: 'plague_mother',
+    rooms: { min: 6, max: 9 }, roomSize: { min: 5, max: 10 }, mobsPerRoom: { min: 2, max: 3 }
+  },
+  cursed_throne: {
+    biome: true, name: 'Cursed Throne', stars: 6, color: '#e6dcae',
+    tileColor: { floor: '#26231b', wall: '#13110c', accent: '#5a5238' },
+    mobs: ['fallen_squire', 'cursed_archer', 'grave_priest'], boss: 'fallen_monarch',
+    rooms: { min: 6, max: 10 }, roomSize: { min: 5, max: 9 }, mobsPerRoom: { min: 2, max: 4 }
+  },
+  starfall_pyramid: {
+    biome: true, name: 'Starfall Pyramid', stars: 7, color: '#ffd166',
+    tileColor: { floor: '#241d33', wall: '#120d1f', accent: '#6e5aa0' },
+    mobs: ['star_scarab', 'mirage_stalker', 'sunseer'], boss: 'astral_pharaoh',
     rooms: { min: 6, max: 10 }, roomSize: { min: 5, max: 9 }, mobsPerRoom: { min: 2, max: 4 }
   }
 }

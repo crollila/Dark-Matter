@@ -515,10 +515,18 @@ const Minimap = (() => {
       if (!e || !e.alive) continue
       const [ex, ey] = w2m(e.x, e.y)
       if (e.isBoss) {
-        ctx.fillStyle = '#ffd700'
+        // World bosses get a bigger, pulsing marker so the overworld event is
+        // easy to find; dungeon bosses keep the standard gold diamond.
+        const s = e.worldBoss ? 6 : 4
+        if (e.worldBoss) {
+          const pr = 7 + Math.sin(Date.now() / 250) * 2
+          ctx.strokeStyle = (e.color || '#ff5db1') + 'cc'; ctx.lineWidth = 1.5
+          ctx.beginPath(); ctx.arc(ex, ey, pr, 0, Math.PI * 2); ctx.stroke()
+        }
+        ctx.fillStyle = e.worldBoss ? '#ff5db1' : '#ffd700'
         ctx.beginPath()
-        ctx.moveTo(ex, ey - 4); ctx.lineTo(ex + 4, ey)
-        ctx.lineTo(ex, ey + 4); ctx.lineTo(ex - 4, ey)
+        ctx.moveTo(ex, ey - s); ctx.lineTo(ex + s, ey)
+        ctx.lineTo(ex, ey + s); ctx.lineTo(ex - s, ey)
         ctx.closePath(); ctx.fill()
         ctx.strokeStyle = '#fff8'; ctx.lineWidth = 1; ctx.stroke()
       } else {

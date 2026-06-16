@@ -15,6 +15,12 @@ const WorldZone = (() => {
   let currentBiome = null   // biome def the player is currently standing in (or null)
   let worldTime = 0         // seconds since this world was generated
   let respawnQueue = []     // [{ biome, at }] — scheduled biome respawns
+  // --- World bosses ---
+  let worldBoss = null      // the single active world boss (cap 1), or null
+  let mobKillCount = 0      // normal world-mob kills (NOT bosses/dungeon mobs)
+  let bossDamage = {}       // { [charId]: damage dealt to the active world boss }
+  const WORLD_BOSS_EVERY = 6     // spawn a world boss every N normal world kills
+  const BOSS_BIOME_RADIUS = 22   // boss-biome paint radius (tiles)
   const WORLD_MOB_POOL = ['slime', 'forest_sprite', 'goblin_scout']
   const BIOME_SPAWN = 9     // biome mobs spawned per biome at world-gen
   const NEUTRAL_SPAWN = 12  // wandering neutral mobs scattered in open terrain
@@ -35,6 +41,9 @@ const WorldZone = (() => {
     currentBiome = null
     worldTime = 0
     respawnQueue = []
+    worldBoss = null
+    mobKillCount = 0
+    bossDamage = {}
     pBullets.reset(); eBullets.reset()
     particles.length = 0; floatTexts.length = 0
     char.x = map.spawnPos.x; char.y = map.spawnPos.y
@@ -191,6 +200,8 @@ const WorldZone = (() => {
         const dx = b.x - e.x, dy = b.y - e.y
         if (dx*dx + dy*dy < (BULLET_RADIUS + e.radius)**2) {
           e.hp -= b.dmg; e.hitFlash = 0.08; b.alive = false; e.aggro = true
+          // Per-player damage to the active world boss (for the 2% loot gate).
+          if (e.isBoss) bossDamage[char.id] = (bossDamage[char.id] || 0) + b.dmg
           spawnFloatText(e.x, e.y - e.radius, `-${b.dmg}`, '#ff6')
           if (e.hp <= 0) killMob(e, char)
           break
@@ -335,6 +346,9 @@ const WorldZone = (() => {
 
   function killMob(e, char) {
     e.alive = false
+    // World boss death → special path (mythic + dungeon portal). Bosses do NOT
+    // count toward the spawn counter and never schedule a respawn.
+    if (e.isBoss) { onWorldBossKill(e, char); return }
     const isBiome = !!e.biome
     const xp = mobKillXp(e.xp, char, 0)
     char.xp += xp
@@ -379,6 +393,136 @@ const WorldZone = (() => {
       spawnFloatText(e.x, e.y - 40, `PORTAL!`, '#cc44ff')
       spawnParticles(e.x, e.y, '#cc44ff', 20, 120)
     }
+
+    // World-boss spawn rule: every Nth normal world-mob kill awakens one boss
+    // (capped at a single active boss at a time).
+    mobKillCount++
+    if (mobKillCount % WORLD_BOSS_EVERY === 0) trySpawnWorldBoss(char)
+  }
+
+  // ---- WORLD BOSSES -------------------------------------------------------
+  // Paint a circular boss-biome patch (overwrites biome ids → in-world floor
+  // tint + minimap tint change). Saves the overwritten ids on the boss so the
+  // patch is restored on death. Visual only — terrain/collision untouched.
+  function paintBossBiome(centerTx, centerTy, biomeId, boss) {
+    if (!map.biome) return
+    const W = map.w, H = map.h, r = BOSS_BIOME_RADIUS
+    const patch = []
+    for (let y = Math.max(1, centerTy - r); y <= Math.min(H - 2, centerTy + r); y++) {
+      for (let x = Math.max(1, centerTx - r); x <= Math.min(W - 2, centerTx + r); x++) {
+        const dx = x - centerTx, dy = y - centerTy
+        if (dx * dx + dy * dy > r * r) continue
+        const i = y * W + x
+        patch.push({ i, prev: map.biome[i] })
+        map.biome[i] = biomeId
+      }
+    }
+    if (boss) boss._biomePatch = patch
+    map._mini = null   // force the minimap to re-tint with the boss biome
+  }
+  function restoreBossBiome(boss) {
+    if (!boss || !boss._biomePatch || !map.biome) return
+    for (const p of boss._biomePatch) map.biome[p.i] = p.prev
+    boss._biomePatch = null
+    map._mini = null
+  }
+
+  // Find a walkable world tile away from home/player, avoiding water/lava.
+  function findWorldBossSpot(char) {
+    const homeGap2 = (TILE * 24) * (TILE * 24)
+    const playerGap2 = (TILE * 16) * (TILE * 16)
+    for (let pass = 0; pass < 2; pass++) {
+      for (let attempt = 0; attempt < 120; attempt++) {
+        const tx = (Math.random() * (WORLD_W - 20) + 10) | 0
+        const ty = (Math.random() * (WORLD_H - 20) + 10) | 0
+        const wx = tx * TILE + TILE / 2, wy = ty * TILE + TILE / 2
+        if (map.blocked(wx, wy)) continue
+        const t = map.get(tx, ty)
+        if (t === T_WATER || t === T_LAVA) continue
+        if (pass === 0) {
+          const hx = wx - map.spawnPos.x, hy = wy - map.spawnPos.y
+          if (hx * hx + hy * hy < homeGap2) continue
+          const dx = wx - char.x, dy = wy - char.y
+          if (dx * dx + dy * dy < playerGap2) continue
+        }
+        return { x: wx, y: wy, tx, ty }
+      }
+    }
+    return null   // never found a spot → caller simply skips the spawn (no crash)
+  }
+
+  // Spawn a specific world boss (cap: only one active at a time). Returns the
+  // boss instance or null.
+  function spawnWorldBoss(key, char) {
+    if (worldBoss && worldBoss.alive) return null
+    const wb = (typeof WORLD_BOSSES !== 'undefined') && WORLD_BOSSES[key]
+    if (!wb) return null
+    const spot = findWorldBossSpot(char)
+    if (!spot) return null
+    const boss = spawnMob(wb.mob, spot.x, spot.y)
+    if (!boss) return null
+    boss.worldBoss = true
+    boss.homeX = spot.x; boss.homeY = spot.y
+    boss.aggro = true
+    mobs.push(boss)
+    worldBoss = boss
+    bossDamage = {}
+    if (wb.biome) paintBossBiome(spot.tx, spot.ty, wb.biome, boss)
+    spawnFloatText(char.x, char.y - 60, 'World Boss Awakened: ' + boss.name, '#ff5db1')
+    if (typeof LootLog !== 'undefined') LootLog.push('World Boss Awakened: ' + boss.name, '#ff5db1')
+    spawnParticles(spot.x, spot.y, boss.color, 36, 160)
+    return boss
+  }
+
+  function trySpawnWorldBoss(char) {
+    if (worldBoss && worldBoss.alive) return null
+    const key = WORLD_BOSS_KEYS[Math.random() * WORLD_BOSS_KEYS.length | 0]
+    return spawnWorldBoss(key, char)
+  }
+
+  function onWorldBossKill(boss, char) {
+    const wb = (typeof WORLD_BOSSES !== 'undefined' && WORLD_BOSSES[boss.key]) || {}
+    const xp = mobKillXp(boss.xp, char, 6)   // high-star-equivalent XP
+    char.xp += xp
+    if (char.level >= LEVEL_CAP) char.glory += xp
+    spawnParticles(boss.x, boss.y, boss.color, 40, 180)
+    spawnFloatText(boss.x, boss.y - 40, `+${xp} XP`, '#ffd60a')
+    spawnFloatText(boss.x, boss.y - 64, 'WORLD BOSS DEFEATED!', '#ffd700')
+    if (typeof LootLog !== 'undefined') LootLog.push(boss.name + ' defeated!', '#ffd700')
+
+    // Restore the overwritten biome patch so the world stays clean.
+    restoreBossBiome(boss)
+
+    // Mythic signature drop — private to the player, gated by the 2% damage
+    // threshold (solo fights pass naturally). Plus one bonus generic item.
+    const maxHp = boss.maxHp || 0
+    const dealt = bossDamage[char.id] || 0
+    if (maxHp > 0 && dealt < maxHp * 0.02) {
+      spawnFloatText(char.x, char.y - 72, 'No loot: not enough boss contribution', '#ff7777')
+      if (typeof LootLog !== 'undefined') LootLog.push('No loot: not enough boss contribution', '#ff7777')
+    } else {
+      const items = []
+      if (wb.mythic) { const m = rollItem(wb.mythic, 'mythic', null, 'world_boss'); if (m) items.push(m) }
+      const extra = randomItem('world_boss', { boost: 0.6 }); if (extra) items.push(extra)
+      if (items.length) {
+        const bag = createLootBag(boss.x, boss.y, { items }, 180, { ownerId: char.id, visibility: 'private', source: 'boss' })
+        lootBags.push(bag)
+        spawnParticles(boss.x, boss.y, bag.color, 30, 160)
+        if (wb.mythic) spawnFloatText(boss.x, boss.y - 88, 'MYTHIC!', '#ff3b6b')
+      }
+    }
+
+    // Drop a portal to the boss's related dungeon (always, even with no loot).
+    if (wb.dungeon && typeof DUNGEONS !== 'undefined' && DUNGEONS[wb.dungeon]) {
+      const ptx = (boss.x / TILE) | 0, pty = (boss.y / TILE) | 0
+      map.set(ptx, pty, T_PORTAL_DUNGEON)
+      pendingPortals.push({ x: boss.x, y: boss.y, tx: ptx, ty: pty, dungeonKey: wb.dungeon, timer: 90 })
+      spawnFloatText(boss.x, boss.y - 24, 'PORTAL!', '#cc44ff')
+      spawnParticles(boss.x, boss.y, '#cc44ff', 22, 130)
+    }
+
+    worldBoss = null
+    if (window.saveGame) saveGame()
   }
 
   function render(char) {
@@ -483,5 +627,17 @@ const WorldZone = (() => {
     ctx.textAlign = 'left'
   }
 
-  return { init, update, render }
+  return {
+    init, update, render,
+    // Debug/console hooks (used by chat /spawnboss and /worldboss).
+    debugSpawnBoss: (key) => spawnWorldBoss(key, G.char),
+    debugWorldBoss: () => ({
+      killCount: mobKillCount,
+      every: WORLD_BOSS_EVERY,
+      alive: !!(worldBoss && worldBoss.alive),
+      name: worldBoss && worldBoss.name,
+      keys: WORLD_BOSS_KEYS,
+    }),
+  }
 })()
+window.WorldZone = WorldZone

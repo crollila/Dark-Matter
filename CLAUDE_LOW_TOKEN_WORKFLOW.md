@@ -107,6 +107,7 @@ Update this map after each patch so future prompts can point Claude to exact fil
 
 ### `js/biomes.js`
 - Data-driven world biome defs (`BIOMES`, `BIOME_BY_ID`): palette, mob pool, hazard tile, minimap tint, related dungeon-drop key.
+- `BOSS_BIOMES` (ids 7-12: Event Horizon/Glacial Throne/Ash Caldera/Rot Garden/Cursed Court/Starfall Dunes): floor/floorAlt/accent/mini/name. Deliberately NOT in `BIOMES` (so assignBiomes never world-scatters them) but folded into `BIOME_BY_ID` so in-world floor tint + minimap tint + biome-name label resolve them. Painted at runtime by world.js around a world boss.
 - `assignBiomes(map, rng)`: paints SEPARATED biome clusters (one spaced blob per biome, neutral grass id 0 in the gaps) onto the world map (`map.biome` Uint8Array, `map.biomeAt`, `map.biomeClusters = [{id,x,y,r}]` in tiles), scatters ice/lava hazard tiles, keeps spawn/home neutral. Defensive fallback placement never crashes.
 
 Use for:
@@ -167,6 +168,7 @@ Use for:
 - Salvage/reforge/fusion/gamble item logic if implemented here.
 - `BIOME_UNIQUES` (mob-only) + `DUNGEON_EXCLUSIVES` (now 4 per biome dungeon = 3 armor/accessory + 1 class-locked WEAPON, tagged `dungeon:<key>`, `unique:true`): both folded into `ITEM_BASES`, skipped by random/gamble. Exclusive weapons have FIXED `bspd` (single-value range → midpoint, never rerolls/reforges). `EXCLUSIVES_BY_DUNGEON` lookup; `rollDungeonExclusive(key, boost, classKey?)` filters class-locked exclusives to the active class (falls back to agnostic ones if none usable). `generateBossLoot` rolls exclusive (boss high chance), `rollMobDrop` adds a rare exclusive for dungeon basic mobs.
 - Class-targeted loot: `CLASS_AFFINITY` (per-class preferred stats) + `baseAffinityWeight` bias `randomItem`'s base pick toward class-fitting gear (weapons already hard class-locked). Old/agnostic bases keep weight 1 — safe.
+- `WORLD_BOSS_MYTHICS` (`m_*`): one mythic per world boss, `unique:true` + NO `dungeon` tag (kept out of random/gamble AND EXCLUSIVES_BY_DUNGEON) — rolled directly via `rollItem(base,'mythic')` by world.js `onWorldBossKill`. 5 affixes each. `DUNGEON_EXCLUSIVES` also now carries 3 exclusives for each of the 6 world-boss dungeons.
 - Loot ownership: `createLootBag(x,y,loot,life,meta)` where `meta={ownerId,visibility,source}`. Bags carry `ownerId`/`visibility`('public'|'private')/`source`('mob'|'boss'|'drop'). `lootBagAccessible(bag,char)`: non-private→open; private+no owner→open (old shapes safe); private+owner→only matching `char.id`. `bagIsEmpty(bag)`. `pickupLootBag` (pick-all) + `pickLootItem(char,acct,bag,index)` (single item) both gate on access; no dup/delete. `renderLootPreview` rows are clickable (hit-map `_lootPreviewHit`); `handleLootPreviewClick` + a capture mousedown listener pick one item (disabled while inventory/options/stations/chat open). A consumed preview click also clears `mouse.down` (engine sets it first on the same target) so it never fires a gameplay shot.
 
 Use for:
@@ -233,9 +235,12 @@ Use for:
 - Aggro/leash (in `updateMob`, applies to world+dungeon): per-mob `aggroRange`/`deAggroRange`/`homeLeash` (optional def overrides) with safe AI-type defaults (`_aggroRange`/`_deAggroRange`/`_homeLeash`; bosses ALWAYS active, never sleep/leash). Mob idles/returns toward `homeX/homeY` until player enters aggro range (no shots while non-aggro or asleep). De-aggros past `deAggroRange` (hysteresis) OR when dragged off `homeLeash` / out of its `biome` tile → walks home. Getting hit by a player bullet sets `e.aggro=true` (world.js/dungeon.js). Dungeon mobs/bosses have no biome/home → idle-in-place then fight; bosses unaffected.
 - Enemy HP bar + boss name in `renderMob` use `drawUpright(sx,sy,…)` (like player bars) — pinned above the mob, readable/upright, position tracks world under rotation.
 
+- `WORLD_BOSSES` (+ `WORLD_BOSS_KEYS`, `window.WORLD_BOSSES`): 6 `wb_*` boss mob defs (reuse boss_void/boss_mycelian/boss_goblin AIs) mapped to boss biome id / mythic base / dungeon key. 6 world-boss `DUNGEONS` entries (`biome:true`) reuse biome mobs + existing dungeon bosses. Spawn/biome/loot logic lives in world.js.
+
 Use for:
 - mob stats/AI
 - boss bullet patterns
+- world boss defs / world-boss dungeon defs (`WORLD_BOSSES`, DUNGEONS)
 - dungeon metadata like stars if located here
 - XP/drop source data if stored on mobs
 - offscreen culling / AI sleep / mob perf tuning
@@ -251,12 +256,15 @@ Use for:
 - Respawn: dead biome mobs scheduled in `respawnQueue` (random 1–30s via `worldTime`), respawn as a random one of that biome's 3 mobs inside the same biome, not next to player.
 - Drop tuning consts in `killMob`: `BIOME_LOOT_CHANCE`/`NEUTRAL_LOOT_CHANCE`, `PORTAL_MULT`, `UNIQUE_MULT`. Biome mobs still share common drops + keep their unique.
 
+- World bosses: `WORLD_BOSSES` (mobs.js) maps each of 6 world bosses → boss biome id, signature mythic base, related dungeon. `killMob` counts NON-boss world kills (`mobKillCount`); every `WORLD_BOSS_EVERY` (6) it calls `trySpawnWorldBoss` (cap 1 active). `spawnWorldBoss` finds a walkable spot away from home/player (avoids water/lava), spawns the boss (`worldBoss`, `boss.worldBoss=true`, always aggro/never sleeps), paints its boss biome via `paintBossBiome` (overwrites `map.biome` ids in a radius, saves prev ids on `boss._biomePatch`, nulls `map._mini`), shows "World Boss Awakened". `bossDamage` tracks per-player hits. `onWorldBossKill` (boss branch at top of `killMob`): grants XP, `restoreBossBiome`, drops a PRIVATE bag with the boss mythic (`rollItem(base,'mythic')`) + a bonus item gated by the 2% threshold, then drops a `pendingPortals` portal to the boss's dungeon (always, 90s). Debug hooks `WorldZone.debugSpawnBoss/debugWorldBoss` (chat `/spawnboss`,`/worldboss`).
+
 Use for:
 - world portal behavior
 - world mob drops / drop rates
 - biome mob spawn distribution + respawn timing
 - world movement/input bugs
 - portal expiry
+- world boss spawn rule / boss biome paint / world boss loot+dungeon portal
 
 ### `js/dungeon.js`
 - Dungeon zone runtime.
@@ -405,6 +413,8 @@ Keep updated.
 - [x] Item drag/drop: drag a grid item to another cell (move/swap, slot-stable), to an equipment slot (equip), or outside the window to DROP it on the ground as a private loot bag. Plain click still equips.
 - [x] Loot chest single-item pickup: click an item row in the chest preview to take just that item (inventory room permitting); pick-all ([E]) still works; chest removes only the picked item; empty chests vanish.
 - [x] Boss loot contribution gate: per-player `bossDamage` map; loot only for a player who dealt ≥2% of boss max HP (solo passes), else "No loot" feedback. Boss flow unaffected.
+- [x] World bosses (6): Event Horizon Devourer/Frost Titan Ymir/Ashen Worldeater/Plague Matriarch/The Hollow King/Astral Pharaoh (`wb_*` mob defs, reuse existing boss AIs, distinct color/HP/cadence). Spawn every 6 normal world kills (cap 1 active) at a valid spot away from home/player. Each paints a runtime BOSS_BIOME patch (ids 7-12) around itself, drops a private signature MYTHIC (`m_*`, 5 affixes) gated by 2% damage, and on death drops a portal to its own real dungeon. Bigger pulsing minimap marker (`e.worldBoss`). `/worldboss`,`/spawnboss <key>` debug commands.
+- [x] World-boss dungeons (6, real/enterable, `biome:true` so off world scatter): event_horizon_vault/titan_glacier/worldeater_forge/plague_hive/cursed_throne/starfall_pyramid — themed palette, 3 reused biome mobs + a dungeon boss, 3 exclusive drops each (items.js DUNGEON_EXCLUSIVES). Entered only via the world-boss death portal.
 - [x] Boss death return portal: `onBossKill` sets the boss tile to `T_PORTAL_DUNGEON` (return to world), spawned before the loot gate so it appears even with no loot; loot pickup keeps interaction priority (portal entry only when not on a loot bag).
 - [x] Tile render radius option (`Settings.tileRenderRadius`, blocks/tiles, default 60, clamped 20–120): `renderTileMap` caps span + circular-culls distant tiles (visual only; collision + minimap unaffected).
 - [x] Player body rotates with world rotation: a bright world-anchored facing wedge on the body makes rotation visible for all class shapes; HP/MP bars stay upright via `drawUpright`; aim dot/shooting still use mouse aim.

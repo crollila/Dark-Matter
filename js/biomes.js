@@ -41,9 +41,24 @@ const BIOMES = {
   },
 }
 
+// ---- BOSS BIOMES (ids 7-12) ----
+// Painted at RUNTIME around a spawned world boss (see world.js), NOT at
+// world-gen — so they are deliberately kept OUT of `BIOMES` (which assignBiomes
+// iterates to place world clusters). They ARE added to BIOME_BY_ID below so the
+// in-world floor tint, minimap tint, and the biome-name label all resolve them.
+const BOSS_BIOMES = {
+  event_horizon: { id: 7,  name: 'Event Horizon', floor: '#120a1f', floorAlt: '#1a1030', accent: '#b388ff', mini: [70, 34, 104] },
+  glacial_throne: { id: 8,  name: 'Glacial Throne', floor: '#26424f', floorAlt: '#2e4d5b', accent: '#9fe8ff', mini: [150, 196, 220] },
+  ash_caldera:    { id: 9,  name: 'Ash Caldera', floor: '#2a1310', floorAlt: '#331813', accent: '#ff5a22', mini: [150, 54, 30] },
+  rot_garden:     { id: 10, name: 'Rot Garden', floor: '#1d2a13', floorAlt: '#243318', accent: '#9be84a', mini: [96, 150, 50] },
+  cursed_court:   { id: 11, name: 'Cursed Court', floor: '#2b2740', floorAlt: '#332f4a', accent: '#e6dcae', mini: [150, 138, 108] },
+  starfall_dunes: { id: 12, name: 'Starfall Dunes', floor: '#2c2440', floorAlt: '#352b4d', accent: '#ffd166', mini: [196, 168, 110] },
+}
+
 // id → biome lookup (used by render/minimap/world spawn & leash logic)
 const BIOME_BY_ID = {}
 for (const k in BIOMES) BIOME_BY_ID[BIOMES[k].id] = BIOMES[k]
+for (const k in BOSS_BIOMES) BIOME_BY_ID[BOSS_BIOMES[k].id] = BOSS_BIOMES[k]
 
 // Assign biome regions onto a world map as SEPARATED clusters. Each biome gets
 // one blob region placed apart from the others, with neutral grass (id 0) in

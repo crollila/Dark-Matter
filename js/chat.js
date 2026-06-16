@@ -42,6 +42,7 @@ const Chat = (() => {
         pushLog('/godmode  /giveitem <slot|baseKey> [tier1-6]  /givedust <rarity> <n>', '#9fb3c8')
         pushLog('/givedust <rarity> <n>  /giveglory <n>  /xp <n>  /level <n>', '#9fb3c8')
         pushLog('/enter <world|nexus|vault|dungeonKey>', '#9fb3c8')
+        pushLog('/worldboss  /spawnboss <key>   (world zone only)', '#9fb3c8')
         break
       case 'godmode':
         if (c) { c.godmode = !c.godmode; pushLog('godmode ' + (c.godmode ? 'ON' : 'OFF'), '#ffd60a') }
@@ -56,6 +57,8 @@ const Chat = (() => {
         break
       case 'level':    setLevel(c, a); break
       case 'enter':    doEnter(a); break
+      case 'spawnboss': spawnBossCmd(a); break
+      case 'worldboss': worldBossCmd(); break
       default: pushLog('unknown command: ' + cmd + '  (try /help)', '#ff6b6b')
     }
   }
@@ -94,6 +97,23 @@ const Chat = (() => {
     recalcStats(c); c.hp = c.maxHp; c.mp = c.maxMp
     if (window.saveGame) saveGame()
     pushLog('level set to ' + lv, '#ffd60a')
+  }
+
+  function spawnBossCmd(a) {
+    if (typeof G === 'undefined' || G.zone !== 'world') { pushLog('must be in the world to spawn a boss', '#ff6b6b'); return }
+    const key = a[0]
+    if (!key || !(window.WORLD_BOSSES && WORLD_BOSSES[key])) {
+      pushLog('boss keys: ' + Object.keys(window.WORLD_BOSSES || {}).join(', '), '#ff6b6b'); return
+    }
+    const b = (typeof WorldZone !== 'undefined' && WorldZone.debugSpawnBoss) ? WorldZone.debugSpawnBoss(key) : null
+    pushLog(b ? ('spawned ' + (b.name || key)) : 'spawn failed (a boss is already active, or no valid spot)', b ? '#ffd700' : '#ff6b6b')
+  }
+
+  function worldBossCmd() {
+    if (typeof WorldZone === 'undefined' || !WorldZone.debugWorldBoss) { pushLog('world boss info unavailable', '#ff6b6b'); return }
+    const info = WorldZone.debugWorldBoss()
+    pushLog(`world kills: ${info.killCount}  (boss every ${info.every})  active: ${info.alive ? info.name : 'none'}`, '#9fb3c8')
+    pushLog('bosses: ' + info.keys.join(', '), '#9fb3c8')
   }
 
   function doEnter(a) {

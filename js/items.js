@@ -258,6 +258,75 @@ const DUNGEON_EXCLUSIVES = {
   at_astral_scepter: { name: 'Astral Scepter', slot: 'weapon', classes: ['priest'], unique: true, dungeon: 'astral_tomb',
     core: { dmg: [50, 85], range: [210, 250], atkSpd: [0.22, 0.28], bspd: [310, 310], int: [5, 9] },
     affixPool: [ { mp: [160, 300] }, { hpRegen: [4, 7] }, { hp: [80, 160] }, { int: [3, 6] } ] },
+
+  // === WORLD-BOSS DUNGEON EXCLUSIVES (3 per dungeon) ===
+  // Event Horizon Vault
+  ehv_horizon_plate: { name: 'Horizon Plate', slot: 'chest', classes: null, unique: true, dungeon: 'event_horizon_vault',
+    core: { hp: [280, 380], armor: [10, 16] }, affixPool: [ { hpRegen: [4, 8] }, { int: [4, 8] } ] },
+  ehv_void_circlet: { name: 'Void Circlet', slot: 'helmet', classes: null, unique: true, dungeon: 'event_horizon_vault',
+    core: { armor: [8, 13], hp: [150, 230], int: [4, 8] }, affixPool: [ { mp: [120, 220] }, { hpRegen: [3, 6] } ] },
+  ehv_collapse_band: { name: 'Collapse Band', slot: 'ring', classes: null, unique: true, dungeon: 'event_horizon_vault',
+    core: { str: [5, 10], int: [5, 10] }, affixPool: [ { hp: [100, 180] }, { spd: [3, 5] } ] },
+  // Titan Glacier
+  tgl_titan_helm: { name: 'Titan Helm', slot: 'helmet', classes: null, unique: true, dungeon: 'titan_glacier',
+    core: { armor: [9, 14], hp: [160, 240], str: [4, 7] }, affixPool: [ { hpRegen: [3, 6] }, { spd: [2, 5] } ] },
+  tgl_glacier_guard: { name: 'Glacier Guard', slot: 'chest', classes: null, unique: true, dungeon: 'titan_glacier',
+    core: { hp: [280, 380], armor: [10, 16] }, affixPool: [ { hpRegen: [3, 6] }, { mp: [100, 200] } ] },
+  tgl_titan_treads: { name: 'Titan Treads', slot: 'boots', classes: null, unique: true, dungeon: 'titan_glacier',
+    core: { spd: [10, 17], hp: [100, 180] }, affixPool: [ { armor: [3, 6] }, { dex: [3, 6] } ] },
+  // Worldeater Forge
+  wfg_ember_crown: { name: 'Ember Crown', slot: 'helmet', classes: null, unique: true, dungeon: 'worldeater_forge',
+    core: { armor: [9, 14], hp: [160, 240], str: [5, 8] }, affixPool: [ { hpRegen: [3, 6] }, { spd: [2, 5] } ] },
+  wfg_forge_plate: { name: 'Forge Plate', slot: 'chest', classes: null, unique: true, dungeon: 'worldeater_forge',
+    core: { hp: [300, 400], armor: [11, 17] }, affixPool: [ { str: [5, 9] }, { hpRegen: [3, 6] } ] },
+  wfg_cinder_band: { name: 'Cinder Band', slot: 'ring', classes: null, unique: true, dungeon: 'worldeater_forge',
+    core: { str: [6, 11], hp: [120, 200] }, affixPool: [ { armor: [3, 6] }, { spd: [3, 5] } ] },
+  // Plague Hive
+  phv_hive_mantle: { name: 'Hive Mantle', slot: 'chest', classes: null, unique: true, dungeon: 'plague_hive',
+    core: { hp: [280, 380], armor: [9, 14] }, affixPool: [ { hpRegen: [5, 9] }, { dex: [4, 7] } ] },
+  phv_hive_gauntlets: { name: 'Hive Gauntlets', slot: 'hands', classes: null, unique: true, dungeon: 'plague_hive',
+    core: { dex: [5, 10], armor: [4, 7] }, affixPool: [ { spd: [4, 7] }, { hp: [100, 180] } ] },
+  phv_rot_charm: { name: 'Hive Rot Charm', slot: 'amulet', classes: null, unique: true, dungeon: 'plague_hive',
+    core: { hp: [220, 320], hpRegen: [5, 9] }, affixPool: [ { armor: [3, 6] }, { dex: [3, 6] } ] },
+  // Cursed Throne
+  ctr_throne_crown: { name: 'Throne Crown', slot: 'helmet', classes: null, unique: true, dungeon: 'cursed_throne',
+    core: { armor: [9, 14], hp: [160, 240], str: [4, 8] }, affixPool: [ { hpRegen: [3, 6] }, { int: [4, 7] } ] },
+  ctr_revenant_greaves: { name: 'Revenant Greaves', slot: 'pants', classes: null, unique: true, dungeon: 'cursed_throne',
+    core: { hp: [220, 320], armor: [7, 12] }, affixPool: [ { str: [4, 8] }, { hpRegen: [3, 6] } ] },
+  ctr_court_signet: { name: 'Court Signet', slot: 'ring', classes: null, unique: true, dungeon: 'cursed_throne',
+    core: { str: [5, 10], int: [5, 10] }, affixPool: [ { hp: [100, 180] }, { mp: [100, 200] } ] },
+  // Starfall Pyramid
+  spy_pyramid_circlet: { name: 'Pyramid Circlet', slot: 'helmet', classes: null, unique: true, dungeon: 'starfall_pyramid',
+    core: { armor: [8, 13], hp: [150, 230], int: [5, 9] }, affixPool: [ { mp: [120, 220] }, { hpRegen: [3, 6] } ] },
+  spy_dune_boots: { name: 'Pyramid Dune Boots', slot: 'boots', classes: null, unique: true, dungeon: 'starfall_pyramid',
+    core: { spd: [11, 18], hp: [100, 180] }, affixPool: [ { dex: [4, 7] }, { armor: [3, 6] } ] },
+  spy_star_relic: { name: 'Starfall Relic', slot: 'ability', classes: null, unique: true, dungeon: 'starfall_pyramid',
+    core: { mp: [200, 320], int: [6, 10] }, affixPool: [ { hpRegen: [4, 7] }, { hp: [100, 180] } ] },
+}
+
+// ---- WORLD-BOSS MYTHIC SIGNATURE DROPS ----
+// One mythic per world boss. `unique: true` keeps them out of random/gamble; no
+// `dungeon` tag so they never enter EXCLUSIVES_BY_DUNGEON — they ONLY drop from
+// their world boss, always at mythic rarity (5 affixes). Class-agnostic.
+const WORLD_BOSS_MYTHICS = {
+  m_singularity_crown: { name: 'Singularity Crown', slot: 'helmet', classes: null, unique: true, mythicOnly: true,
+    core: { armor: [12, 20], hp: [220, 340], int: [6, 12] },
+    affixPool: [ { mp: [200, 360] }, { hpRegen: [5, 9] }, { spd: [3, 6] }, { str: [4, 8] }, { dex: [4, 8] } ] },
+  m_ymir_heart: { name: "Ymir's Frozen Heart", slot: 'amulet', classes: null, unique: true, mythicOnly: true,
+    core: { hp: [300, 440], mp: [180, 320] },
+    affixPool: [ { armor: [6, 12] }, { hpRegen: [5, 9] }, { int: [4, 8] }, { spd: [3, 6] }, { str: [4, 8] } ] },
+  m_worldeater_emberplate: { name: 'Worldeater Emberplate', slot: 'chest', classes: null, unique: true, mythicOnly: true,
+    core: { hp: [360, 520], armor: [14, 22] },
+    affixPool: [ { str: [6, 12] }, { hpRegen: [5, 9] }, { spd: [2, 5] }, { armor: [4, 8] }, { hp: [120, 220] } ] },
+  m_matriarch_sporeveil: { name: 'Matriarch Sporeveil', slot: 'ability', classes: null, unique: true, mythicOnly: true,
+    core: { mp: [240, 400], int: [6, 12] },
+    affixPool: [ { hpRegen: [6, 10] }, { hp: [140, 240] }, { dex: [4, 8] }, { spd: [3, 6] }, { mp: [120, 220] } ] },
+  m_hollow_signet: { name: "Hollow King's Signet", slot: 'ring', classes: null, unique: true, mythicOnly: true,
+    core: { str: [7, 13], int: [7, 13] },
+    affixPool: [ { hp: [140, 240] }, { mp: [140, 240] }, { armor: [4, 8] }, { spd: [3, 6] }, { hpRegen: [4, 8] } ] },
+  m_pharaoh_ankh: { name: "Pharaoh's Astral Ankh", slot: 'amulet', classes: null, unique: true, mythicOnly: true,
+    core: { hp: [260, 380], mp: [220, 360] },
+    affixPool: [ { int: [6, 12] }, { hpRegen: [5, 9] }, { spd: [3, 6] }, { armor: [5, 10] }, { dex: [4, 8] } ] },
 }
 
 // Void multiplier templates per slot (% based; recalcStats applies these as
@@ -284,6 +353,7 @@ const VOID_AFFIXES = {
 // filtered out of random/gamble rolls.
 Object.assign(ITEM_BASES, BIOME_UNIQUES)
 Object.assign(ITEM_BASES, DUNGEON_EXCLUSIVES)
+Object.assign(ITEM_BASES, WORLD_BOSS_MYTHICS)
 
 // Dungeon key → its exclusive base keys (built from the `dungeon` tag). Used by
 // boss/mob loot to roll a dungeon's signature gear. Unknown keys → undefined,
