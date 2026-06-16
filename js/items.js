@@ -1017,7 +1017,15 @@ canvas.addEventListener('mousedown', e => {
   if (window.Options && Options.isOpen()) return
   if (window.Stations && Stations.isOpen && Stations.isOpen()) return
   if (window.Chat && Chat.isOpen && Chat.isOpen()) return
-  if (handleLootPreviewClick(e.clientX, e.clientY)) e.stopPropagation()
+  if (handleLootPreviewClick(e.clientX, e.clientY)) {
+    // Consume the click so it does not also trigger gameplay shooting. The
+    // engine's own mousedown listener runs first (same target, earlier
+    // registration) and already set mouse.down = true, so stopPropagation alone
+    // is not enough — clear the shoot flag and block default for this press.
+    if (typeof mouse !== 'undefined') mouse.down = false
+    e.preventDefault()
+    e.stopPropagation()
+  }
 }, true)
 window.addItemToInventory = addItemToInventory
 window.invItemCount = invItemCount
