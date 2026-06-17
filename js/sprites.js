@@ -120,6 +120,34 @@ Object.assign(SPRITE_REGISTRY, {
   crystal_knight: { src: 'assets/sprites/Crystal Knight.png', fw: 96, fh: 96, frames: 4, cols: 4, fps: 6, category: 'boss' },
 })
 
+// --- Monster Creature pack (pack 1 by batareya) -----------------------------
+// 20 crisp 64x96 single-sprite PNGs — clean pixel art (unlike the 1024x1024
+// flying-creature AI renders), so these render large/sharp inside the mob box.
+// Stable IDs monster_boss_01..20; original file paths preserved verbatim. These
+// are dungeon-boss / elite-mob candidates (category 'boss').
+Object.assign(SPRITE_REGISTRY, {
+  monster_boss_01: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0056-900920138.png', category: 'boss' },
+  monster_boss_02: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0063-4100537309.png', category: 'boss' },
+  monster_boss_03: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0064-4100537310.png', category: 'boss' },
+  monster_boss_04: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0067-1577086740.png', category: 'boss' },
+  monster_boss_05: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0069-1577086742.png', category: 'boss' },
+  monster_boss_06: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0071-2562867672.png', category: 'boss' },
+  monster_boss_07: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0074-2562867675.png', category: 'boss' },
+  monster_boss_08: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0077-668142567.png', category: 'boss' },
+  monster_boss_09: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0078-668142568.png', category: 'boss' },
+  monster_boss_10: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0081-116591765.png', category: 'boss' },
+  monster_boss_11: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0082-116591766.png', category: 'boss' },
+  monster_boss_12: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0087-4255467705.png', category: 'boss' },
+  monster_boss_13: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0088-4255467706.png', category: 'boss' },
+  monster_boss_14: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0091-4023341708.png', category: 'boss' },
+  monster_boss_15: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0092-4023341709.png', category: 'boss' },
+  monster_boss_16: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0094-4023341711.png', category: 'boss' },
+  monster_boss_17: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0096-362859608.png', category: 'boss' },
+  monster_boss_18: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0098-362859610.png', category: 'boss' },
+  monster_boss_19: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0101-3056965715.png', category: 'boss' },
+  monster_boss_20: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0102-3056965716.png', category: 'boss' },
+})
+
 // --- Optional assignment maps ----------------------------------------------
 // Map game-side keys -> sprite IDs. Empty entries simply fall back to geometry.
 // mob keys come from MOB_DEFS (e.key).
@@ -135,18 +163,21 @@ const mobSpriteAssignments = {}
 // creature art (see sprites_debug.html). Bosses with no good fit are left out and
 // keep their geometric fallback. drawForMob consults this BEFORE mobSpriteAssignments.
 const bossSpriteAssignments = {
-  // --- open-world / OG dungeon bosses ---
-  goblin_warchief:    'flying_boss_19',  // fire/orange horned demon (warren)
-  mycelian_king:      'flying_boss_06',  // green (fungal)
-  void_harbinger:     'flying_boss_15',  // purple (void)
-  // --- biome dungeon bosses ---
-  singularity_tyrant: 'flying_boss_04',  // dark/horned (void/singularity)
-  frost_monarch:      'flying_boss_02',  // icy blue (frost)
-  infernal_lord:      'flying_boss_17',  // red/orange (fire)
-  plague_mother:      'flying_boss_18',  // green (plague)
-  fallen_monarch:     'flying_boss_09',  // grim/skeletal (ruined/cursed)
-  astral_pharaoh:     'flying_boss_10',  // single-eye mystical (astral)
-  // --- roaming world bosses ---
+  // --- open-world / OG + biome DUNGEON bosses -> crisp Monster Creature pack ---
+  // These 64x96 pixel sprites render large/sharp (the 1024x1024 flying-creature
+  // renders look tiny/padded), so dungeon bosses use the monster pack. Themes are
+  // best-guess by index/style; verify/retune in sprites_debug.html. A bad match
+  // can simply be unassigned to fall back to the geometric diamond.
+  goblin_warchief:    'monster_boss_01',  // warren brute
+  mycelian_king:      'monster_boss_02',  // fungal
+  void_harbinger:     'monster_boss_03',  // void
+  singularity_tyrant: 'monster_boss_04',  // dark/singularity
+  frost_monarch:      'monster_boss_05',  // frost
+  infernal_lord:      'monster_boss_06',  // fire
+  plague_mother:      'monster_boss_07',  // plague
+  fallen_monarch:     'monster_boss_08',  // ruined/cursed
+  astral_pharaoh:     'monster_boss_09',  // astral
+  // --- roaming WORLD bosses -> flying creatures / Crystal Knight (per spec) ---
   wb_event_horizon:   'flying_boss_08',  // dark devourer (void)
   wb_frost_titan:     'crystal_knight',  // animated icy Crystal Knight (frost)
   wb_ashen_worldeater:'flying_boss_12',  // red demon (fire)
@@ -264,7 +295,12 @@ const Sprites = {
     if (!rec || !rec.img) return false
     const scale = size / Math.max(r.sw, r.sh)
     const dw = r.sw * scale, dh = r.sh * scale
-    c.drawImage(rec.img, r.sx, r.sy, r.sw, r.sh, cx - dw / 2, cy - dh / 2, dw, dh)
+    // Debug-safe: a broken/partly-decoded image can throw on drawImage. Swallow
+    // it and report "didn't draw" so the caller renders its geometric fallback
+    // instead of crashing the render loop.
+    try {
+      c.drawImage(rec.img, r.sx, r.sy, r.sw, r.sh, cx - dw / 2, cy - dh / 2, dw, dh)
+    } catch (err) { return false }
     return true
   },
 
@@ -277,7 +313,9 @@ const Sprites = {
     if (!c || !r) return false
     const rec = this._rec(e)
     if (!rec || !rec.img) return false
-    c.drawImage(rec.img, r.sx, r.sy, r.sw, r.sh, dx, dy, dw, dh)
+    try {
+      c.drawImage(rec.img, r.sx, r.sy, r.sw, r.sh, dx, dy, dw, dh)
+    } catch (err) { return false }
     return true
   },
 
@@ -303,9 +341,27 @@ const Sprites = {
   }
 }
 
+// Debug helper (console-safe, no UI output): list every boss key -> sprite ID,
+// its backing file, and whether the image is currently decoded/ready. Run
+// `bossSpriteMap()` in devtools to audit coverage/mismatches.
+function bossSpriteMap() {
+  const rows = Object.keys(bossSpriteAssignments).map(k => {
+    const id = bossSpriteAssignments[k]
+    const e = SPRITE_REGISTRY[id]
+    return {
+      boss: k, sprite: id,
+      file: e ? (e.src || (e.sheet + ' ' + (e.col || 0) + ',' + (e.row || 0))) : 'MISSING REGISTRY ENTRY',
+      ready: typeof Sprites !== 'undefined' ? Sprites.ready(id) : false,
+    }
+  })
+  if (typeof console !== 'undefined') { (console.table || console.log).call(console, rows) }
+  return rows
+}
+
 // Expose globals (other modules + the standalone debug page read these).
 if (typeof window !== 'undefined') {
   window.Sprites = Sprites
+  window.bossSpriteMap = bossSpriteMap
   window.SPRITE_REGISTRY = SPRITE_REGISTRY
   window.SPRITE_SHEETS = SPRITE_SHEETS
   window.mobSpriteAssignments = mobSpriteAssignments

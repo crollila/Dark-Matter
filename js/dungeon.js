@@ -333,8 +333,14 @@ const DungeonZone = (() => {
           const pulse = 0.6 + Math.sin(Date.now()/500) * 0.4
           ctx.fillStyle = `rgba(100,220,120,${pulse})`
           ctx.fillRect(px+4, py+4, TILE-8, TILE-8)
-          ctx.fillStyle = '#fff'; ctx.font = '7px monospace'; ctx.textAlign = 'center'
-          ctx.fillText('EXIT', px + TILE/2, py + TILE/2 + 3)
+          // Upright-but-world-anchored (counter-rotates with screen rotation,
+          // like other rotated world labels) so "EXIT" stays readable.
+          drawUpright(px + TILE/2, py + TILE/2, () => {
+            ctx.fillStyle = '#fff'; ctx.font = '7px monospace'
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+            ctx.fillText('EXIT', 0, 0)
+            ctx.textBaseline = 'alphabetic'
+          })
           ctx.textAlign = 'left'
         }
       }

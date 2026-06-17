@@ -96,18 +96,25 @@ const NexusZone = (() => {
       for (const st of map.stations) {
         const sx = st.x * TILE + TILE/2 + offX
         const sy = st.y * TILE - 2 + offY
-        ctx.fillStyle = '#aaa8cc'
-        ctx.font = '7px monospace'
-        ctx.textAlign = 'center'
-        ctx.fillText(st.label, sx, sy)
+        // Upright-but-world-anchored so portal/station text rotates correctly
+        // with the screen (same behavior as other rotated world labels).
+        drawUpright(sx, sy, () => {
+          ctx.fillStyle = '#aaa8cc'; ctx.font = '7px monospace'; ctx.textAlign = 'center'
+          ctx.fillText(st.label, 0, 0)
+        })
       }
     }
 
     // Room labels in upper box
     const labelOffX = offX, labelOffY = offY
-    ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'
-    ctx.fillText('LEADERBOARD', 4 * TILE + TILE/2 + labelOffX, 5 * TILE + labelOffY)
-    ctx.fillText('GUILD HALL',  34 * TILE + TILE/2 + labelOffX, 5 * TILE + labelOffY)
+    drawUpright(4 * TILE + TILE/2 + labelOffX, 5 * TILE + labelOffY, () => {
+      ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'
+      ctx.fillText('LEADERBOARD', 0, 0)
+    })
+    drawUpright(34 * TILE + TILE/2 + labelOffX, 5 * TILE + labelOffY, () => {
+      ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'
+      ctx.fillText('GUILD HALL', 0, 0)
+    })
     ctx.textAlign = 'left'
 
     renderParticles()

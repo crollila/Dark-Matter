@@ -16,6 +16,7 @@ const WorldZone = (() => {
   let respawnQueue = []     // [{ biome, at }] — scheduled biome respawns
   // --- World bosses ---
   let worldBoss = null      // the single active world boss (cap 1), or null
+  let bossProximate = false // latch: player currently within render dist of boss
   let mobKillCount = 0      // normal world-mob kills (NOT bosses/dungeon mobs)
   let bossDamage = {}       // { [charId]: damage dealt to the active world boss }
   const WORLD_BOSS_EVERY = 6     // spawn a world boss every N normal world kills
@@ -624,7 +625,12 @@ const WorldZone = (() => {
     }
 
     // World-boss tracker (screen-fixed): sigil + name + arrow toward the boss.
-    if (worldBoss && worldBoss.alive) renderBossIndicator(worldBoss)
+    if (worldBoss && worldBoss.alive) {
+      renderBossIndicator(worldBoss)
+      renderBossProximityAlert(worldBoss, char)
+    } else {
+      bossProximate = false
+    }
 
     // Small progress tracker (kills toward next boss, or active boss name).
     renderBossTracker()
@@ -656,6 +662,41 @@ const WorldZone = (() => {
     ctx.fillStyle = col; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
     ctx.fillText(label, bx + 9, by + boxH / 2)
     ctx.textBaseline = 'alphabetic'
+  }
+
+  // Clean screen-fixed proximity banner: shown only while the player is within
+  // render distance of the active world boss (a single steady banner, not a
+  // per-frame notification). Announces once via chat on entering range. Keeps
+  // the existing minimap/tracker/arrow indicators untouched.
+  function renderBossProximityAlert(boss, char) {
+    if (!boss || !char) return
+    const rd = (window.Settings && Settings.renderDistance) || 1500
+    const dist = Math.hypot(boss.x - char.x, boss.y - char.y)
+    if (dist > rd) { bossProximate = false; return }
+    if (!bossProximate) {
+      bossProximate = true
+      if (window.Chat && Chat.announce) Chat.announce('⚠ World Boss nearby: ' + (boss.name || 'World Boss'), boss.color || '#ff5db1')
+    }
+    const name = boss.name || 'World Boss'
+    const col = boss.color || '#ff5db1'
+    const boxW = 280, boxH = 46
+    const bx = ((canvas.width - boxW) / 2) | 0, by = 84
+    ctx.fillStyle = 'rgba(20,0,12,0.82)'; ctx.fillRect(bx, by, boxW, boxH)
+    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.strokeRect(bx, by, boxW, boxH)
+    ctx.fillStyle = col; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'
+    ctx.fillText('⚠ BOSS NEARBY — ' + name, bx + boxW / 2, by + 16)
+    // HP bar (when the boss exposes hp/maxHp)
+    if (boss.maxHp) {
+      const frac = Math.max(0, Math.min(1, (boss.hp || 0) / boss.maxHp))
+      const barX = bx + 12, barY = by + 24, barW = boxW - 24, barH = 13
+      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(barX, barY, barW, barH)
+      ctx.fillStyle = col; ctx.fillRect(barX, barY, barW * frac, barH)
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.strokeRect(barX, barY, barW, barH)
+      ctx.fillStyle = '#fff'; ctx.font = '9px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+      ctx.fillText(Math.ceil(boss.hp || 0) + ' / ' + boss.maxHp, bx + boxW / 2, barY + barH / 2)
+      ctx.textBaseline = 'alphabetic'
+    }
+    ctx.textAlign = 'left'
   }
 
   // Small screen-fixed indicator pointing at the active world boss. Uses

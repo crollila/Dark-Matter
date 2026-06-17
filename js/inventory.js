@@ -42,8 +42,8 @@ const Inventory = (() => {
     weapon:  { label: 'Weapon',  ic: 'W' },
     ability: { label: 'Ability', ic: '✦' },
   }
-  const LEFT_COL  = ['helmet', 'chest', 'hands', 'pants']
-  const RIGHT_COL = ['boots', 'ring1', 'ring2', 'amulet']
+  const LEFT_COL  = ['helmet', 'chest', 'hands', 'pants', 'boots']
+  const RIGHT_COL = ['amulet', 'ring1', 'ring2']
   const BOTTOM    = ['weapon', 'ability']
 
   const CAP = () => (typeof INVENTORY_CAP === 'number' ? INVENTORY_CAP : 30)
@@ -243,22 +243,30 @@ const Inventory = (() => {
     const closeBtn  = { x: px + PW - 30, y: py + 12, w: 20, h: 20 }
     const statsBtn  = { x: px + PW - 110, y: py + 12, w: 72, h: 20 }
 
-    // Equipment region
-    const eqTop = py + 44
+    // Equipment region. Decorative header text was removed, so the slots start
+    // just under the STATS/close buttons for more usable space.
+    const eqTop = py + 36
     const ss = 46, vGap = 10
     const colY = i => eqTop + 8 + i * (ss + vGap)
     const leftX = px + 18
     const rightX = px + PW - 18 - ss
     const slots = []
     LEFT_COL.forEach((k, i)  => slots.push({ key: k, x: leftX,  y: colY(i), w: ss, h: ss }))
-    RIGHT_COL.forEach((k, i) => slots.push({ key: k, x: rightX, y: colY(i), w: ss, h: ss }))
-    // bottom row (weapon + ability) centered under silhouette
-    const bottomY = colY(3) + ss + 14
+    // Right column has fewer slots than the left — vertically center them against
+    // the left column's full span.
+    const leftRows = LEFT_COL.length
+    const leftSpan  = (leftRows - 1) * (ss + vGap) + ss
+    const rightSpan = (RIGHT_COL.length - 1) * (ss + vGap) + ss
+    const rightTop  = colY(0) + (leftSpan - rightSpan) / 2
+    RIGHT_COL.forEach((k, i) => slots.push({ key: k, x: rightX, y: rightTop + i * (ss + vGap), w: ss, h: ss }))
+    // bottom row (weapon + ability) centered under silhouette, below the LEFT column
+    const leftBottom = colY(leftRows - 1) + ss
+    const bottomY = leftBottom + 14
     const cx = px + PW / 2
     slots.push({ key: 'weapon',  x: cx - ss - 8, y: bottomY, w: ss, h: ss })
     slots.push({ key: 'ability', x: cx + 8,      y: bottomY, w: ss, h: ss })
 
-    const silhouette = { x: leftX + ss, y: eqTop + 6, w: rightX - (leftX + ss), h: colY(3) + ss - (eqTop + 6) }
+    const silhouette = { x: leftX + ss, y: eqTop + 6, w: rightX - (leftX + ss), h: leftBottom - (eqTop + 6) }
     const eqBottom = bottomY + ss
 
     // Inventory grid (6 x 5 = 30), icon-only. Cell size adapts so the whole grid
@@ -557,8 +565,6 @@ const Inventory = (() => {
     // Main window
     uiPanel(px, py, PW, PH, 12, UI.panelBorder, UI.panelBg)
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
-    ctx.fillStyle = UI.text; ctx.font = 'bold 14px monospace'
-    ctx.fillText('CHARACTER', px + 18, py + 26)
 
     // STATS toggle button
     const sb = L.statsBtn, sActive = statsOpen, sHover = hit(sb, mouse.x, mouse.y)
@@ -573,10 +579,6 @@ const Inventory = (() => {
     ctx.fillStyle = UI.bad; ctx.font = 'bold 12px monospace'
     ctx.fillText('X', cb.x + cb.w / 2, cb.y + 14)
     ctx.textAlign = 'left'
-
-    // Section label
-    ctx.fillStyle = UI.textDim; ctx.font = 'bold 10px monospace'
-    ctx.fillText('EQUIPMENT', px + 18, py + 42)
 
     // Equipment: silhouette behind, slots on top
     drawSilhouette(L.silhouette, char)
