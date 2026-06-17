@@ -54,14 +54,16 @@ const WorldZone = (() => {
     mobs = []
     pendingPortals = []
     portalPrompt = null
-    // Theme each dungeon portal tile by the dungeon it leads to (sprites.js maps
-    // dungeon key -> portal theme). renderTileMap calls this per portal tile;
-    // unknown tiles fall back to the default theme for that portal type.
+    // Theme each dungeon portal tile by the dungeon it leads to. sprites.js resolves
+    // a dungeon key -> a portal spec (a theme string OR an explicit { sheet, variant }).
+    // renderTileMap calls this per portal tile and passes the result straight to
+    // Sprites.drawPortal (which accepts either form); unknown tiles fall back to the
+    // default theme for that portal type.
     map.portalThemeAt = (tx, ty) => {
       let key = null
       if (map.dungeonPortals) { const p = map.dungeonPortals.find(p => p.tx === tx && p.ty === ty); if (p) key = p.dungeonKey }
       if (!key) { const p = pendingPortals.find(p => (p.x/TILE|0) === tx && (p.y/TILE|0) === ty); if (p) key = p.dungeonKey }
-      return (key && typeof dungeonPortalTheme !== 'undefined' && dungeonPortalTheme[key]) || null
+      return (key && typeof dungeonPortalSpec !== 'undefined' && dungeonPortalSpec(key)) || null
     }
     eLatchW = false
     lootBags = []

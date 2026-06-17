@@ -21,9 +21,13 @@ const SPRITE_SHEETS = {
   // --- Mob sheets (forward-facing 2-frame mob atlases) ----------------------
   // Each is an 8x8 grid = 64 tiles = 32 mob pairs. Every mob occupies two
   // ADJACENT tiles on a row: frame A (idle/move) at an even col, frame B
-  // (active/attack) at col+1. The source images are 1254x1254 (NOT a power of
-  // two: 1254/8 = 156.75), so we address tiles by `cols`/`rows` grid fractions
-  // of the loaded image's natural size rather than a fixed integer tile px.
+  // (active/attack) at col+1. The cleaned (background-removed) sheets are STILL
+  // 1254x1254 (verified post-cleanup; NOT a power of two: 1254/8 = 156.75), so we
+  // address tiles by `cols`/`rows` grid fractions of the loaded image's natural
+  // size rather than a fixed integer tile px — this stays correct no matter the
+  // exact sheet dimensions, so manual edits that change size won't break layout.
+  // NOTE: mobs_astral.png is currently absent from assets/sprites/ (loader is
+  // safe — astral mobs fall back to geometry until the PNG is restored).
   mobs_neutral:  { path: 'assets/sprites/mobs_neutral.png',  cols: 8, rows: 8 },
   mobs_forest:   { path: 'assets/sprites/mobs_forest.png',   cols: 8, rows: 8 },
   mobs_goblin:   { path: 'assets/sprites/mobs_goblin.png',   cols: 8, rows: 8 },
@@ -36,11 +40,14 @@ const SPRITE_SHEETS = {
   mobs_cursed:   { path: 'assets/sprites/mobs_cursed.png',   cols: 8, rows: 8 },
 
   // --- Portal sheets (animated 3-frame portal atlases) ----------------------
-  // 32x32-style portals; frames run left-to-right in groups of 3 (A calm/idle,
-  // B active swirl, C bright/peak). Same 1254x1254 non-power-of-two format as the
-  // mob sheets, so we address by an 8x8 grid fraction of the natural size. We use
-  // VARIANT 0 (row 0, cols 0,1,2) as the first-pass animation per sheet; a sheet
-  // may hold more variants in later columns/rows — remap via PORTAL_VARIANT below.
+  // 32x32-style portals; frames run left-to-right in groups of 3 (A idle, B active
+  // swirl, C peak flare). The cleaned (background-removed) sheets are STILL 1254x1254
+  // (verified post-cleanup; 1254/8 = 156.75, non-power-of-two), so we address tiles
+  // by an 8x8 grid fraction of the natural size. Each sheet holds MULTIPLE portal
+  // variants; they are indexed EXPLICITLY below (PORTAL_VARIANTS_PER_ROW + the
+  // enumerable PORTAL_VARIANT_TABLE) and chosen per theme/dungeon in readable
+  // assignment tables — never auto-picked. Use portal_debug.html to see which
+  // variant index is which before assigning one.
   portal_void_arcane: { path: 'assets/sprites/portal_sheet_01_void_arcane.png',       cols: 8, rows: 8 },
   portal_blue_green:  { path: 'assets/sprites/portal_sheet_02_blue_green.png',        cols: 8, rows: 8 },
   portal_ice:         { path: 'assets/sprites/portal_sheet_03_ice.png',               cols: 8, rows: 8 },
@@ -54,32 +61,79 @@ const SPRITE_SHEETS = {
 }
 
 // --- Portal sprite system (SEPARATE from mob + item sprites) -----------------
-// Portals are themed by a short THEME string, not by entity key. Each theme maps
-// to one portal sheet (above). Render via Sprites.drawPortal(theme, ...). Unknown
-// themes fall back to the generic blue-green sheet; if the image isn't loaded the
-// caller keeps its existing pulsing-rect fallback.
-const PORTAL_THEME_SHEET = {
-  forest:   'portal_forest',       // forest / nature / grove / low-tier natural
-  fungal:   'portal_fungal',       // fungal / mushroom
-  infernal: 'portal_infernal',     // infernal / fire / ash
-  plague:   'portal_plague',       // plague / corruption / rot
-  astral:   'portal_astral',       // astral / celestial
-  arcane:   'portal_void_arcane',  // arcane / singularity / dark-matter (purple)
-  void:     'portal_void_dark',    // void / dark
-  frost:    'portal_ice',          // frost / ice
-  cursed:   'portal_cursed',       // cursed / hollow / fallen / court (gothic)
-  magic:    'portal_blue_green'    // generic magic / fallback
+// Portals are themed by a short THEME string (or an explicit { sheet, variant }).
+// Render via Sprites.drawPortal(themeOrSpec, ...). Unknown themes fall back to the
+// generic blue-green sheet; if the image isn't loaded the caller keeps its existing
+// pulsing-rect fallback. NOTHING here touches mob/item sprite maps.
+
+// --- Explicit portal VARIANT layout -----------------------------------------
+// Each portal animation = PORTAL_FRAMES (3) ADJACENT tiles left-to-right
+// (A idle, B active swirl, C peak flare). On an 8x8 sheet a row fits 2 full
+// variants (cols 0-2 and 3-5; cols 6-7 are spare), so variants are packed row by
+// row by this EXPLICIT rule:
+//   variant V -> startCol = (V % PORTAL_VARIANTS_PER_ROW) * PORTAL_FRAMES
+//                startRow =  floor(V / PORTAL_VARIANTS_PER_ROW)
+// Every variant is enumerable (PORTAL_VARIANT_TABLE) and addressable by index.
+// Game code never auto-picks a variant — it reads the assignment tables below.
+const PORTAL_FRAMES = 3
+const PORTAL_VARIANTS_PER_ROW = 2     // 2 variants * 3 frames = 6 cols used / row (6,7 spare)
+const PORTAL_VARIANTS_PER_SHEET = 16  // 8 rows * 2 = first-pass slots exposed for picking
+
+// Variant index -> its tile rect { col, row, frames } on the 8x8 sheet grid.
+function portalVariantRect(variant) {
+  const v = Math.max(0, variant | 0)
+  return {
+    col: (v % PORTAL_VARIANTS_PER_ROW) * PORTAL_FRAMES,
+    row: (v / PORTAL_VARIANTS_PER_ROW) | 0,
+    frames: PORTAL_FRAMES
+  }
 }
 
-// Per-theme animation variant (which group of 3 frames to play on its sheet).
-// All default to variant 0 (row 0, cols 0,1,2) for now; bump a value to pick a
-// different variant once we know what each sheet's later columns/rows contain.
-const PORTAL_VARIANT = {}
+// Enumerable, LABELED table of every variant on every portal sheet:
+//   sheetKey -> [ { variant, col, row, frames }, ... ]
+// Built once from the layout rule above so portal_debug.html (and any tooling) can
+// list/inspect variants without guessing. Some slots may be blank on a given sheet
+// — that's expected; pick the indices that look good in the debug page.
+const PORTAL_SHEET_KEYS = Object.keys(SPRITE_SHEETS).filter(k => k.startsWith('portal_'))
+const PORTAL_VARIANT_TABLE = {}
+for (const sheet of PORTAL_SHEET_KEYS) {
+  PORTAL_VARIANT_TABLE[sheet] = []
+  for (let v = 0; v < PORTAL_VARIANTS_PER_SHEET; v++) {
+    const r = portalVariantRect(v)
+    PORTAL_VARIANT_TABLE[sheet].push({ variant: v, sheet, col: r.col, row: r.row, frames: r.frames })
+  }
+}
 
-// Dungeon key (DUNGEONS, mobs.js) -> portal theme. Zones that know which dungeon a
-// portal leads to resolve through this; tiles with no known dungeon use a default
-// theme by portal tile type (engine.js). Easy to retune per dungeon.
-const dungeonPortalTheme = {
+// --- Assignment tables (the ONLY place a portal's visual is chosen) ----------
+// portalVariantAssignments: THEME -> { sheet, variant }. One readable line per
+// theme — edit a single line to repoint a theme to a different sheet OR variant.
+// (first-pass guess: every theme uses variant 0 — verify nicer variants in
+// portal_debug.html, then bump the variant number.)
+const portalVariantAssignments = {
+  forest:   { sheet: 'portal_forest',      variant: 0 }, // forest / grove / nature  -> sheet 05
+  fungal:   { sheet: 'portal_fungal',      variant: 0 }, // fungal / mushroom         -> sheet 09
+  infernal: { sheet: 'portal_infernal',    variant: 0 }, // infernal / ash / fire     -> sheet 06
+  plague:   { sheet: 'portal_plague',      variant: 0 }, // plague / corruption / rot -> sheet 07
+  frost:    { sheet: 'portal_ice',         variant: 0 }, // frost / ice               -> sheet 03
+  void:     { sheet: 'portal_void_dark',   variant: 0 }, // void / dark / singularity -> sheet 04
+  arcane:   { sheet: 'portal_void_arcane', variant: 0 }, // arcane / dark-matter      -> sheet 01
+  astral:   { sheet: 'portal_astral',      variant: 0 }, // astral / celestial        -> sheet 08
+  cursed:   { sheet: 'portal_cursed',      variant: 0 }, // cursed/hollow/fallen/court-> sheet 10
+  magic:    { sheet: 'portal_blue_green',  variant: 0 }, // generic fallback          -> sheet 02
+}
+
+// Back-compat: theme -> sheet (derived from the table above; older code/exports
+// read PORTAL_THEME_SHEET). Single source of truth stays portalVariantAssignments.
+const PORTAL_THEME_SHEET = {}
+for (const th of Object.keys(portalVariantAssignments)) PORTAL_THEME_SHEET[th] = portalVariantAssignments[th].sheet
+
+// dungeonPortalAssignments: DUNGEON key (DUNGEONS, mobs.js) -> portal THEME (a key
+// of portalVariantAssignments). To give ONE dungeon a precise look without changing
+// its whole theme, replace its theme string with an explicit object, e.g.
+//     void_rift: { sheet: 'portal_void_dark', variant: 3 }
+// drawPortal/portalSpec accept either form, so you only edit ONE line.
+// (first-pass theme guesses per the task's theme map.)
+const dungeonPortalAssignments = {
   // OG dungeons
   goblin_warren:      'forest',    // low-tier natural warren
   fungal_cavern:      'fungal',
@@ -92,12 +146,37 @@ const dungeonPortalTheme = {
   fallen_keep:        'cursed',
   astral_tomb:        'astral',
   // world-boss dungeons
-  event_horizon_vault:'arcane',    // singularity
+  event_horizon_vault:'arcane',
   titan_glacier:      'frost',
   worldeater_forge:   'infernal',
   plague_hive:        'plague',
   cursed_throne:      'cursed',
   starfall_pyramid:   'astral'
+}
+// Back-compat alias (world.js / older code referenced dungeonPortalTheme).
+const dungeonPortalTheme = dungeonPortalAssignments
+
+// biomePortalAssignments: world BIOME id/name -> portal theme. REFERENCE table for
+// biome-flavored portals (e.g. a portal that should read as its SOURCE biome rather
+// than its destination dungeon). Not wired into tile rendering yet — rendering keys
+// off the destination dungeon (dungeonPortalAssignments) — but exposed for later use.
+// (first-pass guesses.)
+const biomePortalAssignments = {
+  dark_matter: 'arcane',
+  snow:        'frost',
+  hell:        'infernal',
+  toxic:       'plague',
+  ruined:      'cursed',
+  astral:      'astral',
+  forest:      'forest',
+  fungal:      'fungal',
+}
+
+// Resolve a DUNGEON key -> a portal spec (theme string OR { sheet, variant }), or
+// null if unmapped. Zones (world.js) call this to theme a dungeon's portal tile.
+function dungeonPortalSpec(key) {
+  const a = dungeonPortalAssignments[key]
+  return (a != null) ? a : null
 }
 
 // --- Registry ---------------------------------------------------------------
@@ -488,17 +567,28 @@ const Sprites = {
     return this._drawSheetTile(a.sheet, col + (useB ? 1 : 0), row, cx, cy, size)
   },
 
-  // Draw an animated portal of `theme` centered at (cx,cy), fit to a `size` box.
-  // Loops the 3 frames (calm -> swirl -> peak) on a slow timer. Returns true if it
-  // drew, false (unknown/unloaded) so the caller keeps its pulsing-rect fallback.
-  // This is the SEPARATE portal path — it never touches mob/item sprite maps.
-  drawPortal(theme, cx, cy, size, context) {
-    const sheet = PORTAL_THEME_SHEET[theme] || PORTAL_THEME_SHEET.magic
-    if (!sheet) return false
-    const variant = PORTAL_VARIANT[theme] || 0
-    const base = variant * 3                         // first frame col of this variant
-    const fi = Math.floor(Date.now() / 160) % 3      // A->B->C loop, ~6.25 fps
-    return this._drawSheetTile(sheet, base + fi, 0, cx, cy, size, context)
+  // Resolve a portal THEME string OR an explicit { sheet, variant } into a concrete
+  // { sheet, variant }. Unknown theme -> generic 'magic' fallback sheet. Returns null
+  // only if even the fallback is missing (shouldn't happen).
+  portalSpec(themeOrSpec) {
+    if (themeOrSpec && typeof themeOrSpec === 'object' && themeOrSpec.sheet) {
+      return { sheet: themeOrSpec.sheet, variant: themeOrSpec.variant | 0 }
+    }
+    const a = portalVariantAssignments[themeOrSpec] || portalVariantAssignments.magic
+    return a ? { sheet: a.sheet, variant: a.variant | 0 } : null
+  },
+
+  // Draw an animated portal centered at (cx,cy), fit to a `size` box. `themeOrSpec`
+  // is a theme key (resolved via portalVariantAssignments) or an explicit
+  // { sheet, variant }. Loops the 3 frames (idle -> swirl -> peak) on a slow timer.
+  // Returns true if it drew, false (unknown/unloaded) so the caller keeps its
+  // pulsing-rect fallback. SEPARATE portal path — never touches mob/item sprite maps.
+  drawPortal(themeOrSpec, cx, cy, size, context) {
+    const spec = this.portalSpec(themeOrSpec)
+    if (!spec || !spec.sheet) return false
+    const r = portalVariantRect(spec.variant)        // start col/row of this variant
+    const fi = Math.floor(Date.now() / 160) % r.frames  // A->B->C loop, ~6.25 fps
+    return this._drawSheetTile(spec.sheet, r.col + fi, r.row, cx, cy, size, context)
   },
 
   // Convenience hook for renderMob: returns true if a mob/boss sprite was drawn.
@@ -556,4 +646,15 @@ if (typeof window !== 'undefined') {
   window.projectileSpriteAssignments = projectileSpriteAssignments
   window.PORTAL_THEME_SHEET = PORTAL_THEME_SHEET
   window.dungeonPortalTheme = dungeonPortalTheme
+  // Explicit portal variant system (read by portal_debug.html + zones).
+  window.PORTAL_VARIANT_TABLE = PORTAL_VARIANT_TABLE
+  window.PORTAL_SHEET_KEYS = PORTAL_SHEET_KEYS
+  window.PORTAL_FRAMES = PORTAL_FRAMES
+  window.PORTAL_VARIANTS_PER_ROW = PORTAL_VARIANTS_PER_ROW
+  window.PORTAL_VARIANTS_PER_SHEET = PORTAL_VARIANTS_PER_SHEET
+  window.portalVariantRect = portalVariantRect
+  window.portalVariantAssignments = portalVariantAssignments
+  window.dungeonPortalAssignments = dungeonPortalAssignments
+  window.biomePortalAssignments = biomePortalAssignments
+  window.dungeonPortalSpec = dungeonPortalSpec
 }

@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Epsteins Island — Portal Variant Inspector</title>
+  <style>
+    body { background:#15171c; color:#e6e6e6; font-family:monospace; margin:0; padding:18px; }
+    h1 { font-size:16px; margin:0 0 4px; }
+    p  { font-size:12px; color:#9aa; margin:0 0 12px; max-width:920px; }
+    .note{font-size:11px;color:#c9a36a;margin:0 0 12px;}
+    label{font-size:11px;color:#9aa;margin-right:10px;}
+    select{background:#101216;color:#e6e6e6;border:1px solid #2c3038;border-radius:3px;padding:2px 4px;font-family:monospace;}
+    .row { display:flex; gap:18px; align-items:flex-start; flex-wrap:wrap; }
+    .stage { position:relative; line-height:0;
+             background:#0c0d10 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="8" height="8" fill="%231a1a1a"/><rect x="8" y="8" width="8" height="8" fill="%231a1a1a"/></svg>');
+             border:1px solid #2c3038; border-radius:6px; }
+    .stage canvas { display:block; image-rendering:pixelated; }
+    #overlay { position:absolute; left:0; top:0; cursor:crosshair; }
+    .panel { width:320px; flex:0 0 auto; background:#1f2229; border:1px solid #2c3038;
+             border-radius:6px; padding:12px; font-size:12px; }
+    .panel h2 { font-size:13px; margin:0 0 8px; color:#cdd; }
+    .kv { display:flex; justify-content:space-between; padding:2px 0; border-bottom:1px dashed #2c3038; }
+    .kv span:first-child { color:#8a8f99; }
+    .preview { display:block; margin:10px auto; background:#0c0d10;
+               border:1px solid #2c3038; border-radius:6px; image-rendering:pixelated; }
+    pre { background:#101216; border:1px solid #2c3038; border-radius:4px; padding:8px;
+          font-size:11px; color:#9fe0b0; white-space:pre-wrap; word-break:break-all; margin:8px 0 0; }
+    button { font-family:monospace; font-size:11px; background:#2d3f6a; color:#fff; border:0;
+             border-radius:4px; padding:5px 9px; margin-top:8px; cursor:pointer; }
+    button:hover { background:#395092; }
+    .hint{font-size:11px;color:#8a8f99;margin-top:8px;}
+    h3 { font-size:12px; color:#cdd; margin:18px 0 8px; }
+    .thumbs { display:flex; flex-wrap:wrap; gap:8px; }
+    .thumb { width:96px; background:#1f2229; border:1px solid #2c3038; border-radius:6px;
+             padding:6px; text-align:center; cursor:pointer; }
+    .thumb.sel { border-color:#ffcc33; }
+    .thumb canvas { display:block; margin:0 auto 4px; background:#0c0d10; border-radius:4px; image-rendering:pixelated; }
+    .thumb .lab { font-size:10px; color:#9fe0b0; }
+    .thumb .pos { font-size:9px; color:#8a8f99; }
+  </style>
+</head>
+<body>
+  <h1>Portal Variant Inspector</h1>
+  <p>Inspect every portal sheet and every 3-frame variant. Each portal animation is
+     <b>3 adjacent frames</b> (A idle, B swirl, C peak). Variants are packed
+     <code id="layoutNote"></code>. Click a boxed variant on the sheet (or a thumbnail
+     below) to see its <b>sheet key / variant index / start col,row</b> and a copy-ready
+     snippet for <code>portalVariantAssignments</code> / <code>dungeonPortalAssignments</code>
+     in <code>js/sprites.js</code>. This page does <b>not</b> change gameplay.</p>
+  <div class="note" id="note"></div>
+
+  <div style="margin-bottom:12px">
+    <label>portal sheet <select id="sheetSelect"></select></label>
+    <label><input id="boxToggle" type="checkbox" checked> variant boxes</label>
+  </div>
+
+  <div class="row">
+    <div class="stage" id="stage">
+      <canvas id="base"></canvas>
+      <canvas id="overlay"></canvas>
+    </div>
+    <div class="panel">
+      <h2 id="selTitle">No variant selected</h2>
+      <div class="kv"><span>sheet key</span><span id="vSheet">—</span></div>
+      <div class="kv"><span>variant index</span><span id="vVar">—</span></div>
+      <div class="kv"><span>frame count</span><span id="vFrames">—</span></div>
+      <div class="kv"><span>start col , row</span><span id="vColRow">—</span></div>
+      <div class="kv"><span>frame cols</span><span id="vCols">—</span></div>
+      <canvas id="preview" class="preview" width="132" height="132"></canvas>
+      <pre id="snippet">// click a variant…</pre>
+      <button id="copyBtn">Copy spec snippet</button>
+      <div class="hint" id="hint"></div>
+    </div>
+  </div>
+
+  <h3 id="thumbHead">All variants on this sheet</h3>
+  <div class="thumbs" id="thumbs"></div>
+
+  <script src="js/sprites.js"></script>
+  <script>
+    const FRAMES = (typeof PORTAL_FRAMES !== 'undefined') ? PORTAL_FRAMES : 3;
+    const PER_ROW = (typeof PORTAL_VARIANTS_PER_ROW !== 'undefined') ? PORTAL_VARIANTS_PER_ROW : 2;
+    const PER_SHEET = (typeof PORTAL_VARIANTS_PER_SHEET !== 'undefined') ? PORTAL_VARIANTS_PER_SHEET : 16;
+    const SHEET_KEYS = (typeof PORTAL_SHEET_KEYS !== 'undefined' && PORTAL_SHEET_KEYS.length)
+      ? PORTAL_SHEET_KEYS
+      : Object.keys((typeof SPRITE_SHEETS !== 'undefined' && SPRITE_SHEETS) || {}).filter(k => k.startsWith('portal_'));
+
+    document.getElementById('layoutNote').textContent =
+      `${PER_ROW}/row × ${FRAMES} frames (cols 0-${FRAMES-1}, ${FRAMES}-${2*FRAMES-1}; 6,7 spare), ${PER_SHEET} slots`;
+
+    // Variant index -> { col, row, frames }. Prefer the game's own helper so this
+    // page can never drift from sprites.js.
+    function vrect(v) {
+      if (typeof portalVariantRect === 'function') return portalVariantRect(v);
+      return { col: (v % PER_ROW) * FRAMES, row: Math.floor(v / PER_ROW), frames: FRAMES };
+    }
+    function variantsFor(sheet) {
+      if (typeof PORTAL_VARIANT_TABLE !== 'undefined' && PORTAL_VARIANT_TABLE[sheet]) return PORTAL_VARIANT_TABLE[sheet];
+      const out = []; for (let v = 0; v < PER_SHEET; v++) { const r = vrect(v); out.push({ variant: v, sheet, col: r.col, row: r.row, frames: r.frames }); }
+      return out;
+    }
+
+    const DISPLAY_W = 640;               // sheet rendered at this width (square)
+    const base = document.getElementById('base');
+    const overlay = document.getElementById('overlay');
+    const bctx = base.getContext('2d');
+    const octx = overlay.getContext('2d');
+    const sheetSelect = document.getElementById('sheetSelect');
+    const boxToggle = document.getElementById('boxToggle');
+    const previewCanvas = document.getElementById('preview');
+    const pctx = previewCanvas.getContext('2d');
+
+    let sheetKey = SHEET_KEYS[0] || 'portal_blue_green';
+    let selected = 0;     // selected variant index
+    let scale = 1, tileW = 0, tileH = 0;
+
+    for (const key of SHEET_KEYS) {
+      const opt = document.createElement('option');
+      const path = (SPRITE_SHEETS[key] && SPRITE_SHEETS[key].path) || key;
+      opt.value = key; opt.textContent = `${key} — ${path}`;
+      sheetSelect.appendChild(opt);
+    }
+    sheetSelect.value = sheetKey;
+
+    // Backing image record for a sheet (Sprites lazy-loads + caches it).
+    function rec() { return (typeof Sprites !== 'undefined' && Sprites.sheet) ? Sprites.sheet(sheetKey) : null; }
+
+    function layoutSizes() {
+      const r = rec();
+      const nat = (r && r.img && r.img.naturalWidth) ? r.img.naturalWidth : 1254;
+      const natH = (r && r.img && r.img.naturalHeight) ? r.img.naturalHeight : 1254;
+      scale = DISPLAY_W / nat;
+      tileW = (nat / 8) * scale;
+      tileH = (natH / 8) * scale;
+      base.width = overlay.width = Math.round(nat * scale);
+      base.height = overlay.height = Math.round(natH * scale);
+      document.getElementById('note').textContent = (r && r.loaded)
+        ? `${(SPRITE_SHEETS[sheetKey]||{}).path} — ${nat}x${natH}px → 8x8 grid, tile ${(nat/8).toFixed(2)}px.`
+        : `Loading ${(SPRITE_SHEETS[sheetKey]||{}).path} … (if it never appears, the PNG is missing).`;
+    }
+
+    function drawSheet() {
+      const r = rec();
+      bctx.clearRect(0, 0, base.width, base.height);
+      if (r && r.loaded && r.img.complete) {
+        try { bctx.drawImage(r.img, 0, 0, base.width, base.height); } catch (e) {}
+      }
+    }
+
+    function drawBoxes() {
+      octx.clearRect(0, 0, overlay.width, overlay.height);
+      if (!boxToggle.checked) return;
+      octx.font = '11px monospace'; octx.textBaseline = 'top';
+      for (const e of variantsFor(sheetKey)) {
+        const x = e.col * tileW, y = e.row * tileH, w = FRAMES * tileW, h = tileH;
+        const on = e.variant === selected;
+        octx.lineWidth = on ? 3 : 1.5;
+        octx.strokeStyle = on ? '#ffcc33' : 'rgba(120,200,255,0.55)';
+        octx.strokeRect(x + octx.lineWidth/2, y + octx.lineWidth/2, w - octx.lineWidth, h - octx.lineWidth);
+        octx.fillStyle = on ? 'rgba(255,204,51,0.85)' : 'rgba(0,0,0,0.55)';
+        octx.fillRect(x + 2, y + 2, 30, 14);
+        octx.fillStyle = on ? '#15171c' : '#9fe0b0';
+        octx.fillText('v' + e.variant, x + 5, y + 3);
+      }
+    }
+
+    function snippetFor(v) {
+      const spec = `{ sheet: '${sheetKey}', variant: ${v} }`;
+      return [
+        '// spec (drawPortal / assignment value):',
+        spec,
+        '',
+        '// e.g. point a THEME at it (portalVariantAssignments):',
+        `someTheme: ${spec},`,
+        '',
+        '// e.g. override ONE dungeon (dungeonPortalAssignments):',
+        `someDungeon: ${spec},`
+      ].join('\n');
+    }
+
+    function showInfo(v) {
+      const r = vrect(v);
+      selected = v;
+      document.getElementById('selTitle').textContent = `${sheetKey} — variant ${v}`;
+      document.getElementById('vSheet').textContent = sheetKey;
+      document.getElementById('vVar').textContent = v;
+      document.getElementById('vFrames').textContent = FRAMES;
+      document.getElementById('vColRow').textContent = `${r.col} , ${r.row}`;
+      const cols = []; for (let i = 0; i < FRAMES; i++) cols.push(r.col + i);
+      document.getElementById('vCols').textContent = `${cols.join(', ')} (row ${r.row})`;
+      document.getElementById('snippet').textContent = snippetFor(v);
+      drawBoxes();
+      markThumbs();
+    }
+
+    // ---- thumbnail grid (one animated mini-preview per variant) ----
+    const thumbCanvases = [];
+    function buildThumbs() {
+      const host = document.getElementById('thumbs');
+      host.innerHTML = ''; thumbCanvases.length = 0;
+      document.getElementById('thumbHead').textContent = `All ${PER_SHEET} variants on ${sheetKey}`;
+      for (const e of variantsFor(sheetKey)) {
+        const card = document.createElement('div'); card.className = 'thumb'; card.dataset.v = e.variant;
+        const cv = document.createElement('canvas'); cv.width = cv.height = 80;
+        const lab = document.createElement('div'); lab.className = 'lab'; lab.textContent = 'variant ' + e.variant;
+        const pos = document.createElement('div'); pos.className = 'pos'; pos.textContent = `col ${e.col}, row ${e.row}`;
+        card.appendChild(cv); card.appendChild(lab); card.appendChild(pos);
+        card.addEventListener('click', () => showInfo(e.variant));
+        host.appendChild(card);
+        thumbCanvases.push({ v: e.variant, ctx: cv.getContext('2d'), card });
+      }
+      markThumbs();
+    }
+    function markThumbs() {
+      for (const t of thumbCanvases) t.card.classList.toggle('sel', t.v === selected);
+    }
+
+    // ---- animation loop: redraw sheet boxes + preview + thumbnails ----
+    function frame() {
+      // Big preview of the selected variant.
+      pctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+      if (typeof Sprites !== 'undefined' && Sprites.drawPortal) {
+        Sprites.drawPortal({ sheet: sheetKey, variant: selected }, previewCanvas.width/2, previewCanvas.height/2, 120, pctx);
+      }
+      // Thumbnails.
+      for (const t of thumbCanvases) {
+        t.ctx.clearRect(0, 0, 80, 80);
+        if (typeof Sprites !== 'undefined' && Sprites.drawPortal) {
+          Sprites.drawPortal({ sheet: sheetKey, variant: t.v }, 40, 40, 72, t.ctx);
+        }
+      }
+      // Sheet may have just finished loading — keep it fresh.
+      drawSheet();
+      requestAnimationFrame(frame);
+    }
+
+    function selectSheet(key) {
+      sheetKey = key; selected = 0;
+      // Kick the lazy loader, then poll until natural size is known to size canvases.
+      rec();
+      let tries = 0;
+      const wait = () => {
+        const r = rec();
+        layoutSizes(); drawSheet(); drawBoxes();
+        if ((!r || !r.loaded) && tries++ < 120) return setTimeout(wait, 50);
+      };
+      wait();
+      buildThumbs();
+      showInfo(0);
+    }
+
+    overlay.addEventListener('click', (ev) => {
+      const rect = overlay.getBoundingClientRect();
+      const col = Math.floor((ev.clientX - rect.left) / tileW);
+      const row = Math.floor((ev.clientY - rect.top) / tileH);
+      // Map clicked col/row back to a variant index, if it falls in a variant box.
+      for (const e of variantsFor(sheetKey)) {
+        if (row === e.row && col >= e.col && col < e.col + FRAMES) { showInfo(e.variant); return; }
+      }
+    });
+
+    document.getElementById('copyBtn').addEventListener('click', () => {
+      const text = `{ sheet: '${sheetKey}', variant: ${selected} }`;
+      if (navigator.clipboard) navigator.clipboard.writeText(text)
+        .then(() => document.getElementById('hint').textContent = 'Spec copied: ' + text)
+        .catch(() => document.getElementById('hint').textContent = 'Copy failed — select the snippet text manually.');
+    });
+
+    sheetSelect.addEventListener('change', () => selectSheet(sheetSelect.value));
+    boxToggle.addEventListener('change', drawBoxes);
+
+    selectSheet(sheetKey);
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>
