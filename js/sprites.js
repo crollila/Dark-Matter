@@ -59,18 +59,18 @@ const SPRITE_SHEETS = {
   portal_fungal:      { path: 'assets/sprites/portal_sheet_09_mushroom_fungal.png',   cols: 8, rows: 8 },
   portal_cursed:      { path: 'assets/sprites/portal_sheet_10_gothic_cursed.png',     cols: 8, rows: 8 },
 
-  // --- Boss sheets (2-frame boss animation atlases) -------------------------
-  // Three sheets, each 1536x1024. ASSUMED LAYOUT: a 6x4 grid = 24 tiles = 12 boss
-  // PAIRS, 3 pairs per row. Each boss occupies two ADJACENT tiles on a row: frame A
-  // (idle/move) at an even col, frame B (active/attack) at col+1 — same 2-frame model
-  // as the mob atlases. 1536/6 = 256 and 1024/4 = 256 → clean 256px square tiles, but
-  // tiles are addressed by `cols`/`rows` grid FRACTIONS of the loaded image's natural
-  // size (not fixed px), so a re-export at another resolution won't break the layout.
-  // If a sheet's real grid differs from 6x4, change cols/rows here (and the pair
-  // numbers in bossSheetAssignments) — nothing else needs editing.
-  bosses_core:  { path: 'assets/sprites/bosses_sheet_01_core.png',               cols: 6, rows: 4 },
-  bosses_void:  { path: 'assets/sprites/bosses_sheet_02_void_plague_astral.png', cols: 6, rows: 4 },
-  bosses_world: { path: 'assets/sprites/bosses_sheet_03_world_bosses.png',       cols: 6, rows: 4 }
+  // --- Boss sheets (multi-frame boss animation atlases) ---------------------
+  // Three sheets, each 1536x1024. REAL LAYOUT (verified from the art): each sheet is
+  // a 3x2 arrangement of SIX boss BLOCKS, and every boss block is its own 3x3 grid of
+  // animation frames. That makes the full sheet a 9x6 grid (1536/9 = 1024/6 = 170.67px
+  // square cells). So `cols:9, rows:6`; a boss `pair` (0..5) selects a BLOCK, and
+  // drawBossSheet animates a 2-frame idle/attack from that block's top row (block cols
+  // 0 & 1) — one centered cell at a time, never a full pair-width region. Cells are
+  // addressed by `cols`/`rows` grid FRACTIONS of the loaded image's natural size (not
+  // fixed px), so a re-export at another resolution won't break the layout.
+  bosses_core:  { path: 'assets/sprites/bosses_sheet_01_core.png',               cols: 9, rows: 6 },
+  bosses_void:  { path: 'assets/sprites/bosses_sheet_02_void_plague_astral.png', cols: 9, rows: 6 },
+  bosses_world: { path: 'assets/sprites/bosses_sheet_03_world_bosses.png',       cols: 9, rows: 6 }
 }
 
 // --- Portal sprite system (SEPARATE from mob + item sprites) -----------------
@@ -446,25 +446,27 @@ const bossSpriteAssignments = {
   wb_astral_pharaoh:  'flying_boss_20',  // large single-eye (astral)
 }
 
-// boss `e.key` (MOB_DEFS / WORLD_BOSSES) -> { sheet, pair } on the NEW 2-frame boss
-// atlases. EXPLICIT + data-driven (never auto-picked). `pair` indexes a 2-frame
-// animation block (frame A idle/move, frame B active/attack) on the sheet's 6x4 grid
-// (3 pairs per row → pairs 0..11; pair p sits at col = (p*2)%cols, row = ((p*2)/cols)|0).
+// boss `e.key` (MOB_DEFS / WORLD_BOSSES) -> { sheet, pair } on the boss atlases.
+// EXPLICIT + data-driven (never auto-picked). Each sheet holds SIX boss blocks laid
+// out 3 across x 2 down on a 9x6 frame grid; `pair` (0..5) picks the BLOCK and
+// drawBossSheet animates its top-row 2 frames. Block positions:
+//   pair 0 = top-left      pair 1 = top-middle     pair 2 = top-right
+//   pair 3 = bottom-left   pair 4 = bottom-middle  pair 5 = bottom-right
 // drawForMob consults this FIRST (before the legacy standalone bossSpriteAssignments
 // and the mob sheets), so these are the active boss visuals; the legacy table stays as
 // a graceful fallback if a boss sheet image is missing.
 //
-// First-pass mapping is by theme (verify/retune against the actual sheets):
+// Mapping by theme, matched to the actual block art:
 //   sheet 01 core  -> goblin / fungal / frost / infernal dungeon bosses
 //   sheet 02 v/p/a -> void / singularity / plague / cursed / astral dungeon bosses
 //   sheet 03 world -> all roaming WORLD bosses (wb_*)
-// To REMAP one boss to a different tile, change ONLY its { sheet, pair } below.
+// To REMAP one boss to a different block, change ONLY its { sheet, pair } below.
 const bossSheetAssignments = {
   // --- bosses_sheet_01_core (dungeon bosses, "core" themes) ---
-  goblin_warchief:    { sheet: 'bosses_core', pair: 0 },  // goblin warren
-  mycelian_king:      { sheet: 'bosses_core', pair: 1 },  // fungal
-  frost_monarch:      { sheet: 'bosses_core', pair: 2 },  // frost
-  infernal_lord:      { sheet: 'bosses_core', pair: 3 },  // infernal / fire
+  goblin_warchief:    { sheet: 'bosses_core', pair: 0 },  // top-left: armored goblin warchief
+  mycelian_king:      { sheet: 'bosses_core', pair: 1 },  // top-middle: fungal/tentacle
+  frost_monarch:      { sheet: 'bosses_core', pair: 3 },  // bottom-left: blue ice knight
+  infernal_lord:      { sheet: 'bosses_core', pair: 4 },  // bottom-middle: fire lord
   // --- bosses_sheet_02_void_plague_astral (dark / corrupt / celestial) ---
   void_harbinger:     { sheet: 'bosses_void', pair: 0 },  // void
   singularity_tyrant: { sheet: 'bosses_void', pair: 1 },  // dark / singularity
@@ -658,24 +660,33 @@ const Sprites = {
     return this._drawSheetTile(a.sheet, col + (useB ? 1 : 0), row, cx, cy, size)
   },
 
-  // Draw an assigned 2-frame BOSS-sheet sprite for `e` (needs `e.key`). Same 2-frame
-  // model as drawMobSheet, but reads bossSheetAssignments and the boss sheet's own
-  // grid (cols may differ from the mob atlases). Frame A sits at col = (pair*2)%cols,
-  // frame B at the adjacent col. Shows B on a fresh shot, else alternates A/B on a
-  // slow timer so idle bosses still breathe. Returns false (unmapped/unloaded) so the
-  // caller can fall through to the legacy boss sprite / geometry.
+  // Draw an assigned 2-frame BOSS-sheet sprite for `e` (needs `e.key`). Same proven
+  // model as drawMobSheet: one assignment -> one boss, frames A/B are ADJACENT source
+  // cells, the DESTINATION stays centered on (cx,cy), and only the SOURCE cell moves
+  // (no sliding/duplication). Boss sheets are a 9x6 grid of SIX boss blocks (3 across x
+  // 2 down); each block is its own 3x3 frame grid. A `pair` (0..5) picks the block:
+  //   blockW = cols/3 (3),  blockH = rows/2 (3)
+  //   slotCol = pair % 3,   slotRow = floor(pair / 3)
+  //   baseCol = slotCol*blockW (block's left frame col),  baseRow = slotRow*blockH (top)
+  // We animate the block's top-row frames A (baseCol) and B (baseCol+1) — exactly one
+  // 170.67px cell at a time. Shows B on a fresh shot, else alternates on a slow timer so
+  // idle bosses still breathe. Returns false (unmapped/unloaded) so the caller falls
+  // through to the legacy boss sprite / geometry.
   drawBossSheet(e, cx, cy, size, context) {
     const a = e && bossSheetAssignments[e.key]
     if (!a) return false
     const def = SPRITE_SHEETS[a.sheet]
     if (!def) return false
-    const cols = def.cols || 8
-    const base = (a.pair | 0) * 2
-    const col = base % cols, row = (base / cols) | 0
+    const cols = def.cols || 9, rows = def.rows || 6
+    const blockW = Math.max(1, (cols / 3) | 0)   // frame cols per boss block (3)
+    const blockH = Math.max(1, (rows / 2) | 0)   // frame rows per boss block (3)
+    const slot = a.pair | 0
+    const baseCol = (slot % 3) * blockW          // left frame col of this block
+    const baseRow = ((slot / 3) | 0) * blockH    // top frame row of this block
     const attacking = e.atkSpd > 0 && e.shootTimer != null && e.shootTimer >= e.atkSpd - 0.18
     const animB = (Math.floor(Date.now() / 200) % 2) === 1   // ~2.5 Hz idle flip
     const useB = attacking || animB
-    return this._drawSheetTile(a.sheet, col + (useB ? 1 : 0), row, cx, cy, size, context)
+    return this._drawSheetTile(a.sheet, baseCol + (useB ? 1 : 0), baseRow, cx, cy, size, context)
   },
 
   // Resolve a portal THEME string OR an explicit { sheet, variant } into a concrete
