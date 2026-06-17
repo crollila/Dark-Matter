@@ -222,12 +222,20 @@ function buildDungeon(defKey, seed = Date.now()) {
   // Larger, randomly-sized dungeons. Harder dungeons (more stars) trend bigger,
   // with per-run variance so the same dungeon differs run to run. The tile map
   // grows to fit the room count so big layouts don't clamp/overlap.
+  // Biome dungeons get a size bump; world-boss dungeons (the ones referenced by
+  // WORLD_BOSSES[*].dungeon) are the biggest — both stay capped for performance.
   const stars = def.stars || 3
   const starBonus = Math.round(stars * 1.3)
-  const minR = def.rooms.min + starBonus
-  const maxR = def.rooms.max + starBonus + 4
+  const wbDungeons = (typeof WORLD_BOSSES !== 'undefined')
+    ? Object.keys(WORLD_BOSSES).reduce((s, k) => (s[WORLD_BOSSES[k].dungeon] = 1, s), {})
+    : {}
+  let typeBonus = 0, sizeCap = 180
+  if (wbDungeons[defKey]) { typeBonus = 6; sizeCap = 240 }       // world-boss dungeon: biggest
+  else if (def.biome)     { typeBonus = 3; sizeCap = 210 }       // biome dungeon: larger
+  const minR = def.rooms.min + starBonus + typeBonus
+  const maxR = def.rooms.max + starBonus + typeBonus + 5         // a touch more per-run variance
   const rCount = minR + (rng() * (maxR - minR + 1) | 0)
-  const MAP_W = Math.max(80, Math.min(180, 56 + rCount * 7))
+  const MAP_W = Math.max(80, Math.min(sizeCap, 56 + rCount * 7))
   const MAP_H = MAP_W
   const m = makeTileMap(MAP_W, MAP_H)
   m.dungeonKey = defKey

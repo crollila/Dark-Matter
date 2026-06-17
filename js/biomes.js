@@ -39,6 +39,54 @@ const BIOMES = {
     floor: '#332a40', floorAlt: '#3b3049', accent: '#ffe08a', mini: [168, 144, 96],
     mobs: ['star_scarab', 'mirage_stalker', 'sunseer'], dungeon: 'astral_tomb',
   },
+
+  // --- LOW/MID biomes added to fill the southern (bottom) half of the 400x400
+  // world. They reuse existing mob pools + biome dungeons (no new mobs/dungeons
+  // needed); the northward difficulty gradient (world.js) scales these DOWN
+  // because they sit south, so they read as easier despite shared mobs.
+  // 1★ biomes bias deep south, 2★ mid-south, 3★ mid (see BIOME_HARDNESS below).
+  // ids 7-12 are reserved for runtime BOSS_BIOMES, so new ids start at 13.
+
+  // 1★ (deep south)
+  meadow: {
+    id: 13, name: 'Greenwood Vale',
+    floor: '#1f2a18', floorAlt: '#26331d', accent: '#a7d86a', mini: [96, 138, 66],
+    mobs: ['fallen_squire', 'cursed_archer', 'grave_priest'], dungeon: 'fallen_keep',
+  },
+  fen: {
+    id: 14, name: 'Quiet Fen',
+    floor: '#162420', floorAlt: '#1b2c27', accent: '#8fe0c0', mini: [78, 128, 110],
+    mobs: ['spore_crawler', 'venom_cap', 'mycelium_horror'], dungeon: 'plague_grotto',
+  },
+
+  // 2★ (mid-south)
+  frostfields: {
+    id: 15, name: 'Frostfields',
+    floor: '#2c3a44', floorAlt: '#33424d', accent: '#bfe6f5', mini: [132, 162, 184],
+    mobs: ['frost_skater', 'icebound_archer', 'snow_golem'], dungeon: 'frozen_catacombs',
+  },
+  sunken: {
+    id: 16, name: 'Sunken Ruins',
+    floor: '#26262a', floorAlt: '#2d2d32', accent: '#cdbf9a', mini: [112, 106, 96],
+    mobs: ['fallen_squire', 'icebound_archer', 'grave_priest'], dungeon: 'fallen_keep',
+  },
+
+  // 3★ (mid)
+  scorched: {
+    id: 17, name: 'Scorched Expanse',
+    floor: '#321711', floorAlt: '#3a1c14', accent: '#ff8a4c', mini: [142, 70, 40],
+    mobs: ['ember_imp', 'chainscourge', 'lava_brute'], dungeon: 'infernal_pit',
+  },
+  starlit: {
+    id: 18, name: 'Starlit Waste',
+    floor: '#2c2440', floorAlt: '#342b4b', accent: '#ffe08a', mini: [150, 132, 96],
+    mobs: ['star_scarab', 'mirage_stalker', 'sunseer'], dungeon: 'astral_tomb',
+  },
+  nullfringe: {
+    id: 19, name: 'Null Fringe',
+    floor: '#191324', floorAlt: '#1f182d', accent: '#9b7bff', mini: [84, 60, 120],
+    mobs: ['matter_wraith', 'gravity_maw', 'null_apostle'], dungeon: 'dark_matter_core',
+  },
 }
 
 // ---- BOSS BIOMES (ids 7-12) ----
@@ -65,6 +113,14 @@ const BIOME_HARDNESS = {
   2: 0.40, // snow
   4: 0.48, // toxic / fungal
   5: 0.44, // ruined
+  // new low/mid biomes — 1★ deepest south, 2★ mid-south, 3★ mid
+  13: 0.10, // meadow (1★)
+  14: 0.14, // fen (1★)
+  15: 0.26, // frostfields (2★)
+  16: 0.30, // sunken (2★)
+  17: 0.42, // scorched (3★)
+  18: 0.45, // starlit (3★)
+  19: 0.48, // nullfringe (3★)
 }
 
 // id → biome lookup (used by render/minimap/world spawn & leash logic)
@@ -91,16 +147,18 @@ function assignBiomes(m, rng) {
   for (const k in BIOMES) ids.push(BIOMES[k].id)
   const minDim = Math.min(W, H)
   const homeR = Math.max(18, minDim * 0.11)     // neutral home radius (tiles)
-  const minSep = minDim * 0.2                   // min distance between centers
+  const minSep = minDim * 0.15                  // min distance between centers (tighter: more biomes now)
   const clusters = []
   for (const id of ids) {
     const hard = BIOME_HARDNESS[id] != null ? BIOME_HARDNESS[id] : 0.5
     let placed = null
     for (let attempt = 0; attempt < 300; attempt++) {
-      const r = (0.07 + rng() * 0.045) * minDim  // blob radius (tiles)
+      const r = (0.055 + rng() * 0.05) * minDim  // blob radius (tiles)
       const margin = r + 4
-      // Harder biomes target the NORTH (low y); easier ones sit mid; jittered.
-      const targetYFrac = 0.52 - hard * 0.42 + (rng() - 0.5) * 0.22
+      // Difficulty → latitude: hard=1 sits at the far NORTH (y≈0.16H), easy=0
+      // sits DEEP SOUTH near the home band (y≈0.78H), so the new low/mid biomes
+      // fill the bottom half while hard biomes stay north. Jittered.
+      const targetYFrac = 0.16 + (1 - hard) * 0.62 + (rng() - 0.5) * 0.16
       const x = margin + rng() * (W - 2 * margin)
       const y = Math.max(margin, Math.min(H - margin, targetYFrac * H))
       if (Math.hypot(x - cx, y - cy) < homeR + r + 6) continue   // clear of home

@@ -449,6 +449,8 @@ const Minimap = (() => {
   let zoom = 1                 // in-memory minimap zoom (1 = whole map)
   const ZMIN = 1, ZMAX = 6
   let _rect = null             // last drawn minimap bounds (for wheel hover test)
+  let _view = null             // last drawn projection (for click→world / waypoints)
+  let _waypoints = []          // {id, mx, my, color, name} screen-space biome markers
 
   function tileRGBA(t) {
     switch (t) {
@@ -518,10 +520,44 @@ const Minimap = (() => {
     ctx.drawImage(map._mini, vx0, vy0, viewW, viewH, ox, oy, dw, dh)
 
     const w2m = (wx, wy) => [ox + (wx / TILE - vx0) * sc, oy + (wy / TILE - vy0) * sc]
+    _view = { ox, oy, sc, vx0, vy0, map, char }
 
-    // Enemies
+    // --- Biome waypoints: clicking a discovered biome center teleports there.
+    // Discovery happens by exploration — a cluster becomes known once the player
+    // gets near its center. Markers are screen-space so the click handler can hit
+    // test them. Only world maps carry biomeClusters (safe no-op elsewhere).
+    _waypoints = []
+    const clusters = map.biomeClusters || []
+    if (clusters.length) {
+      const disc = map._wpDiscovered || (map._wpDiscovered = {})
+      for (const c of clusters) {
+        const cwx = c.x * TILE, cwy = c.y * TILE
+        const dx = char.x - cwx, dy = char.y - cwy
+        if (dx * dx + dy * dy < ((c.r + 6) * TILE) * ((c.r + 6) * TILE)) disc[c.id] = 1
+        if (!disc[c.id]) continue
+        const bd = (typeof BIOME_BY_ID !== 'undefined') && BIOME_BY_ID[c.id]
+        const col = (bd && bd.mini) ? `rgb(${bd.mini[0]},${bd.mini[1]},${bd.mini[2]})` : '#8fcaff'
+        const [mx, my] = w2m(cwx, cwy)
+        _waypoints.push({ id: c.id, mx, my, color: col, name: (bd && bd.name) || 'Biome' })
+        // marker: small flagged diamond
+        ctx.fillStyle = col; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.moveTo(mx, my - 4); ctx.lineTo(mx + 4, my); ctx.lineTo(mx, my + 4); ctx.lineTo(mx - 4, my)
+        ctx.closePath(); ctx.fill(); ctx.stroke()
+      }
+    }
+
+    // Enemies. Normal mobs only show when within the active visibility radius
+    // (Settings.renderDistance) so the minimap reflects what's actually loaded
+    // around you, not the entire world. Bosses (esp. world bosses) stay global.
+    const visR = (typeof Settings !== 'undefined' && Settings.renderDistance) || 1500
+    const visR2 = visR * visR
     for (const e of mobs) {
       if (!e || !e.alive) continue
+      if (!e.isBoss) {
+        const dx = e.x - char.x, dy = e.y - char.y
+        if (dx * dx + dy * dy > visR2) continue
+      }
       const [ex, ey] = w2m(e.x, e.y)
       if (e.isBoss) {
         // World bosses get a bigger, pulsing marker so the overworld event is
@@ -577,6 +613,36 @@ const Minimap = (() => {
       e.preventDefault(); e.stopPropagation()
     }
   }, { passive: false })
+
+  // Click a biome waypoint marker to teleport near that biome center. Local
+  // prototype convenience only. Registered AFTER engine's mousedown (which sets
+  // mouse.down=true) so clearing mouse.down here reliably suppresses the shot.
+  canvas.addEventListener('mousedown', e => {
+    if (e.button !== 0 || !_view || !_waypoints.length) return
+    const blocked = (window.Chat && Chat.isOpen()) || (window.Stations && Stations.isOpen())
+      || (window.Wiki && Wiki.isOpen()) || (window.Options && Options.isOpen())
+    if (blocked) return
+    let best = null, bestD = 10 * 10   // hit radius (screen px²)
+    for (const w of _waypoints) {
+      const dx = mouse.x - w.mx, dy = mouse.y - w.my
+      const d = dx * dx + dy * dy
+      if (d < bestD) { bestD = d; best = w }
+    }
+    if (!best) return
+    const map = _view.map, char = _view.char
+    const c = (map.biomeClusters || []).find(k => k.id === best.id)
+    if (!c) return
+    // Land on a real floor tile near the center (findFloorNear only returns
+    // T_FLOOR, so this avoids walls/water/lava).
+    const spot = (typeof findFloorNear === 'function') ? findFloorNear(map, c.x | 0, c.y | 0) : null
+    if (spot) {
+      char.x = spot.x; char.y = spot.y
+      if ('vx' in char) { char.vx = 0; char.vy = 0 }
+      if (typeof spawnFloatText === 'function') spawnFloatText(char.x, char.y - 30, 'Warped: ' + best.name, '#8fcaff')
+    }
+    mouse.down = false           // cancel the shot this click would have fired
+    e.preventDefault(); e.stopPropagation()
+  })
 
   return { render }
 })()
