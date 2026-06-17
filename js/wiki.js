@@ -69,9 +69,12 @@ const Wiki = (() => {
       const dks = bossToDungeons[mk] || []
       let wbInfo = null
       for (const wk in wb) if (wb[wk].mob === mk) wbInfo = wb[wk]
-      const drops = []
+      // dropItems carries the base KEY too, so the Bosses tab can make each drop
+      // hoverable (shows the existing item tooltip).
+      const dropItems = []
       const seen = {}
-      for (const dk of dks) for (const k of (exByD[dk] || [])) { if (!seen[k]) { seen[k] = 1; drops.push(itemName(k)) } }
+      if (wbInfo && wbInfo.mythic) { seen[wbInfo.mythic] = 1; dropItems.push({ key: wbInfo.mythic, name: itemName(wbInfo.mythic) + ' (mythic)' }) }
+      for (const dk of dks) for (const k of (exByD[dk] || [])) { if (!seen[k]) { seen[k] = 1; dropItems.push({ key: k, name: itemName(k) }) } }
       let mythic = null, found
       if (wbInfo) {
         mythic = wbInfo.mythic ? itemName(wbInfo.mythic) : null
@@ -79,7 +82,7 @@ const Wiki = (() => {
       } else {
         found = dks.length ? dks.map(dunName).join(', ') : 'Unknown'
       }
-      return { key: mk, name: m.name || mk, color: m.color || '#ff6b6b', found, drops, mythic, isWorld: !!wbInfo }
+      return { key: mk, name: m.name || mk, color: m.color || '#ff6b6b', found, dropItems, mythic, isWorld: !!wbInfo }
     })
 
     // --- GEAR (every item base) ---
@@ -199,18 +202,63 @@ const Wiki = (() => {
     return str + '…'
   }
 
+  // Draw a small icon (item sprite or mob marker) centered at (cx,cy), size px.
+  // Items use the assigned sprite when present, else a colored letter tile. Mobs
+  // use a real mob sprite ONLY if one is assigned (none ship yet) — never a
+  // weapon/item sprite — otherwise a geometric colored marker.
+  function drawIcon(icon, cx, cy, size) {
+    if (!icon) return
+    if (icon.type === 'item') {
+      const s = sampleFor(icon.key)
+      if (s && window.Sprites && Sprites.drawForItem && Sprites.drawForItem(s, cx, cy, size)) return
+      const col = (s && s.color) || '#7a86a8'
+      ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(cx - size / 2, cy - size / 2, size, size)
+      ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.strokeRect(cx - size / 2, cy - size / 2, size, size)
+      ctx.fillStyle = col; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+      ctx.fillText(((icon.label || '?')[0] || '?').toUpperCase(), cx, cy + 1)
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
+    } else { // mob / boss
+      const id = window.mobSpriteAssignments && mobSpriteAssignments[icon.key]
+      if (id && window.Sprites && Sprites.draw && Sprites.draw(id, cx, cy, size)) return
+      ctx.fillStyle = icon.color || '#aab8c8'
+      ctx.beginPath(); ctx.arc(cx, cy, size / 2 - 1, 0, Math.PI * 2); ctx.fill()
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1; ctx.stroke()
+    }
+  }
+
   // ---- per-tab list render. Returns total content height. ----
   function renderList(L, rows) {
     let cy = L.ly - scroll[tab]
     let total = 0
+    const inView = (yTop, yBot) => yBot >= L.ly && yTop <= L.ly + L.lh
     ctx.save()
     ctx.beginPath(); ctx.rect(L.lx, L.ly, L.lw, L.lh); ctx.clip()
     for (const row of rows) {
-      const h = row.lines.length * 15 + 12
+      const hasChips = row.chips && row.chips.length
+      const h = row.lines.length * 15 + 12 + (hasChips ? 16 : 0)
       if (cy + h > L.ly && cy < L.ly + L.lh) {
         rowBg(L.lx, cy, L.lw, h, row.accent)
+        const iconW = row.icon ? 24 : 0
+        if (row.icon) drawIcon(row.icon, L.lx + 6 + 9, cy + 13, 18)
+        const tx = L.lx + 10 + iconW
         let ty = cy + 16
-        for (const ln of row.lines) { text(clamp(ln.t, L.lw - 24), L.lx + 10, ty, ln.c, ln.b); ty += 15 }
+        for (const ln of row.lines) { text(clamp(ln.t, L.lw - 24 - iconW), tx, ty, ln.c, ln.b); ty += 15 }
+        if (hasChips) {
+          text('Drops:', tx, ty, '#aab8c8')
+          ctx.font = '11px monospace'; let cx = tx + ctx.measureText('Drops: ').width
+          ctx.font = '10px monospace'
+          for (let i = 0; i < row.chips.length; i++) {
+            const chip = row.chips[i]
+            const label = chip.name + (i < row.chips.length - 1 ? ',' : '')
+            const w = ctx.measureText(label).width
+            const hovered = mouse.x >= cx && mouse.x <= cx + w && mouse.y >= ty - 11 && mouse.y <= ty + 3
+              && inView(cy, cy + h)
+            ctx.fillStyle = hovered ? '#ffe08a' : '#cdd9e6'; ctx.textAlign = 'left'
+            ctx.fillText(label, cx, ty)
+            if (hovered) { const s = sampleFor(chip.key); if (s) _hoverItem = s }
+            cx += w + 6
+          }
+        }
         if (row.hoverKey && mouse.x >= L.lx && mouse.x <= L.lx + L.lw && mouse.y >= cy && mouse.y <= cy + h
             && mouse.y >= L.ly && mouse.y <= L.ly + L.lh) {
           const s = sampleFor(row.hoverKey)
@@ -239,9 +287,13 @@ const Wiki = (() => {
       const lines = [
         { t: b.name + (b.isWorld ? '  [WORLD BOSS]' : ''), c: b.color, b: true },
         { t: 'Found: ' + b.found, c: '#9fb3c8' },
-        { t: 'Drops: ' + (b.mythic ? b.mythic + ' (mythic), ' : '') + (b.drops.length ? b.drops.join(', ') : '—'), c: '#aab8c8' },
       ]
-      return { lines, accent: b.color }
+      const chips = b.dropItems || []
+      const row = { lines, accent: b.color, icon: { type: 'mob', key: b.key, color: b.color } }
+      // Hoverable drop chips (each shows the item tooltip). If none, show a plain line.
+      if (chips.length) row.chips = chips
+      else lines.push({ t: 'Drops: —', c: '#aab8c8' })
+      return row
     })
   }
   function rowsForGear(reg) {
@@ -251,7 +303,7 @@ const Wiki = (() => {
         { t: g.slot + '  •  ' + g.classes + '  •  ' + g.cat, c: '#9fb3c8' },
         { t: 'From: ' + g.sources.join('  |  '), c: '#aab8c8' },
       ]
-      return { lines, accent: '#5a6a8a', hoverKey: g.key }
+      return { lines, accent: '#5a6a8a', hoverKey: g.key, icon: { type: 'item', key: g.key, label: g.name } }
     })
   }
   function rowsForMobs(reg) {
@@ -261,7 +313,7 @@ const Wiki = (() => {
         { t: m.where + '   HP ' + (m.hp ? m.hp.toLocaleString() : '?'), c: '#9fb3c8' },
         { t: 'Drops: ' + (m.drops.length ? m.drops.join(', ') : 'common gear pool'), c: '#aab8c8' },
       ]
-      return { lines, accent: m.color }
+      return { lines, accent: m.color, icon: { type: 'mob', key: m.key, color: m.color } }
     })
   }
 

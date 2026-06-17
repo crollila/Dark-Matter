@@ -1089,8 +1089,14 @@ function _lootFrameDraw(bag, px, py, F, hitRows) {
     const over = mouse.x >= rx && mouse.x <= rx + rw && mouse.y >= ry && mouse.y <= ry + rh
     if (over && r.item) hoverItem = r.item
     if (over) { ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(rx, ry, rw, rh) }
+    // Sprite icon if the item base has one assigned; else the rarity-colored dot.
+    const drewIcon = (typeof Sprites !== 'undefined') &&
+      Sprites.drawForItem(r.item, px + F.padX + 5, y - 4, 12)
+    if (!drewIcon) {
+      ctx.fillStyle = r.color
+      ctx.beginPath(); ctx.arc(px + F.padX + 4, y - 4, 3, 0, Math.PI * 2); ctx.fill()
+    }
     ctx.fillStyle = r.color
-    ctx.beginPath(); ctx.arc(px + F.padX + 4, y - 4, 3, 0, Math.PI * 2); ctx.fill()
     ctx.font = '11px monospace'
     ctx.fillText(r.label, px + F.padX + 12, y)
     hitRows.push({ x: rx, y: ry, w: rw, h: rh, index: r.index })
@@ -1192,21 +1198,9 @@ function renderLootHUD(char, acct) {
     ctx.globalAlpha = 1
   }
 
-  // Inventory list (compact, last ~8). Inventory is slot-stable so it may
-  // contain empty holes (null) — skip those.
-  const inv = char.inventory || []
-  const present = inv.filter(Boolean)
-  y += 6
-  // (HUD inventory count removed — it was clutter; the count still shows inside
-  // the inventory panel itself.) Keep the compact recent-items list below.
-  ctx.font = '10px monospace'
-  const start = Math.max(0, present.length - 8)
-  for (let i = start; i < present.length; i++) {
-    const it = present[i]
-    ctx.fillStyle = it.color || '#ccc'
-    ctx.fillText(itemDisplayName(it), x, y)
-    y += 13
-  }
+  // (Removed the persistent stacked inventory list that used to render here —
+  // only the temporary, fading loot-pickup notifications above remain. The full
+  // inventory is viewable in the inventory panel.)
 
   ctx.textAlign = 'left'
 }

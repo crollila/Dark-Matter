@@ -136,10 +136,41 @@ function createCharacter(classKey, name = '') {
     mpRegen: 15,
     hpRegen: 10,      // set by recalcStats from gear; base is 0
   }
+  giveStarterGear(char)
   recalcStats(char)
   char.hp = char.maxHp
   char.mp = char.maxMp
   return char
+}
+
+// Class -> starter (T0/common) weapon base key (items.js ITEM_BASES).
+const STARTER_WEAPONS = {
+  warrior: 'warrior_sword',
+  rogue:   'rogue_daggers',
+  mage:    'mage_staff',
+  priest:  'priest_wand',
+  archer:  'archer_bow',
+}
+
+// Give a brand-new character basic starter gear: a common class weapon (equipped)
+// plus a couple of common starter items in the bag. Deliberately weak (common
+// rarity, modest fixed rollPercent) so nothing rare/strong is handed out. Runs
+// only at character creation, so it does not affect save/permadeath behavior
+// (the gear is just part of the character and dies with it). Safe no-op if the
+// item system isn't loaded for any reason.
+function giveStarterGear(char) {
+  if (typeof rollItem !== 'function') return
+  const wk = STARTER_WEAPONS[char.classKey]
+  if (wk) {
+    const w = rollItem(wk, 'common', 50, 'starter')
+    if (w) char.gear.weapon = w
+  }
+  // 1-2 generic common items in the bag (class-agnostic, low roll). Skipped
+  // gracefully if a base is missing.
+  for (const k of ['swift_boots', 'iron_helm']) {
+    const it = rollItem(k, 'common', 40, 'starter')
+    if (it) char.inventory.push(it)
+  }
 }
 
 function recalcStats(char) {

@@ -44,21 +44,77 @@ const SPRITE_REGISTRY = {
   // projectiles
   spr_bullet:       { sheet: 'main', col: 0, row: 5, w: 8, h: 8, category: 'projectile' },
   spr_fireball:     { sheet: 'main', col: 1, row: 5, w: 8, h: 8, category: 'projectile' },
-  spr_orb:          { sheet: 'main', col: 2, row: 5, w: 8, h: 8, category: 'projectile' }
+  spr_orb:          { sheet: 'main', col: 2, row: 5, w: 8, h: 8, category: 'projectile' },
+
+  // weapons sheet (assets/sprites/weapons_black_outline.png, 8x8 @16px).
+  // IDs follow the slicer naming (sheet_col_row) for easy lookup in sprites_debug.html.
+  weapons_0_0:      { sheet: 'weapons', col: 0, row: 0, category: 'weapon' }, // gray sword
+  weapons_1_0:      { sheet: 'weapons', col: 1, row: 0, category: 'weapon' }, // bronze sword
+  weapons_2_0:      { sheet: 'weapons', col: 2, row: 0, category: 'weapon' }, // gold/fire sword
+  weapons_5_0:      { sheet: 'weapons', col: 5, row: 0, category: 'weapon' }, // gold bow
+  weapons_0_4:      { sheet: 'weapons', col: 0, row: 4, category: 'weapon' }, // void/purple sword
+  weapons_6_4:      { sheet: 'weapons', col: 6, row: 4, category: 'weapon' }, // blue staff/spear
+  weapons_7_4:      { sheet: 'weapons', col: 7, row: 4, category: 'weapon' }, // fire staff/spear
+  weapons_7_7:      { sheet: 'weapons', col: 7, row: 7, category: 'weapon' }, // blue crystal
+
+  // armor sheet (assets/sprites/armor.png, 8x8 @16px). Rows by piece type;
+  // rings/gems are accessories tagged 'item'. Adjust coords in sprites_debug.html.
+  armor_0_0:        { sheet: 'armor', col: 0, row: 0, category: 'armor' }, // gray helm
+  armor_2_0:        { sheet: 'armor', col: 2, row: 0, category: 'armor' }, // gold helm
+  armor_3_0:        { sheet: 'armor', col: 3, row: 0, category: 'armor' }, // cyan helm
+  armor_0_1:        { sheet: 'armor', col: 0, row: 1, category: 'armor' }, // silver chest
+  armor_2_1:        { sheet: 'armor', col: 2, row: 1, category: 'armor' }, // gold chest
+  armor_4_1:        { sheet: 'armor', col: 4, row: 1, category: 'armor' }, // brown leather chest
+  armor_5_1:        { sheet: 'armor', col: 5, row: 1, category: 'armor' }, // red robe/chest
+  armor_7_1:        { sheet: 'armor', col: 7, row: 1, category: 'armor' }, // blue robe/chest
+  armor_2_2:        { sheet: 'armor', col: 2, row: 2, category: 'armor' }, // gold pants
+  armor_3_2:        { sheet: 'armor', col: 3, row: 2, category: 'armor' }, // cyan pants
+  armor_4_2:        { sheet: 'armor', col: 4, row: 2, category: 'armor' }, // brown pants
+  armor_7_2:        { sheet: 'armor', col: 7, row: 2, category: 'armor' }, // blue pants
+  armor_2_3:        { sheet: 'armor', col: 2, row: 3, category: 'armor' }, // gold boots
+  armor_4_3:        { sheet: 'armor', col: 4, row: 3, category: 'armor' }, // brown boots
+  armor_7_3:        { sheet: 'armor', col: 7, row: 3, category: 'armor' }, // blue boots
+  armor_2_4:        { sheet: 'armor', col: 2, row: 4, category: 'armor' }, // gold gloves
+  armor_4_4:        { sheet: 'armor', col: 4, row: 4, category: 'armor' }, // brown gloves
+  armor_7_4:        { sheet: 'armor', col: 7, row: 4, category: 'armor' }, // blue gloves
+  armor_3_7:        { sheet: 'armor', col: 3, row: 7, category: 'item' },  // blue gem
+  armor_4_7:        { sheet: 'armor', col: 4, row: 7, category: 'item' },  // gray ring
+  armor_5_7:        { sheet: 'armor', col: 5, row: 7, category: 'item' },  // green ring
+  armor_6_7:        { sheet: 'armor', col: 6, row: 7, category: 'item' },  // orange ring
+  armor_7_7:        { sheet: 'armor', col: 7, row: 7, category: 'item' }   // blue/orange ring
 }
 
 // --- Optional assignment maps ----------------------------------------------
 // Map game-side keys -> sprite IDs. Empty entries simply fall back to geometry.
-// mob keys come from MOB_DEFS (e.key). 5 obvious examples wired below.
-const mobSpriteAssignments = {
-  slime: 'spr_slime',
-  forest_sprite: 'spr_sprite',
-  goblin_scout: 'spr_goblin',
-  cave_bat: 'spr_bat',
-  void_wisp: 'spr_wisp'
+// mob keys come from MOB_DEFS (e.key).
+//
+// NOTE: the only shipped sheet (assets/sprites/sheet.png) is a WEAPON/ITEM sheet
+// — it contains no mob art. The old assignments below pointed mob keys at those
+// tiles, which rendered neutral mobs (slime/sprite/goblin) as swords. Until real
+// mob art exists, leave this EMPTY so every mob uses its geometric fallback.
+// Do not point mob keys at the weapons/armor/item sheets.
+const mobSpriteAssignments = {}
+// item baseKey -> sprite ID. Obvious starter-gear examples wired; everything
+// else falls back to the geometric letter icon. Maps to ITEM_BASES keys (items.js).
+const itemSpriteAssignments = {
+  // class starter weapons
+  warrior_sword: 'weapons_0_0',  // gray sword
+  rogue_daggers: 'weapons_1_0',  // bronze blade (closest)
+  archer_bow:    'weapons_5_0',  // gold bow
+  mage_staff:    'weapons_6_4',  // blue staff
+  priest_wand:   'weapons_7_4',  // fire staff/wand
+  // generic armor pieces -> closest slot icon
+  iron_helm:      'armor_0_0',  // gray helm
+  iron_plate:     'armor_0_1',  // silver chest
+  iron_greaves:   'armor_4_2',  // brown pants
+  swift_boots:    'armor_2_3',  // gold boots
+  leather_gloves: 'armor_4_4',  // brown gloves
+  // accessories (ring/amulet/ability) -> gem/ring icons
+  band_of_might:  'armor_6_7',  // orange ring
+  band_of_focus:  'armor_5_7',  // green ring
+  vital_amulet:   'armor_3_7',  // blue gem
+  arcane_focus:   'weapons_7_7' // blue crystal focus
 }
-// item baseKey -> sprite ID (none assigned yet; foundation only)
-const itemSpriteAssignments = {}
 // projectile kind/source -> sprite ID (none assigned yet; foundation only)
 const projectileSpriteAssignments = {}
 
@@ -138,6 +194,16 @@ const Sprites = {
     const id = mobSpriteAssignments[e.key]
     if (!id) return false
     return this.draw(id, sx, sy, (e.radius || 12) * 2.2)
+  },
+
+  // Convenience hook for item rendering (inventory/equipment/loot): draws the
+  // assigned sprite centered at (cx,cy) sized `size` px. Returns true if drawn,
+  // false to fall back to the existing letter/dot icon.
+  drawForItem(it, cx, cy, size) {
+    if (!it || !it.baseKey) return false
+    const id = itemSpriteAssignments[it.baseKey]
+    if (!id) return false
+    return this.draw(id, cx, cy, size)
   }
 }
 

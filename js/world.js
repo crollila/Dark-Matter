@@ -22,7 +22,7 @@ const WorldZone = (() => {
   const BOSS_BIOME_RADIUS = 22   // boss-biome paint radius (tiles)
   const WORLD_MOB_POOL = ['slime', 'forest_sprite', 'goblin_scout']
   const BIOME_SPAWN = 12    // biome mobs spawned per biome at world-gen
-  const NEUTRAL_SPAWN = 60  // wandering neutral mobs scattered in open terrain (4x map)
+  const NEUTRAL_SPAWN = 300 // wandering neutral mobs scattered in open terrain (~5x density; biome/boss spawns unchanged). Offscreen cull + AI sleep keep this cheap.
   const RESPAWN_MIN = 1, RESPAWN_MAX = 30   // seconds
   const RESPAWN_PLAYER_GAP2 = 360 * 360      // don't respawn this close to player
 
@@ -669,17 +669,15 @@ const WorldZone = (() => {
     const name = boss.name || 'World Boss'
     ctx.font = 'bold 11px monospace'
     const tw = ctx.measureText(name).width
-    const boxW = tw + 56, boxH = 24
+    const boxW = tw + 40, boxH = 24
     const bx = ((cw - boxW) / 2) | 0, by = 56
     ctx.fillStyle = 'rgba(0,0,0,0.72)'; ctx.fillRect(bx, by, boxW, boxH)
     ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.strokeRect(bx, by, boxW, boxH)
-    // Spire/sigil marker (left)
-    const mx = bx + 15, my = by + boxH / 2
-    ctx.fillStyle = col
-    ctx.beginPath(); ctx.moveTo(mx, my - 7); ctx.lineTo(mx + 5, my + 6); ctx.lineTo(mx - 5, my + 6); ctx.closePath(); ctx.fill()
-    // Name
+    const my = by + boxH / 2
+    // Name (the old static left spire/sigil marker was removed — it was a dead,
+    // non-rotation-aware indicator; only the rotation-correct arrow remains).
     ctx.fillStyle = '#ffd7ec'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
-    ctx.fillText(name, bx + 27, my)
+    ctx.fillText(name, bx + 12, my)
     ctx.textBaseline = 'alphabetic'
     // Arrow toward boss, or a "nearby" dot when on-screen
     const ax = bx + boxW - 14, ay = by + boxH / 2
