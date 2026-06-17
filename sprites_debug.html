@@ -2,94 +2,218 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Epsteins Island — Sprite Contact Sheet</title>
+  <title>Epsteins Island — Sprite Sheet Slicer</title>
   <style>
     body { background:#15171c; color:#e6e6e6; font-family:monospace; margin:0; padding:18px; }
     h1 { font-size:16px; margin:0 0 4px; }
-    p  { font-size:12px; color:#9aa; margin:0 0 14px; }
-    .grid { display:flex; flex-wrap:wrap; gap:10px; }
-    .cell { width:120px; background:#1f2229; border:1px solid #2c3038; border-radius:6px;
-            padding:8px; text-align:center; }
-    .cell canvas { background:#0c0d10 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="8" height="8" fill="%23222"/><rect x="8" y="8" width="8" height="8" fill="%23222"/></svg>');
-                   image-rendering:pixelated; border-radius:4px; }
-    .id  { font-size:11px; margin-top:6px; word-break:break-all; }
-    .meta{ font-size:10px; color:#8a8f99; margin-top:2px; }
-    .cat { display:inline-block; font-size:9px; padding:1px 5px; border-radius:3px;
-           margin-top:4px; background:#333; color:#ddd; }
-    .cat.mob{background:#2d5a3d}.cat.boss{background:#6a2d2d}.cat.item{background:#2d3f6a}
-    .cat.weapon{background:#6a5a2d}.cat.armor{background:#4a4a4a}.cat.projectile{background:#5a2d6a}
-    .cat.unknown{background:#333}
-    .note{font-size:11px;color:#c9a36a;margin:10px 0;}
+    p  { font-size:12px; color:#9aa; margin:0 0 12px; max-width:900px; }
+    .row { display:flex; gap:18px; align-items:flex-start; }
+    .stage { position:relative; line-height:0;
+             background:#0c0d10 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="8" height="8" fill="%231a1a1a"/><rect x="8" y="8" width="8" height="8" fill="%231a1a1a"/></svg>');
+             border:1px solid #2c3038; border-radius:6px; }
+    .stage canvas { display:block; image-rendering:pixelated; }
+    #overlay { position:absolute; left:0; top:0; cursor:crosshair; }
+    .panel { width:300px; flex:0 0 auto; background:#1f2229; border:1px solid #2c3038;
+             border-radius:6px; padding:12px; font-size:12px; }
+    .panel h2 { font-size:13px; margin:0 0 8px; color:#cdd; }
+    .kv { display:flex; justify-content:space-between; padding:2px 0; border-bottom:1px dashed #2c3038; }
+    .kv span:first-child { color:#8a8f99; }
+    .kv span:last-child { color:#e6e6e6; }
+    pre { background:#101216; border:1px solid #2c3038; border-radius:4px; padding:8px;
+          font-size:11px; color:#9fe0b0; white-space:pre-wrap; word-break:break-all; margin:8px 0 0; }
+    button { font-family:monospace; font-size:11px; background:#2d3f6a; color:#fff; border:0;
+             border-radius:4px; padding:5px 9px; margin-top:8px; cursor:pointer; }
+    button:hover { background:#395092; }
+    .note{font-size:11px;color:#c9a36a;margin:0 0 12px;}
+    .hint{font-size:11px;color:#8a8f99;margin-top:8px;}
+    label{font-size:11px;color:#9aa;margin-right:10px;}
+    input[type=number]{width:48px;background:#101216;color:#e6e6e6;border:1px solid #2c3038;border-radius:3px;padding:2px 4px;font-family:monospace;}
   </style>
 </head>
 <body>
-  <h1>Sprite Contact Sheet</h1>
-  <p>All registered sprites with IDs and metadata. Use these IDs in
-     <code>mobSpriteAssignments</code> / <code>itemSpriteAssignments</code> /
-     <code>projectileSpriteAssignments</code> in <code>js/sprites.js</code>.</p>
+  <h1>Sprite Sheet Slicer</h1>
+  <p>Renders <code id="path"></code> split into a grid. Hover a tile to inspect it;
+     click to pin a selection and copy a registry snippet for <code>js/sprites.js</code>.
+     This page does <b>not</b> assign sprites to game objects — it only helps you pick IDs.</p>
   <div class="note" id="note"></div>
-  <div class="grid" id="grid"></div>
+  <div style="margin-bottom:12px">
+    <label>tile <input id="tileInput" type="number" min="1" value="16"></label>
+    <label>zoom <input id="zoomInput" type="number" min="1" max="16" value="4"></label>
+    <label><input id="gridToggle" type="checkbox" checked> grid</label>
+    <label><input id="labelToggle" type="checkbox"> labels</label>
+  </div>
+  <div class="row">
+    <div class="stage" id="stage">
+      <canvas id="base"></canvas>
+      <canvas id="overlay"></canvas>
+    </div>
+    <div class="panel">
+      <h2 id="selTitle">No tile selected</h2>
+      <div class="kv"><span>sprite id</span><span id="vId">—</span></div>
+      <div class="kv"><span>col</span><span id="vCol">—</span></div>
+      <div class="kv"><span>row</span><span id="vRow">—</span></div>
+      <div class="kv"><span>x , y (px)</span><span id="vXY">—</span></div>
+      <div class="kv"><span>w x h (px)</span><span id="vWH">—</span></div>
+      <pre id="snippet">// hover or click a tile…</pre>
+      <button id="copyBtn">Copy snippet</button>
+      <div class="hint" id="hint"></div>
+    </div>
+  </div>
 
   <script src="js/sprites.js"></script>
   <script>
-    const PREVIEW = 48; // px box per sprite
-    const grid = document.getElementById('grid');
-    const note = document.getElementById('note');
+    // Pull the default sheet path + tile from the shared registry config so this
+    // page and the game stay in sync. Falls back to sane defaults if absent.
+    const SHEET_KEY = 'main';
+    const sheetDef = (typeof SPRITE_SHEETS !== 'undefined' && SPRITE_SHEETS[SHEET_KEY])
+      ? SPRITE_SHEETS[SHEET_KEY] : { path: 'assets/sprites/sheet.png', tile: 16 };
 
-    function build() {
-      grid.innerHTML = '';
-      const ids = Object.keys(SPRITE_REGISTRY);
-      for (const id of ids) {
-        const e = SPRITE_REGISTRY[id];
-        const r = Sprites.rect(id) || { sw: 16, sh: 16 };
-        const cell = document.createElement('div');
-        cell.className = 'cell';
+    const base = document.getElementById('base');
+    const overlay = document.getElementById('overlay');
+    const bctx = base.getContext('2d');
+    const octx = overlay.getContext('2d');
+    const tileInput = document.getElementById('tileInput');
+    const zoomInput = document.getElementById('zoomInput');
+    const gridToggle = document.getElementById('gridToggle');
+    const labelToggle = document.getElementById('labelToggle');
+    document.getElementById('path').textContent = sheetDef.path;
+    tileInput.value = sheetDef.tile || 16;
 
-        const cv = document.createElement('canvas');
-        cv.width = PREVIEW; cv.height = PREVIEW;
-        const c = cv.getContext('2d');
-        c.imageSmoothingEnabled = false;
-        if (!Sprites.drawAt(id, 0, 0, PREVIEW, PREVIEW, c)) {
-          // Sheet not loaded — draw an ID-stamped placeholder so the page is useful
-          // even before art exists.
-          c.fillStyle = '#26303a'; c.fillRect(0, 0, PREVIEW, PREVIEW);
-          c.fillStyle = '#557'; c.font = '8px monospace'; c.textAlign = 'center';
-          c.fillText('no img', PREVIEW/2, PREVIEW/2 + 3);
+    const img = new Image();
+    let loaded = false, cols = 0, rows = 0;
+    let hover = null, pinned = null;
+
+    function tile() { return Math.max(1, parseInt(tileInput.value, 10) || 16); }
+    function zoom() { return Math.max(1, parseInt(zoomInput.value, 10) || 4); }
+    function spriteId(c, r) { return `sheet_${c}_${r}`; }
+
+    img.onload = () => { loaded = true; redrawAll(); };
+    img.onerror = () => {
+      loaded = false;
+      document.getElementById('note').textContent =
+        `Sheet not found at ${sheetDef.path}. Drop a PNG there and reload — the grid appears automatically.`;
+      // Fallback: still show an empty placeholder grid so the layout is intact.
+      cols = 8; rows = 8;
+      sizeCanvases();
+      drawBase();
+    };
+    img.src = sheetDef.path;
+
+    function sizeCanvases() {
+      const w = cols * tile() * zoom(), h = rows * tile() * zoom();
+      base.width = overlay.width = w;
+      base.height = overlay.height = h;
+    }
+
+    function drawBase() {
+      const t = tile(), z = zoom();
+      bctx.imageSmoothingEnabled = false;
+      bctx.clearRect(0, 0, base.width, base.height);
+      if (loaded) bctx.drawImage(img, 0, 0, base.width, base.height);
+      // grid + optional labels
+      if (gridToggle.checked || labelToggle.checked) {
+        bctx.lineWidth = 1;
+        bctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        bctx.font = '8px monospace';
+        bctx.textAlign = 'left';
+        bctx.textBaseline = 'top';
+        for (let c = 0; c < cols; c++) {
+          for (let r = 0; r < rows; r++) {
+            const px = c * t * z, py = r * t * z;
+            if (gridToggle.checked) bctx.strokeRect(px + 0.5, py + 0.5, t * z, t * z);
+            if (labelToggle.checked) {
+              bctx.fillStyle = 'rgba(0,0,0,0.55)';
+              bctx.fillRect(px + 1, py + 1, t * z - 2, 9);
+              bctx.fillStyle = '#9fe0b0';
+              bctx.fillText(`${c},${r}`, px + 2, py + 2);
+            }
+          }
         }
-        cell.appendChild(cv);
-
-        const idEl = document.createElement('div');
-        idEl.className = 'id'; idEl.textContent = id;
-        cell.appendChild(idEl);
-
-        const meta = document.createElement('div');
-        meta.className = 'meta';
-        const sheet = SPRITE_SHEETS[e.sheet] || {};
-        const t = sheet.tile || 16;
-        const sx = e.x != null ? e.x : (e.col || 0) * t;
-        const sy = e.y != null ? e.y : (e.row || 0) * t;
-        meta.textContent = `${e.sheet} @ ${sx},${sy} · ${r.sw}x${r.sh}`;
-        cell.appendChild(meta);
-
-        const cat = document.createElement('div');
-        cat.className = 'cat ' + (e.category || 'unknown');
-        cat.textContent = e.category || 'unknown';
-        cell.appendChild(cat);
-
-        grid.appendChild(cell);
       }
-      note.textContent = anyLoaded()
-        ? `Loaded ${ids.length} sprites.`
-        : `Sheet image(s) not found yet (placeholders shown). Drop a sheet at: ` +
-          Object.values(SPRITE_SHEETS).map(s => s.path).join(', ');
     }
-    function anyLoaded() {
-      return Object.keys(SPRITE_REGISTRY).some(id => Sprites.ready(id));
+
+    function drawOverlay() {
+      const t = tile(), z = zoom();
+      octx.clearRect(0, 0, overlay.width, overlay.height);
+      const mark = (cell, color, lw) => {
+        if (!cell) return;
+        octx.lineWidth = lw;
+        octx.strokeStyle = color;
+        octx.strokeRect(cell.col * t * z + lw / 2, cell.row * t * z + lw / 2,
+                        t * z - lw, t * z - lw);
+      };
+      mark(hover, 'rgba(255,255,255,0.7)', 2);
+      mark(pinned, '#ffcc33', 3);
     }
-    build();
-    // Rebuild a couple times in case sheet images finish decoding after first paint.
-    let tries = 0;
-    const timer = setInterval(() => { build(); if (++tries > 6 || anyLoaded()) clearInterval(timer); }, 400);
+
+    function redrawAll() {
+      const t = tile();
+      if (loaded) {
+        cols = Math.max(1, Math.floor(img.naturalWidth / t));
+        rows = Math.max(1, Math.floor(img.naturalHeight / t));
+      }
+      sizeCanvases();
+      drawBase();
+      drawOverlay();
+      const total = cols * rows;
+      document.getElementById('note').textContent = loaded
+        ? `${sheetDef.path} — ${img.naturalWidth}x${img.naturalHeight}px → ${cols}x${rows} = ${total} tiles @ ${t}px.`
+        : document.getElementById('note').textContent;
+    }
+
+    function cellFromEvent(ev) {
+      const rect = overlay.getBoundingClientRect();
+      const t = tile(), z = zoom();
+      const col = Math.floor((ev.clientX - rect.left) / (t * z));
+      const row = Math.floor((ev.clientY - rect.top) / (t * z));
+      if (col < 0 || row < 0 || col >= cols || row >= rows) return null;
+      return { col, row };
+    }
+
+    function snippetFor(cell) {
+      const t = tile();
+      return `${spriteId(cell.col, cell.row)}: { sheet: '${SHEET_KEY}', col: ${cell.col}, row: ${cell.row}, category: 'unknown' },`;
+    }
+
+    function showInfo(cell) {
+      if (!cell) return;
+      const t = tile();
+      document.getElementById('selTitle').textContent = spriteId(cell.col, cell.row);
+      document.getElementById('vId').textContent = spriteId(cell.col, cell.row);
+      document.getElementById('vCol').textContent = cell.col;
+      document.getElementById('vRow').textContent = cell.row;
+      document.getElementById('vXY').textContent = `${cell.col * t} , ${cell.row * t}`;
+      document.getElementById('vWH').textContent = `${t} x ${t}`;
+      document.getElementById('snippet').textContent = snippetFor(cell);
+    }
+
+    overlay.addEventListener('mousemove', (ev) => {
+      const cell = cellFromEvent(ev);
+      hover = cell; drawOverlay();
+      if (cell && !pinned) showInfo(cell);
+    });
+    overlay.addEventListener('mouseleave', () => {
+      hover = null; drawOverlay();
+      if (!pinned) showInfo(null);
+    });
+    overlay.addEventListener('click', (ev) => {
+      const cell = cellFromEvent(ev);
+      if (!cell) return;
+      pinned = cell; drawOverlay(); showInfo(cell);
+      document.getElementById('hint').textContent = 'Pinned. Click another tile to repin.';
+    });
+
+    document.getElementById('copyBtn').addEventListener('click', () => {
+      const text = document.getElementById('snippet').textContent;
+      if (navigator.clipboard) navigator.clipboard.writeText(text)
+        .then(() => document.getElementById('hint').textContent = 'Snippet copied to clipboard.')
+        .catch(() => document.getElementById('hint').textContent = 'Copy failed — select the text manually.');
+    });
+
+    tileInput.addEventListener('change', () => { pinned = null; redrawAll(); });
+    zoomInput.addEventListener('change', redrawAll);
+    gridToggle.addEventListener('change', drawBase);
+    labelToggle.addEventListener('change', drawBase);
   </script>
 </body>
 </html>
