@@ -20,7 +20,7 @@ const NexusZone = (() => {
   }
 
   function update(dt, char) {
-    const stationOpen = (window.Stations && Stations.isOpen())
+    const stationOpen = (window.Stations && Stations.isOpen()) || (window.Wiki && Wiki.isOpen())
     const chatOpen = (window.Chat && Chat.isOpen()) || stationOpen || (window.Options && Options.isOpen())
     // Movement (water slows)
     let vx = 0, vy = 0
@@ -66,10 +66,14 @@ const NexusZone = (() => {
     } else if (tile === T_STATION) {
       const st = map.stations && map.stations.find(s => s.x === tx && s.y === ty)
       if (st) {
+        const isWiki = st.key === 'wiki'
         const mode = STATION_MODE[st.key]
-        promptLabel = mode ? `[${ik}] ${st.label}` : `[${ik}] ${st.label} — Coming soon`
+        promptLabel = (mode || isWiki) ? `[${ik}] ${st.label}` : `[${ik}] ${st.label} — Coming soon`
         promptTimer = 0.4
-        if (eDown && !eLatch && mode && window.Stations) Stations.open(mode)
+        if (eDown && !eLatch) {
+          if (isWiki && window.Wiki) Wiki.open()
+          else if (mode && window.Stations) Stations.open(mode)
+        }
       }
     } else if (promptTimer <= 0) {
       promptLabel = ''

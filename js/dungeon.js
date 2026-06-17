@@ -11,9 +11,7 @@ const DungeonZone = (() => {
   let promptLabel = ''
   let promptTimer = 0
   let lootBags = []
-  let lootPrompt = false
-  let nearBag = null   // closest pickupable bag (for chest preview)
-  let eLatch = false   // edge-trigger for [E] pickup (resists key auto-repeat)
+  let nearBags = []    // nearby accessible bags (click-to-pick previews)
   // Boss damage attribution: { [charId]: totalDamageDealtToBoss }. Single-player
   // today, but the per-player map is the seam future multiplayer plugs into.
   let bossDamage = {}
@@ -27,15 +25,13 @@ const DungeonZone = (() => {
     mobs = []
     bossDefeated = false
     lootBags = []
-    lootPrompt = false
-    nearBag = null
-    eLatch = false
+    nearBags = []
     bossDamage = {}
     // Register this zone as the active loot sink so dropped items land here.
     window.activeLootZone = { addBag: (b) => lootBags.push(b), getBags: () => lootBags }
     pBullets.reset(); eBullets.reset()
     particles.length = 0; floatTexts.length = 0
-    grid = makeGrid(80, 80)
+    grid = makeGrid(map.w, map.h)
 
     // Place char at dungeon entrance
     char.x = map.spawnPos.x; char.y = map.spawnPos.y
@@ -190,36 +186,20 @@ const DungeonZone = (() => {
       char.abilityActive = false
     }
 
-    // ---- LOOT BAGS: lifetime, proximity prompt, pickup ----
+    // ---- LOOT BAGS: lifetime + proximity (CLICK-TO-PICK ONLY; no hotkey) ----
     LootLog.update(dt)
-    lootPrompt = false
-    nearBag = null
-    let nearDist = 50 * 50
+    const near = []
+    const previewR2 = 90 * 90
     for (let i = lootBags.length - 1; i >= 0; i--) {
       const bag = lootBags[i]
       bag.life -= dt
       if (bag.life <= 0) { lootBags.splice(i, 1); continue }
       if (bagIsEmpty(bag)) { lootBags.splice(i, 1); continue }  // emptied by single-item pick
-      const dx = bag.x - char.x, dy = bag.y - char.y
-      const d2 = dx*dx + dy*dy
-      if (d2 < nearDist) { nearDist = d2; nearBag = bag }
+      const dx = bag.x - char.x, dy = bag.y - char.y, d2 = dx*dx + dy*dy
+      if (d2 < previewR2 && lootBagAccessible(bag, char)) near.push({ bag, d2 })
     }
-    if (nearBag) {
-      lootPrompt = true
-      // Edge-trigger: pick up only on the transition to E-down. We do NOT
-      // clear keys['KeyE'] (browser key auto-repeat would re-set it and spam
-      // pickups while held); instead the latch resets only on real key release.
-      if (Hotkeys.down('interact') && !eLatch && !inputBlocked) {
-        const empty = pickupLootBag(char, account, nearBag)
-        if (empty) {
-          const idx = lootBags.indexOf(nearBag)
-          if (idx >= 0) lootBags.splice(idx, 1)
-        }
-        if (window.saveGame) saveGame()  // persist materials + inventory
-        eLatch = true
-      }
-    }
-    if (!Hotkeys.down('interact')) eLatch = false
+    near.sort((a, c) => a.d2 - c.d2)
+    nearBags = near.map(o => o.bag)
 
     // Prompt timer
     if (promptTimer > 0) promptTimer -= dt
@@ -229,7 +209,7 @@ const DungeonZone = (() => {
     if (map.get(tx, ty) === T_PORTAL_DUNGEON) {
       promptLabel = `[${Hotkeys.name('interact')}] Exit dungeon — return to world`
       promptTimer = 0.3
-      if (Hotkeys.down('interact') && !inputBlocked && !nearBag) { G.enterZone('world'); return }
+      if (Hotkeys.down('interact') && !inputBlocked) { G.enterZone('world'); return }
     }
 
     updateCharacter(char, dt)
@@ -313,18 +293,8 @@ const DungeonZone = (() => {
       ctx.textAlign = 'left'
     }
 
-    // Loot chest preview (contents + rarity colors + ratings; hover for tooltip)
-    if (nearBag) renderLootPreview(nearBag, offX, offY)
-
-    // [E] Pick up loot prompt
-    if (lootPrompt) {
-      // stacked above the exit prompt, clear of the bottom-center HUD module
-      ctx.fillStyle = 'rgba(0,0,0,0.7)'
-      ctx.fillRect(canvas.width/2 - 110, canvas.height - 166, 220, 30)
-      ctx.fillStyle = '#ffd60a'; ctx.font = 'bold 14px monospace'; ctx.textAlign = 'center'
-      ctx.fillText(`[${Hotkeys.name('interact')}] Pick up loot`, canvas.width/2, canvas.height - 146)
-      ctx.textAlign = 'left'
-    }
+    // Loot frames near bags — click an item row to take it (no hotkey).
+    if (nearBags.length) renderLootPreviews(nearBags, offX, offY)
 
     const ddef = DUNGEONS[defKey]
     const dungeonName = ((ddef && ddef.name) || defKey).toUpperCase()
@@ -338,9 +308,9 @@ const DungeonZone = (() => {
     const offX = (canvas.width/2 - cam.x) | 0
     const offY = (canvas.height/2 - cam.y) | 0
     const startX = Math.max(0, (cam.x - canvas.width/2)  / TILE | 0)
-    const endX   = Math.min(80, startX + (canvas.width  / TILE | 0) + 2)
+    const endX   = Math.min(map.w, startX + (canvas.width  / TILE | 0) + 2)
     const startY = Math.max(0, (cam.y - canvas.height/2) / TILE | 0)
-    const endY   = Math.min(80, startY + (canvas.height / TILE | 0) + 2)
+    const endY   = Math.min(map.h, startY + (canvas.height / TILE | 0) + 2)
 
     for (let ty = startY; ty < endY; ty++) {
       for (let tx = startX; tx < endX; tx++) {

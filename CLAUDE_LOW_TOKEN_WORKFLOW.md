@@ -104,11 +104,13 @@ Update this map after each patch so future prompts can point Claude to exact fil
 - Loads all JavaScript files.
 - If adding a new JS module, update script order here.
 - Check script order when adding globals used by later files.
+- `js/wiki.js` loads after `stations.js`, before `chat.js` (needs items/mobs/map globals).
 
 ### `js/biomes.js`
 - Data-driven world biome defs (`BIOMES`, `BIOME_BY_ID`): palette, mob pool, hazard tile, minimap tint, related dungeon-drop key.
 - `BOSS_BIOMES` (ids 7-12: Event Horizon/Glacial Throne/Ash Caldera/Rot Garden/Cursed Court/Starfall Dunes): floor/floorAlt/accent/mini/name. Deliberately NOT in `BIOMES` (so assignBiomes never world-scatters them) but folded into `BIOME_BY_ID` so in-world floor tint + minimap tint + biome-name label resolve them. Painted at runtime by world.js around a world boss.
-- `assignBiomes(map, rng)`: paints SEPARATED biome clusters (one spaced blob per biome, neutral grass id 0 in the gaps) onto the world map (`map.biome` Uint8Array, `map.biomeAt`, `map.biomeClusters = [{id,x,y,r}]` in tiles), scatters ice/lava hazard tiles, keeps spawn/home neutral. Defensive fallback placement never crashes.
+- `BIOME_HARDNESS` (biome id → 0..1): hardest biomes (dark_matter .92/hell .82/astral .86) bias NORTH; snow/toxic/ruined (~.4-.5) sit mid. Drives cluster Y placement.
+- `assignBiomes(map, rng)`: paints SEPARATED biome clusters (one spaced blob per biome, neutral grass id 0 in the gaps) onto the world map (`map.biome` Uint8Array, `map.biomeAt`, `map.biomeClusters = [{id,x,y,r}]` in tiles), scatters ice/lava hazard tiles, keeps spawn/home neutral. Home center is the SOUTH band (`cy = H*WORLD_HOME_Y_FRAC`, matches map.js spawn). Each cluster's Y is biased by `BIOME_HARDNESS` (hard=north) with jitter; `minSep` 0.2·minDim. Defensive fallback placement never crashes.
 
 Use for:
 - biome palettes / regions
@@ -168,9 +170,11 @@ Use for:
 - Salvage/reforge/fusion/gamble item logic if implemented here.
 - `BIOME_UNIQUES` (mob-only) + `DUNGEON_EXCLUSIVES` (now 4 per biome dungeon = 3 armor/accessory + 1 class-locked WEAPON, tagged `dungeon:<key>`, `unique:true`): both folded into `ITEM_BASES`, skipped by random/gamble. Exclusive weapons have FIXED `bspd` (single-value range → midpoint, never rerolls/reforges). `EXCLUSIVES_BY_DUNGEON` lookup; `rollDungeonExclusive(key, boost, classKey?)` filters class-locked exclusives to the active class (falls back to agnostic ones if none usable). `generateBossLoot` rolls exclusive (boss high chance), `rollMobDrop` adds a rare exclusive for dungeon basic mobs.
 - Class-targeted loot: `CLASS_AFFINITY` (per-class preferred stats) + `baseAffinityWeight` bias `randomItem`'s base pick toward class-fitting gear (weapons already hard class-locked). Old/agnostic bases keep weight 1 — safe.
+- CLASS GEAR SETS (100 items, `_buildClassGear()` → `Object.assign(ITEM_BASES,…)`): 5 classes × 4 tiers × (1 weapon + 4 armor/accessory), keys `${cls}_t${tier}_${slot}`, all class-LOCKED (`classes:[cls]`), non-unique → flow through normal class-filtered random/gamble/boss rolls. `CLASS_GEAR_THEME` holds per-class main/sub stat + weapon profile + set names + 5-key affix pool (identity-safe: no INT on warrior gear, etc.). `tier` (1 early→4 chase) raises base ranges on top of rarity scale; `set`+`wikiSource` are wiki metadata. Tier gate: `randomItem` honours `opts.maxTier/minTier` (missing tier=1, never empties pool). `rollMobDrop` maps stars→maxTier (mobs cap tier 3); `generateBossLoot` rolls minTier 2 + a 40% tier-3/4 chase; `gambleItem` excludes tier 4 (boss-only). Wiki gear tab shows `wikiSource` when present.
 - `WORLD_BOSS_MYTHICS` (`m_*`): one mythic per world boss, `unique:true` + NO `dungeon` tag (kept out of random/gamble AND EXCLUSIVES_BY_DUNGEON) — rolled directly via `rollItem(base,'mythic')` by world.js `onWorldBossKill`. 5 affixes each. `DUNGEON_EXCLUSIVES` also now carries 3 exclusives for each of the 6 world-boss dungeons.
 - Bag capacity: `MAX_BAG_ITEMS` (12) gates the inventory drop-into-bag merge (not boss/mob fills, which may exceed it). `renderLootPreview` header shows `LOOT  n/12` or `Bag full`.
-- Loot ownership: `createLootBag(x,y,loot,life,meta)` where `meta={ownerId,visibility,source}`. Bags carry `ownerId`/`visibility`('public'|'private')/`source`('mob'|'boss'|'drop'). `lootBagAccessible(bag,char)`: non-private→open; private+no owner→open (old shapes safe); private+owner→only matching `char.id`. `bagIsEmpty(bag)`. `pickupLootBag` (pick-all) + `pickLootItem(char,acct,bag,index)` (single item) both gate on access; no dup/delete. `renderLootPreview` rows are clickable (hit-map `_lootPreviewHit`); `handleLootPreviewClick` + a capture mousedown listener pick one item (disabled while inventory/options/stations/chat open). A consumed preview click also clears `mouse.down` (engine sets it first on the same target) so it never fires a gameplay shot.
+- Loot ownership: `createLootBag(x,y,loot,life,meta)` where `meta={ownerId,visibility,source}`. Bags carry `ownerId`/`visibility`('public'|'private')/`source`('mob'|'boss'|'drop'). `lootBagAccessible(bag,char)`: non-private→open; private+no owner→open (old shapes safe); private+owner→only matching `char.id`. `bagIsEmpty(bag)`. `pickLootItem(char,acct,bag,index)` (single item) gates on access; no dup/delete. `pickupLootBag` (pick-all) still defined but UNUSED (no hotkey pickup anymore).
+- Loot is CLICK-ONLY (no hotkey/[E]/Ctrl pickup). `renderLootPreviews(bags,offX,offY)` draws up to `LOOT_PREVIEW_MAX` (3) nearest accessible bag frames, anchored above each bag (rotation-correct via `worldToScreen`) and nudged so frames never overlap; only the hovered row's tooltip shows (tooltips never stack). Combined hit-map `_lootPreviewHit={frames:[{bag,rows}]}`; `handleLootPreviewClick` (capture mousedown, disabled while inventory/options/stations/chat open) picks one item from the correct bag and clears `mouse.down` so it never fires a shot. `renderLootPreview(bag)` is a thin back-compat wrapper. Zones (world.js/dungeon.js) build `nearBags` (accessible bags within 90px, nearest-first) each update and call `renderLootPreviews`; portal/exit [interact] no longer guards on a near bag.
 
 Use for:
 - item stats/rarity/rollPercent
@@ -218,11 +222,15 @@ Use for:
 - Nexus/dungeon/vault map building if present.
 - Tile palettes/spawn positions.
 
+- World size: `WORLD_W=WORLD_H=400` (~4x old area). `WORLD_HOME_Y_FRAC=0.82` — spawn/home sits in the safer SOUTH band (`buildWorld` spawn = `findFloorNear(W/2, H*0.82)`); difficulty rises north (world.js).
+- `buildDungeon`: LARGER, randomly-sized per run. Room count = `def.rooms.min/max + round(stars*1.3) bonus + rng`, harder (more stars) → bigger. Tile map grows to fit (`MAP_W = clamp(56 + rCount*7, 80, 180)`, square). dungeon.js reads `map.w/map.h` for the grid + tile-render bounds (no hardcoded 80).
+
 Use for:
 - dungeon generation issues
-- map layout
+- map layout / world size / dungeon size scaling
 - portal tile placement
 - vault room map if build function is here
+- nexus station list (the 6th alcove is now the `wiki` station, label 'WIKI')
 
 ### `js/mobs.js`
 - Mob definitions.
@@ -234,9 +242,10 @@ Use for:
 
 - Perf: `updateMob`/`renderMob` do offscreen culling + AI sleep using FIXED world-px distances from Options (`Settings.renderDistance`/`aiWakeDistance`, NOT window size). `_mobRenderDist()` (cull radius from camera) + `_mobWakeDist()` (sleep radius from player; forced ≥ render+200 so visible mobs stay awake). Cull/sleep are RADIAL (distance², not viewport rect) so rotation-safe. Mobs past render dist aren't drawn; past wake dist sleep (`e.asleep=true`, skip AI). Bosses never sleep/cull. Mobs are NEVER removed from arrays when culled. Counters in `MobDebug`; `mobStats()` logs. Minimap unaffected (reads `mobs` array directly).
 - Aggro/leash (in `updateMob`, applies to world+dungeon): per-mob `aggroRange`/`deAggroRange`/`homeLeash` (optional def overrides) with safe AI-type defaults (`_aggroRange`/`_deAggroRange`/`_homeLeash`; bosses ALWAYS active, never sleep/leash). Mob idles/returns toward `homeX/homeY` until player enters aggro range (no shots while non-aggro or asleep). De-aggros past `deAggroRange` (hysteresis) OR when dragged off `homeLeash` / out of its `biome` tile → walks home. Getting hit by a player bullet sets `e.aggro=true` (world.js/dungeon.js). Dungeon mobs/bosses have no biome/home → idle-in-place then fight; bosses unaffected.
-- Enemy HP bar + boss name in `renderMob` use `drawUpright(sx,sy,…)` (like player bars) — pinned above the mob, readable/upright, position tracks world under rotation.
+- Enemy HP bar + boss name in `renderMob` use `drawUpright(sx,sy,…)` (like player bars) — pinned above the mob, readable/upright, position tracks world under rotation. The mob/boss SHADOW also uses `drawUpright` so it stays a flat ellipse pinned under the mob on screen at any rotation (was tilting with the world).
 
 - `WORLD_BOSSES` (+ `WORLD_BOSS_KEYS`, `window.WORLD_BOSSES`): 6 `wb_*` boss mob defs (reuse boss_void/boss_mycelian/boss_goblin AIs) mapped to boss biome id / mythic base / dungeon key. 6 world-boss `DUNGEONS` entries (`biome:true`) reuse biome mobs + existing dungeon bosses. Spawn/biome/loot logic lives in world.js.
+- World-boss leash (`updateMob`): world bosses never sleep, but if `e.worldBoss` is dragged past `e.leashRadius` from `homeX/homeY` they enter `_returning` mode — walk back toward spawn center, skip attack AI (de-aggro), re-engage once within 40% of leash (hysteresis). No teleport. Dungeon bosses (no `worldBoss`/`leashRadius`) are unaffected. `leashRadius` is set in world.js `spawnWorldBoss` = `(BOSS_BIOME_RADIUS-1)*TILE`.
 
 Use for:
 - mob stats/AI
@@ -253,9 +262,10 @@ Use for:
 - Portal labels/interact-to-enter.
 - World loot bags and mob drops if implemented here.
 - Water movement in world update if zone-specific.
-- Spawning: `populateWorld` spreads biome mobs across each `map.biomeClusters` blob at world-gen + `NEUTRAL_SPAWN` (30) neutral wanderers; `spawnInBiome`/`spawnNeutral`/`findBiomeSpot` find valid tiles inside the right biome, away from player/home (neutrals also kept ≥12 tiles from home). NO spawn-near-player repop.
+- Spawning: `populateWorld` spreads biome mobs across each `map.biomeClusters` blob at world-gen (`BIOME_SPAWN` 12/biome) + `NEUTRAL_SPAWN` (60) neutral wanderers; `spawnInBiome`/`spawnNeutral`/`findBiomeSpot` find valid tiles inside the right biome, away from player/home (neutrals also kept ≥12 tiles from home). NO spawn-near-player repop.
+- Northward difficulty: `worldDifficulty(wy)` → 0 at/south-of home (`HOME_Y_FRAC` 0.82), up to 1 at the far north. `applyDifficulty(mob,diff)` scales hp/dmg/xp at spawn + stamps `mob._diff`; applied in `spawnInBiome`/`spawnNeutral` so respawns scale too. `killMob` uses `_diff` to raise the mob-drop rarity roll (`stars=diff*4`) + drop chance (capped 0.5). Bosses remain best loot; world bosses still spawn randomly every 6 kills.
 - Respawn: ALL dead world mobs scheduled in `respawnQueue` (random 1–30s via `worldTime`) for 1:1 replacement — biome mobs respawn as a random one of that biome's 3 inside the same biome; neutral mobs (`biome:0`) respawn as wandering neutrals (`spawnInBiome(0)`→`spawnNeutral`); never next to player.
-- World-boss tracker: `render` draws `renderBossIndicator(worldBoss)` while a boss is alive — screen-fixed box (top-center, y56) with spire sigil + boss name + arrow (via `worldToScreen`, rotation-correct) toward the boss, or a dot when on-screen. Spawn also fires `Chat.announce('World Boss Awakened: <name> — <biome name hint>')` plus the existing float + `LootLog`.
+- World-boss tracker: `render` draws `renderBossIndicator(worldBoss)` while a boss is alive — screen-fixed box (top-center, y56) with spire sigil + boss name + arrow (via `worldToScreen`, rotation-correct) toward the boss, or a dot when on-screen. ALSO `renderBossTracker()` (always): small top-left box (x12,y70, clear of minimap/chat/hints) showing `World Boss: done/EVERY kills (N to go)` when no boss is up, or `World Boss Alive: <name>` while one is. Spawn also fires `Chat.announce('World Boss Awakened: <name> — <biome name hint>')` plus the existing float + `LootLog`.
 - Drop tuning consts in `killMob`: `BIOME_LOOT_CHANCE`/`NEUTRAL_LOOT_CHANCE`, `PORTAL_MULT`, `UNIQUE_MULT`. Biome mobs still share common drops + keep their unique.
 
 - World bosses: `WORLD_BOSSES` (mobs.js) maps each of 6 world bosses → boss biome id, signature mythic base, related dungeon. `killMob` counts NON-boss world kills (`mobKillCount`); every `WORLD_BOSS_EVERY` (6) it calls `trySpawnWorldBoss` (cap 1 active). `spawnWorldBoss` finds a walkable spot away from home/player (avoids water/lava), spawns the boss (`worldBoss`, `boss.worldBoss=true`, always aggro/never sleeps), paints its boss biome via `paintBossBiome` (overwrites `map.biome` ids in a radius, saves prev ids on `boss._biomePatch`, nulls `map._mini`), shows "World Boss Awakened". `bossDamage` tracks per-player hits. `onWorldBossKill` (boss branch at top of `killMob`): grants XP, `restoreBossBiome`, drops a PRIVATE bag with the boss mythic (`rollItem(base,'mythic')`) + a bonus item gated by the 2% threshold, then drops a `pendingPortals` portal to the boss's dungeon (always, 90s). Debug hooks `WorldZone.debugSpawnBoss/debugWorldBoss` (chat `/spawnboss`,`/worldboss`).
@@ -317,6 +327,16 @@ Use for:
 - vault room bugs
 - stash room portal behavior
 - chest storage room UI
+
+### `js/wiki.js`
+- In-game WIKI compendium panel (NOT a zone — modal like stations.js). Opened from the Nexus `wiki` station (`Wiki.open()`); `window.Wiki` + `window.LootTable`.
+- Data-driven LOOT TABLE REGISTRY built once from existing globals (DUNGEONS/MOB_DEFS/ITEM_BASES/WORLD_BOSSES/EXCLUSIVES_BY_DUNGEON/WORLD_BOSS_MYTHICS/BIOMES) — no hand-kept tables. `registry()` → `{ dungeons, bosses, gear, mobs }`; cached, robust to missing fields.
+- 4 tabs (Dungeons/Bosses/Gear/Mobs): dungeons show stars/theme/boss/clear-count (`account.dungeonCompletions`)/notable drops; bosses show where-found + drops + world-boss mythic; gear shows slot/class/source(s) + hover tooltip (rolls a cached sample via `rollItem`, shown via `renderItemTooltip`); mobs show biome/dungeon + drops & rates.
+- Own Esc/mousedown(capture)/wheel(capture) listeners; click tabs/close/outside; wheel scrolls. Gated into `overlayOpen` (main.js) + nexus `stationOpen` so gameplay input is suppressed while open.
+
+Use for:
+- wiki panel UI / tabs / scrolling
+- loot-table registry (what drops where) / future wiki export
 
 ### `js/chat.js`
 - Local debug command console.
@@ -422,13 +442,24 @@ Keep updated.
 - [x] World-boss dungeons (6, real/enterable, `biome:true` so off world scatter): event_horizon_vault/titan_glacier/worldeater_forge/plague_hive/cursed_throne/starfall_pyramid — themed palette, 3 reused biome mobs + a dungeon boss, 3 exclusive drops each (items.js DUNGEON_EXCLUSIVES). Entered only via the world-boss death portal.
 - [x] Boss death return portal: `onBossKill` sets the boss tile to `T_PORTAL_DUNGEON` (return to world), spawned before the loot gate so it appears even with no loot; loot pickup keeps interaction priority (portal entry only when not on a loot bag).
 - [x] Tile render radius option (`Settings.tileRenderRadius`, blocks/tiles, default 60, clamped 20–120): `renderTileMap` caps span + circular-culls distant tiles (visual only; collision + minimap unaffected).
-- [x] Player body rotates with world rotation: a bright world-anchored facing wedge on the body makes rotation visible for all class shapes; HP/MP bars stay upright via `drawUpright`; aim dot/shooting still use mouse aim.
+- [x] Player body rotates with world rotation: drawn inside the world transform (not counter-rotated); a BRIGHT white world-anchored facing wedge (class-color outline) makes rotation visible for all class shapes incl. symmetric circles; HP/MP bars stay upright via `drawUpright`; aim dot/shooting still use mouse aim.
+- [x] World-boss leash: world bosses can't leave their boss-biome patch — past `leashRadius` they de-aggro and walk back to spawn (no teleport, no cross-map chase); still fight normally inside the zone; still never sleep.
+- [x] World-boss progress tracker (top-left HUD): `World Boss: done/EVERY kills (N to go)`, or `World Boss Alive: <name>` while one is up; updates as normal world mobs die; existing arrow indicator unchanged.
+- [x] HUD inventory count removed (was clutter); count still shown inside the inventory panel.
 - [x] World-boss tracking: chat announcement on spawn (`Chat.announce`, name + biome hint) + screen-fixed direction indicator (sigil/name/rotation-correct arrow) while the boss is alive
 - [x] Home/character-select shows `v<GAME_VERSION> — <GAME_PATCH>` (ui.js consts) bottom-center
 - [x] Chat input copy/paste (Ctrl/Cmd+V paste via clipboard; C/X/A pass through; never leaks to gameplay)
 - [x] Neutral mob density raised (`NEUTRAL_SPAWN` 30) + 1:1 respawn for ALL world mobs; neutrals count toward world-boss kill counter
 - [x] Inventory drop-into-bag: dropping merges into the closest accessible nearby bag with room (`MAX_BAG_ITEMS` 12) else creates a new bag; id/stats preserved, item kept on failure. Loot preview shows `n/12`/`Bag full`
 - [x] Loot ownership: bags carry `ownerId`/`visibility`/`source`. Boss bags PRIVATE to earner; mob/common bags PUBLIC (first to pick). Access checks (`lootBagAccessible`) default old/partial bags to safe-accessible. Data-only, no networking.
+- [x] World scaled ~4x (400×400); spawn/home moved to safer SOUTH band (`WORLD_HOME_Y_FRAC` 0.82). Biomes spread further apart; hardest biomes (Dark Matter/Hell/Astral) bias NORTH (`BIOME_HARDNESS`).
+- [x] Northward difficulty gradient: mob hp/dmg/xp + loot rarity/chance scale with how far north a mob spawns (`worldDifficulty`/`applyDifficulty`); south stays easy. World bosses still random. Neutral mob density raised + scales too.
+- [x] Larger random dungeons: per-run room count + map size scale with stars (harder=bigger); dungeon grid + tile-render read `map.w/h`. Spawn/mobs/boss/exit still valid.
+- [x] In-game Wiki station (Nexus `wiki` alcove, label 'WIKI'): data-driven loot-table registry + 4-tab panel (Dungeons/Bosses/Gear/Mobs) with completion counts, drop sources/rates, gear hover tooltip. `window.Wiki`/`window.LootTable`.
+- [x] 100 class gear items (20/class, 4 partial sets/class across 4 tiers, all 9 slots): class-locked, identity-safe stats, `tier` progression + `set`/`wikiSource` metadata. Easy mobs→tier1-2, dungeon bosses→tier2-3, hard bosses→tier3-4 chase; gamble excludes chase; world-boss mythics still top. Affix counts/ bspd rules preserved; old saves unaffected (`_buildClassGear` in items.js).
+- [x] Mob/boss shadows use `drawUpright` → stay pinned under the enemy on screen at any screen rotation (HP bars unchanged).
+- [x] Minimap player arrow shows screen-up / world-facing direction for the current rotation (NOT mouse aim): north/up at 0°, swings with Q/E.
+- [x] Loot is CLICK-ONLY: no hotkey/[E] pickup or prompt. Click an item row in a loot frame to take that one item (inventory-room permitting; left in bag if full). Up to 3 nearest accessible bag frames render offset so they never overlap; one tooltip at a time. Public/private ownership, drop-into-bag, 12-cap, old bags all still work.
 
 ---
 

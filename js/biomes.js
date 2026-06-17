@@ -55,6 +55,18 @@ const BOSS_BIOMES = {
   starfall_dunes: { id: 12, name: 'Starfall Dunes', floor: '#2c2440', floorAlt: '#352b4d', accent: '#ffd166', mini: [196, 168, 110] },
 }
 
+// Northward difficulty: the hardest biomes (Dark Matter / Hell / Astral) bias to
+// the NORTH of the map; Snow / Fungal / Ruined sit mid. Drives cluster Y
+// placement in assignBiomes (id → hardness 0..1). Unknown ids default to 0.5.
+const BIOME_HARDNESS = {
+  1: 0.92, // dark_matter
+  3: 0.82, // hell
+  6: 0.86, // astral
+  2: 0.40, // snow
+  4: 0.48, // toxic / fungal
+  5: 0.44, // ruined
+}
+
 // id → biome lookup (used by render/minimap/world spawn & leash logic)
 const BIOME_BY_ID = {}
 for (const k in BIOMES) BIOME_BY_ID[BIOMES[k].id] = BIOMES[k]
@@ -69,22 +81,28 @@ for (const k in BOSS_BIOMES) BIOME_BY_ID[BOSS_BIOMES[k].id] = BOSS_BIOMES[k]
 function assignBiomes(m, rng) {
   const W = m.w, H = m.h
   m.biome = new Uint8Array(W * H)
-  const cx = W / 2, cy = H / 2
+  // Home/spawn sits in the safer SOUTH band (matches map.js spawn). The neutral
+  // home circle and the difficulty gradient are both anchored here.
+  const homeFrac = (typeof WORLD_HOME_Y_FRAC !== 'undefined') ? WORLD_HOME_Y_FRAC : 0.82
+  const cx = W / 2, cy = H * homeFrac
 
-  // --- Place one spaced-out cluster per biome ---
+  // --- Place one spaced-out cluster per biome (harder biomes biased NORTH) ---
   const ids = []
   for (const k in BIOMES) ids.push(BIOMES[k].id)
   const minDim = Math.min(W, H)
   const homeR = Math.max(18, minDim * 0.11)     // neutral home radius (tiles)
-  const minSep = minDim * 0.26                  // min distance between centers
+  const minSep = minDim * 0.2                   // min distance between centers
   const clusters = []
   for (const id of ids) {
+    const hard = BIOME_HARDNESS[id] != null ? BIOME_HARDNESS[id] : 0.5
     let placed = null
-    for (let attempt = 0; attempt < 240; attempt++) {
-      const r = (0.08 + rng() * 0.05) * minDim  // blob radius (tiles)
+    for (let attempt = 0; attempt < 300; attempt++) {
+      const r = (0.07 + rng() * 0.045) * minDim  // blob radius (tiles)
       const margin = r + 4
+      // Harder biomes target the NORTH (low y); easier ones sit mid; jittered.
+      const targetYFrac = 0.52 - hard * 0.42 + (rng() - 0.5) * 0.22
       const x = margin + rng() * (W - 2 * margin)
-      const y = margin + rng() * (H - 2 * margin)
+      const y = Math.max(margin, Math.min(H - margin, targetYFrac * H))
       if (Math.hypot(x - cx, y - cy) < homeR + r + 6) continue   // clear of home
       let ok = true
       for (const c of clusters) if (Math.hypot(x - c.x, y - c.y) < minSep) { ok = false; break }

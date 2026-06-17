@@ -10,8 +10,7 @@ const WorldZone = (() => {
   let portalPrompt = null   // { key, name, stars } when standing near a portal
   let eLatchW = false       // edge latch for [E] portal entry
   let lootBags = []         // mob-drop loot bags
-  let eLatchLoot = false    // edge latch for [E] loot pickup
-  let nearBag = null        // closest pickupable bag (for preview)
+  let nearBags = []         // nearby accessible bags (click-to-pick previews)
   let currentBiome = null   // biome def the player is currently standing in (or null)
   let worldTime = 0         // seconds since this world was generated
   let respawnQueue = []     // [{ biome, at }] — scheduled biome respawns
@@ -22,10 +21,32 @@ const WorldZone = (() => {
   const WORLD_BOSS_EVERY = 6     // spawn a world boss every N normal world kills
   const BOSS_BIOME_RADIUS = 22   // boss-biome paint radius (tiles)
   const WORLD_MOB_POOL = ['slime', 'forest_sprite', 'goblin_scout']
-  const BIOME_SPAWN = 9     // biome mobs spawned per biome at world-gen
-  const NEUTRAL_SPAWN = 30  // wandering neutral mobs scattered in open terrain
+  const BIOME_SPAWN = 12    // biome mobs spawned per biome at world-gen
+  const NEUTRAL_SPAWN = 60  // wandering neutral mobs scattered in open terrain (4x map)
   const RESPAWN_MIN = 1, RESPAWN_MAX = 30   // seconds
   const RESPAWN_PLAYER_GAP2 = 360 * 360      // don't respawn this close to player
+
+  // --- NORTHWARD DIFFICULTY GRADIENT ---------------------------------------
+  // South (home band, high y) = 0 (easy); the far North (y→0) = 1 (hard). Used
+  // to scale mob stats + loot quality at spawn time, so deeper-north mobs hit
+  // harder, give more XP, and drop better gear. Home/south stays gentle.
+  const HOME_Y_FRAC = (typeof WORLD_HOME_Y_FRAC !== 'undefined') ? WORLD_HOME_Y_FRAC : 0.82
+  function worldDifficulty(wy) {
+    const ty = wy / TILE
+    const homeTy = WORLD_H * HOME_Y_FRAC
+    return Math.max(0, Math.min(1, (homeTy - ty) / homeTy))
+  }
+  // Scale a freshly spawned mob's combat stats by the difficulty at its tile and
+  // stamp `_diff` on it so killMob can scale the loot roll to match.
+  function applyDifficulty(mob, diff) {
+    if (!mob) return mob
+    mob._diff = diff
+    if (diff <= 0) return mob
+    mob.hp = mob.maxHp = Math.round(mob.maxHp * (1 + diff * 1.6))
+    mob.dmg = Math.round(mob.dmg * (1 + diff * 1.0))
+    mob.xp = Math.round(mob.xp * (1 + diff * 1.5))
+    return mob
+  }
 
   function init(char) {
     map = buildWorld()
@@ -34,8 +55,7 @@ const WorldZone = (() => {
     portalPrompt = null
     eLatchW = false
     lootBags = []
-    eLatchLoot = false
-    nearBag = null
+    nearBags = []
     // Register this zone as the active loot sink so dropped items land here.
     window.activeLootZone = { addBag: (b) => lootBags.push(b), getBags: () => lootBags }
     currentBiome = null
@@ -92,7 +112,11 @@ const WorldZone = (() => {
     const pool = (bdef && bdef.mobs) || WORLD_MOB_POOL   // random of the 3 biome mobs
     const key = pool[Math.random() * pool.length | 0]
     const mob = spawnMob(key, spot.x, spot.y)
-    if (mob) { mob.biome = biomeId; mob.homeX = spot.x; mob.homeY = spot.y; mobs.push(mob) }
+    if (mob) {
+      mob.biome = biomeId; mob.homeX = spot.x; mob.homeY = spot.y
+      applyDifficulty(mob, worldDifficulty(spot.y))
+      mobs.push(mob)
+    }
     return mob
   }
 
@@ -110,7 +134,11 @@ const WorldZone = (() => {
       if (gap2) { const dx = wx - char.x, dy = wy - char.y; if (dx * dx + dy * dy < gap2) continue }
       const key = WORLD_MOB_POOL[Math.random() * WORLD_MOB_POOL.length | 0]
       const mob = spawnMob(key, wx, wy)
-      if (mob) { mob.biome = 0; mob.homeX = wx; mob.homeY = wy; mobs.push(mob); return mob }
+      if (mob) {
+        mob.biome = 0; mob.homeX = wx; mob.homeY = wy
+        applyDifficulty(mob, worldDifficulty(wy))
+        mobs.push(mob); return mob
+      }
     }
     return null
   }
@@ -263,25 +291,20 @@ const WorldZone = (() => {
       char.abilityActive = false
     }
 
-    // ---- LOOT BAGS: lifetime, proximity, [E] pickup ----
+    // ---- LOOT BAGS: lifetime + proximity (CLICK-TO-PICK ONLY; no hotkey) ----
     LootLog.update(dt)
-    nearBag = null
-    let nd = 55 * 55
+    const near = []
+    const previewR2 = 90 * 90
     for (let i = lootBags.length - 1; i >= 0; i--) {
       const b = lootBags[i]
       b.life -= dt
       if (b.life <= 0) { lootBags.splice(i, 1); continue }
       if (bagIsEmpty(b)) { lootBags.splice(i, 1); continue }  // emptied by single-item pick
       const dx = b.x - char.x, dy = b.y - char.y, d2 = dx*dx + dy*dy
-      if (d2 < nd) { nd = d2; nearBag = b }
+      if (d2 < previewR2 && lootBagAccessible(b, char)) near.push({ b, d2 })
     }
-    if (nearBag && Hotkeys.down('interact') && !eLatchLoot && !inputBlocked) {
-      const empty = pickupLootBag(char, account, nearBag)
-      if (empty) { const idx = lootBags.indexOf(nearBag); if (idx >= 0) lootBags.splice(idx, 1); nearBag = null }
-      if (window.saveGame) saveGame()
-      eLatchLoot = true
-    }
-    if (!Hotkeys.down('interact')) eLatchLoot = false
+    near.sort((a, c) => a.d2 - c.d2)
+    nearBags = near.map(o => o.b)
 
     // Respawn timing — dead biome mobs come back after a random 1–30s delay,
     // somewhere valid inside the same biome (never instantly next to the player).
@@ -319,8 +342,8 @@ const WorldZone = (() => {
     if (nearPortal) {
       const def = DUNGEONS[nearPortal.dungeonKey]
       portalPrompt = { key: nearPortal.dungeonKey, name: (def && def.name) || nearPortal.dungeonKey, stars: (def && def.stars) || 0 }
-      // Loot pickup takes priority over portal entry when overlapping.
-      if (eDown && !eLatchW && !inputBlocked && !nearBag) {
+      // Loot is now click-only, so [interact] is free to enter the portal.
+      if (eDown && !eLatchW && !inputBlocked) {
         // Enter only valid, real dungeons. Unknown/placeholder keys (e.g. a
         // stale runtime portal) show a notice instead of crashing the zone.
         if (!def || def.placeholder) {
@@ -362,7 +385,11 @@ const WorldZone = (() => {
     respawnQueue.push({ biome: isBiome ? e.biome : 0, at: worldTime + RESPAWN_MIN + Math.random() * (RESPAWN_MAX - RESPAWN_MIN) })
 
     // Common mob loot drop (shared by all world mobs; biome mobs a bit higher).
-    const drop = rollMobDrop(0, { source: 'world', chance: isBiome ? BIOME_LOOT_CHANCE : NEUTRAL_LOOT_CHANCE })
+    // Northward difficulty raises both the rarity roll and the drop chance (a
+    // bit), capped so inventory isn't flooded. Bosses remain the best source.
+    const diff = e._diff || 0
+    const baseChance = isBiome ? BIOME_LOOT_CHANCE : NEUTRAL_LOOT_CHANCE
+    const drop = rollMobDrop(diff * 4, { source: 'world', chance: Math.min(0.5, baseChance * (1 + diff * 0.6)) })
     if (drop) {
       // Common mob loot is public — first player to reach it gets it.
       const bag = createLootBag(e.x, e.y, drop, 60, { ownerId: null, visibility: 'public', source: 'mob' })
@@ -465,6 +492,9 @@ const WorldZone = (() => {
     if (!boss) return null
     boss.worldBoss = true
     boss.homeX = spot.x; boss.homeY = spot.y
+    // Leash radius keeps the boss inside its painted boss-biome patch (see
+    // updateMob in mobs.js). Slightly inside BOSS_BIOME_RADIUS so it stays home.
+    boss.leashRadius = (BOSS_BIOME_RADIUS - 1) * TILE
     boss.aggro = true
     mobs.push(boss)
     worldBoss = boss
@@ -577,15 +607,8 @@ const WorldZone = (() => {
       ctx.textAlign = 'left'
     }
 
-    // Loot chest preview + [E] prompt near a bag
-    if (nearBag) {
-      renderLootPreview(nearBag, offX, offY)
-      ctx.fillStyle = 'rgba(0,0,0,0.7)'
-      ctx.fillRect(canvas.width/2 - 110, canvas.height - 120, 220, 30)
-      ctx.fillStyle = '#ffd60a'; ctx.font = 'bold 14px monospace'; ctx.textAlign = 'center'
-      ctx.fillText(`[${Hotkeys.name('interact')}] Pick up loot`, canvas.width/2, canvas.height - 100)
-      ctx.textAlign = 'left'
-    }
+    // Loot frames near bags — click an item row to take it (no hotkey).
+    if (nearBags.length) renderLootPreviews(nearBags, offX, offY)
 
     renderHUD(char, 'WORLD', map, mobs)
 
@@ -603,7 +626,36 @@ const WorldZone = (() => {
     // World-boss tracker (screen-fixed): sigil + name + arrow toward the boss.
     if (worldBoss && worldBoss.alive) renderBossIndicator(worldBoss)
 
+    // Small progress tracker (kills toward next boss, or active boss name).
+    renderBossTracker()
+
     renderLootHUD(char, account)
+  }
+
+  // Compact screen-fixed tracker, top-left below the return/inventory hints and
+  // clear of the minimap (top-right) and chat (bottom). Shows kills toward the
+  // next world boss, or the active boss name while one is alive (the directional
+  // arrow indicator stays as the separate renderBossIndicator box).
+  function renderBossTracker() {
+    const alive = !!(worldBoss && worldBoss.alive)
+    let label, col
+    if (alive) {
+      col = worldBoss.color || '#ff5db1'
+      label = 'World Boss Alive: ' + (worldBoss.name || 'World Boss')
+    } else {
+      col = '#ffd60a'
+      const done = mobKillCount % WORLD_BOSS_EVERY
+      const left = WORLD_BOSS_EVERY - done
+      label = 'World Boss: ' + done + '/' + WORLD_BOSS_EVERY + ' kills  (' + left + ' to go)'
+    }
+    ctx.font = 'bold 11px monospace'
+    const tw = ctx.measureText(label).width
+    const bx = 12, by = 70, boxW = tw + 18, boxH = 20
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx, by, boxW, boxH)
+    ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.strokeRect(bx, by, boxW, boxH)
+    ctx.fillStyle = col; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
+    ctx.fillText(label, bx + 9, by + boxH / 2)
+    ctx.textBaseline = 'alphabetic'
   }
 
   // Small screen-fixed indicator pointing at the active world boss. Uses

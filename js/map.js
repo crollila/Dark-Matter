@@ -50,7 +50,7 @@ function buildNexus() {
     { x: 10, y: 20, label: 'SALVAGE', key: 'destroy' },
     { x: 29, y: 12, label: 'FUSION',  key: 'transmute' },
     { x: 29, y: 16, label: 'VAULT',   key: 'vault' },
-    { x: 29, y: 20, label: '???',     key: 'tbd2' },
+    { x: 29, y: 20, label: 'WIKI',    key: 'wiki' },
   ]
 
   // ── UPPER BOX: cols 8-31, rows 1-10 ──
@@ -113,7 +113,10 @@ function buildVault() {
 
 // ---- OPEN WORLD (cellular automaton cave) ----
 // Large, open world so biomes sit far apart with neutral terrain between them.
-const WORLD_W = 200, WORLD_H = 200
+// ~4x the old area (was 200×200). Home/spawn sits in the safer SOUTH (high y);
+// difficulty rises toward the NORTH (see world.js worldDifficulty / biomes.js).
+const WORLD_W = 400, WORLD_H = 400
+const WORLD_HOME_Y_FRAC = 0.82   // spawn/home band (fraction down from the top)
 
 function buildWorld(seed = Date.now()) {
   const m = makeTileMap(WORLD_W, WORLD_H)
@@ -203,8 +206,9 @@ function buildWorld(seed = Date.now()) {
     }
   }
 
-  // Find a valid floor spawn near center
-  m.spawnPos = findFloorNear(m, WORLD_W/2, WORLD_H/2)
+  // Find a valid floor spawn in the safer SOUTH band (not center) so the
+  // northward difficulty gradient leaves home easy.
+  m.spawnPos = findFloorNear(m, WORLD_W/2, (WORLD_H * WORLD_HOME_Y_FRAC) | 0)
 
   return m
 }
@@ -215,7 +219,16 @@ function buildDungeon(defKey, seed = Date.now()) {
   if (!def) return null
   const rng = mulberry32(seed)
 
-  const MAP_W = 80, MAP_H = 80
+  // Larger, randomly-sized dungeons. Harder dungeons (more stars) trend bigger,
+  // with per-run variance so the same dungeon differs run to run. The tile map
+  // grows to fit the room count so big layouts don't clamp/overlap.
+  const stars = def.stars || 3
+  const starBonus = Math.round(stars * 1.3)
+  const minR = def.rooms.min + starBonus
+  const maxR = def.rooms.max + starBonus + 4
+  const rCount = minR + (rng() * (maxR - minR + 1) | 0)
+  const MAP_W = Math.max(80, Math.min(180, 56 + rCount * 7))
+  const MAP_H = MAP_W
   const m = makeTileMap(MAP_W, MAP_H)
   m.dungeonKey = defKey
   m.rooms = []      // { x, y, w, h, cx, cy, type }
@@ -230,7 +243,6 @@ function buildDungeon(defKey, seed = Date.now()) {
   // Fill void
   for (let i = 0; i < MAP_W * MAP_H; i++) m.data[i] = T_VOID
 
-  const rCount = def.rooms.min + (rng() * (def.rooms.max - def.rooms.min + 1) | 0)
   const rsMin = def.roomSize.min, rsMax = def.roomSize.max
 
   // ---- ROOM CHAIN GENERATOR ----
