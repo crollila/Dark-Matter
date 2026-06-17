@@ -108,9 +108,9 @@ Update this map after each patch so future prompts can point Claude to exact fil
 
 ### `js/sprites.js`
 - Sprite-sheet indexing FOUNDATION (opt-in; does not replace geometric art). Loaded right after `engine.js` in `index.html`.
-- `SPRITE_SHEETS` (one+ sheets under `assets/sprites/`, each `{path,tile}`), `SPRITE_REGISTRY` (per-ID `{sheet,col/row or x/y,w/h,category}`; category hint mob/boss/item/weapon/armor/projectile/unknown). Assignment maps `mobSpriteAssignments` (mob `e.key`→id), `itemSpriteAssignments`, `projectileSpriteAssignments`. 5 mob examples wired (slime/forest_sprite/goblin_scout/cave_bat/void_wisp).
+- `SPRITE_SHEETS` (MULTI-SHEET, each `{path,tile}`): `weapons` (assets/sprites/weapons_black_outline.png), `armor` (assets/sprites/armor.png), `main` (assets/sprites/sheet.png, fallback/general). All 16px tiles. `SPRITE_REGISTRY` (per-ID `{sheet,col/row or x/y,w/h,category}`; category hint mob/boss/item/weapon/armor/projectile/unknown). Assignment maps `mobSpriteAssignments` (mob `e.key`→id), `itemSpriteAssignments`, `projectileSpriteAssignments`. 5 mob examples wired (slime/forest_sprite/goblin_scout/cave_bat/void_wisp).
 - `Sprites` global: lazy `sheet()` image load (missing file = silent no-op), `rect(id)`, `ready(id)`, `draw(id,cx,cy,size[,ctx])` centered (returns false→fallback), `drawAt(id,dx,dy,dw,dh[,ctx])`, `drawForMob(e,sx,sy)`. `renderMob` (mobs.js) calls `Sprites.drawForMob` and only draws the geometric body when it returns false.
-- No image ships yet, so everything currently falls back to geometry. Drop a sheet at `assets/sprites/sheet.png` (16px tiles) to activate. `sprites_debug.html` (standalone, loads `js/sprites.js`) = contact sheet of all IDs + metadata + placeholders.
+- No images ship yet, so everything currently falls back to geometry. Drop PNGs at the paths above to activate. `sprites_debug.html` (standalone, loads `js/sprites.js`) = sheet SLICER: dropdown picks a sheet, renders it on a 16px grid, hover/click a tile for its sheet-prefixed ID (`weapons_3_2`/`armor_0_1`/`main_1_4`) + col/row/xy + copy-ready registry snippet.
 
 Use for:
 - assigning real sprites to mobs/bosses/items/projectiles

@@ -37,6 +37,7 @@
      This page does <b>not</b> assign sprites to game objects — it only helps you pick IDs.</p>
   <div class="note" id="note"></div>
   <div style="margin-bottom:12px">
+    <label>sheet <select id="sheetSelect"></select></label>
     <label>tile <input id="tileInput" type="number" min="1" value="16"></label>
     <label>zoom <input id="zoomInput" type="number" min="1" max="16" value="4"></label>
     <label><input id="gridToggle" type="checkbox" checked> grid</label>
@@ -62,42 +63,62 @@
 
   <script src="js/sprites.js"></script>
   <script>
-    // Pull the default sheet path + tile from the shared registry config so this
-    // page and the game stay in sync. Falls back to sane defaults if absent.
-    const SHEET_KEY = 'main';
-    const sheetDef = (typeof SPRITE_SHEETS !== 'undefined' && SPRITE_SHEETS[SHEET_KEY])
-      ? SPRITE_SHEETS[SHEET_KEY] : { path: 'assets/sprites/sheet.png', tile: 16 };
+    // All registered sheets come from the shared registry config so this page
+    // and the game stay in sync. The dropdown picks which one to inspect.
+    const SHEETS = (typeof SPRITE_SHEETS !== 'undefined' && SPRITE_SHEETS)
+      ? SPRITE_SHEETS : { main: { path: 'assets/sprites/sheet.png', tile: 16 } };
+    const SHEET_KEYS = Object.keys(SHEETS);
+    let sheetKey = SHEET_KEYS.includes('main') ? 'main' : SHEET_KEYS[0];
+    function sheetDef() { return SHEETS[sheetKey] || { path: '', tile: 16 }; }
 
     const base = document.getElementById('base');
     const overlay = document.getElementById('overlay');
     const bctx = base.getContext('2d');
     const octx = overlay.getContext('2d');
+    const sheetSelect = document.getElementById('sheetSelect');
     const tileInput = document.getElementById('tileInput');
     const zoomInput = document.getElementById('zoomInput');
     const gridToggle = document.getElementById('gridToggle');
     const labelToggle = document.getElementById('labelToggle');
-    document.getElementById('path').textContent = sheetDef.path;
-    tileInput.value = sheetDef.tile || 16;
 
-    const img = new Image();
+    // Populate the sheet dropdown from the registry.
+    for (const key of SHEET_KEYS) {
+      const opt = document.createElement('option');
+      opt.value = key; opt.textContent = `${key} — ${SHEETS[key].path}`;
+      sheetSelect.appendChild(opt);
+    }
+    sheetSelect.value = sheetKey;
+
+    let img = new Image();
     let loaded = false, cols = 0, rows = 0;
     let hover = null, pinned = null;
 
     function tile() { return Math.max(1, parseInt(tileInput.value, 10) || 16); }
     function zoom() { return Math.max(1, parseInt(zoomInput.value, 10) || 4); }
-    function spriteId(c, r) { return `sheet_${c}_${r}`; }
+    // Sprite IDs carry the sheet prefix: e.g. weapons_3_2, armor_0_1, main_1_4.
+    function spriteId(c, r) { return `${sheetKey}_${c}_${r}`; }
 
-    img.onload = () => { loaded = true; redrawAll(); };
-    img.onerror = () => {
-      loaded = false;
-      document.getElementById('note').textContent =
-        `Sheet not found at ${sheetDef.path}. Drop a PNG there and reload — the grid appears automatically.`;
-      // Fallback: still show an empty placeholder grid so the layout is intact.
-      cols = 8; rows = 8;
-      sizeCanvases();
-      drawBase();
-    };
-    img.src = sheetDef.path;
+    // (Re)load the currently selected sheet image and redraw.
+    function loadSheet() {
+      const def = sheetDef();
+      pinned = null; hover = null; loaded = false;
+      document.getElementById('path').textContent = def.path;
+      tileInput.value = def.tile || 16;
+      showInfo(null);
+      img = new Image();
+      img.onload = () => { loaded = true; redrawAll(); };
+      img.onerror = () => {
+        loaded = false;
+        document.getElementById('note').textContent =
+          `Sheet '${sheetKey}' not found at ${def.path}. Drop a PNG there and reselect — the grid appears automatically.`;
+        // Fallback: still show an empty placeholder grid so the layout is intact.
+        cols = 8; rows = 8;
+        sizeCanvases();
+        drawBase();
+        drawOverlay();
+      };
+      img.src = def.path;
+    }
 
     function sizeCanvases() {
       const w = cols * tile() * zoom(), h = rows * tile() * zoom();
@@ -157,7 +178,7 @@
       drawOverlay();
       const total = cols * rows;
       document.getElementById('note').textContent = loaded
-        ? `${sheetDef.path} — ${img.naturalWidth}x${img.naturalHeight}px → ${cols}x${rows} = ${total} tiles @ ${t}px.`
+        ? `${sheetDef().path} — ${img.naturalWidth}x${img.naturalHeight}px → ${cols}x${rows} = ${total} tiles @ ${t}px.`
         : document.getElementById('note').textContent;
     }
 
@@ -171,8 +192,7 @@
     }
 
     function snippetFor(cell) {
-      const t = tile();
-      return `${spriteId(cell.col, cell.row)}: { sheet: '${SHEET_KEY}', col: ${cell.col}, row: ${cell.row}, category: 'unknown' },`;
+      return `${spriteId(cell.col, cell.row)}: { sheet: '${sheetKey}', col: ${cell.col}, row: ${cell.row}, category: 'unknown' },`;
     }
 
     function showInfo(cell) {
@@ -210,10 +230,13 @@
         .catch(() => document.getElementById('hint').textContent = 'Copy failed — select the text manually.');
     });
 
+    sheetSelect.addEventListener('change', () => { sheetKey = sheetSelect.value; loadSheet(); });
     tileInput.addEventListener('change', () => { pinned = null; redrawAll(); });
     zoomInput.addEventListener('change', redrawAll);
     gridToggle.addEventListener('change', drawBase);
     labelToggle.addEventListener('change', drawBase);
+
+    loadSheet();  // initial load of the default sheet
   </script>
 </body>
 </html>

@@ -14,7 +14,9 @@
 // Register each sprite sheet once. `tile` is the grid cell size in source px;
 // registry entries may address cells by col/row (preferred) or raw x/y.
 const SPRITE_SHEETS = {
-  main: { path: 'assets/sprites/sheet.png', tile: 16 }
+  weapons: { path: 'assets/sprites/weapons_black_outline.png', tile: 16 },
+  armor:   { path: 'assets/sprites/armor.png', tile: 16 },
+  main:    { path: 'assets/sprites/sheet.png', tile: 16 }  // fallback / general sheet
 }
 
 // --- Registry ---------------------------------------------------------------
