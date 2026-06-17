@@ -440,10 +440,16 @@ const Inventory = (() => {
     uiPanel(s.x, s.y, s.w, s.h, 7, it ? (it.color || '#888') : (hover ? UI.accent + '66' : '#2a3450'),
             it ? hexA(it.color, 0.16) : UI.panelBg2)
     if (it) {
-      ctx.fillStyle = it.color || UI.text; ctx.font = 'bold 18px monospace'
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-      ctx.fillText(meta.ic, s.x + s.w / 2, s.y + s.h / 2 - 4)
+      // Sprite icon if assigned (sprites.js), else the letter icon.
+      const drew = (typeof Sprites !== 'undefined') &&
+        Sprites.drawForItem(it, s.x + s.w / 2, s.y + s.h / 2 - 4, Math.min(s.w, s.h) * 0.72)
+      if (!drew) {
+        ctx.fillStyle = it.color || UI.text; ctx.font = 'bold 18px monospace'
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+        ctx.fillText(meta.ic, s.x + s.w / 2, s.y + s.h / 2 - 4)
+      }
       ctx.fillStyle = '#d8e6f2'; ctx.font = '8px monospace'
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
       ctx.fillText(typeof it.rating === 'number' ? it.rating + '%' : '', s.x + s.w / 2, s.y + s.h - 8)
     } else {
       ctx.fillStyle = UI.textFaint; ctx.font = '8px monospace'
@@ -603,10 +609,16 @@ const Inventory = (() => {
               it ? hexA(it.color, 0.15) : 'rgba(255,255,255,0.02)')
       if (it) {
         const meta = SLOT_META[it.slot] || SLOT_META[(it.slot === 'ring' ? 'ring1' : it.slot)] || { ic: (it.slot || '?')[0].toUpperCase() }
-        ctx.fillStyle = it.color || UI.text; ctx.font = 'bold 18px monospace'
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-        ctx.fillText(meta.ic || (it.slot || '?')[0].toUpperCase(), c.x + c.w / 2, c.y + c.h / 2 - 4)
+        // Sprite icon if assigned (sprites.js), else the letter icon.
+        const drew = (typeof Sprites !== 'undefined') &&
+          Sprites.drawForItem(it, c.x + c.w / 2, c.y + c.h / 2 - 4, Math.min(c.w, c.h) * 0.72)
+        if (!drew) {
+          ctx.fillStyle = it.color || UI.text; ctx.font = 'bold 18px monospace'
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+          ctx.fillText(meta.ic || (it.slot || '?')[0].toUpperCase(), c.x + c.w / 2, c.y + c.h / 2 - 4)
+        }
         ctx.fillStyle = '#d8e6f2'; ctx.font = '8px monospace'
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
         ctx.fillText(typeof it.rating === 'number' ? it.rating + '%' : '', c.x + c.w / 2, c.y + c.h - 8)
       }
     }
@@ -631,9 +643,12 @@ const Inventory = (() => {
       const it = _drag.item, gx = mouse.x, gy = mouse.y
       uiPanel(gx - 18, gy - 18, 36, 36, 6, it.color || '#888', hexA(it.color, 0.32))
       const meta = SLOT_META[it.slot] || SLOT_META[(it.slot === 'ring' ? 'ring1' : it.slot)] || { ic: '?' }
-      ctx.fillStyle = it.color || UI.text; ctx.font = 'bold 16px monospace'
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-      ctx.fillText(meta.ic || '?', gx, gy - 2)
+      const drewGhost = (typeof Sprites !== 'undefined') && Sprites.drawForItem(it, gx, gy - 2, 26)
+      if (!drewGhost) {
+        ctx.fillStyle = it.color || UI.text; ctx.font = 'bold 16px monospace'
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+        ctx.fillText(meta.ic || '?', gx, gy - 2)
+      }
       ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left'
       const outside = gx < L.px || gx > L.px + L.PW || gy < L.py || gy > L.py + L.PH
       if (outside && !(statsOpen && hit(L.statsPanel, gx, gy))) {
