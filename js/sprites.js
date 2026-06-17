@@ -84,6 +84,42 @@ const SPRITE_REGISTRY = {
   armor_7_7:        { sheet: 'armor', col: 7, row: 7, category: 'item' }   // blue/orange ring
 }
 
+// --- Standalone creature sprite files (whole-image sprites, NOT tile sheets) -
+// Some art ships as individual PNGs rather than a packed grid. These registry
+// entries use `src` (a full image path) instead of sheet/col/row, and the loader
+// blits the whole image (preserving aspect, fit to the requested size). An entry
+// may ALSO carry frame fields (`fw`/`fh`/`frames`/`cols`/`fps`) to play a minimal
+// animation loop from a strip/grid inside that file.
+//
+// The "20 Free Fantasy Flying Creatures" pack has opaque UUID filenames, so each
+// gets a stable deterministic ID (flying_boss_01..20). `Crystal Knight.png` is an
+// animated sheet; we loop its top-row idle frames only (96x96 × 4) — a minimal,
+// boss-only animation. Original file paths are preserved verbatim below.
+Object.assign(SPRITE_REGISTRY, {
+  flying_boss_01: { src: 'assets/sprites/20 Free Fantasy Flying Creatures/_2597d5b5-abfb-4028-8b48-8905cdb9835f.png', category: 'boss' },
+  flying_boss_02: { src: 'assets/sprites/20 Free Fantasy Flying Creatures/_2b2e5324-2e11-4375-a06a-4dee8eb70ae1.png', category: 'boss' },
+  flying_boss_03: { src: 'assets/sprites/20 Free Fantasy Flying Creatures/_2d7424ae-f33e-4458-bd6d-5a4f8c48d6c4.png', category: 'boss' },
+  flying_boss_04: { src: 'assets/sprites/20 Free Fantasy Flying Creatures/_34f79db8-70c7-49e1-b325-3acbd5cf4c7c.png', category: 'boss' },
+  flying_boss_05: { src: 'assets/sprites/20 Free Fantasy Flying Creatures/_3ccf9877-5544-4ef5-979e-276ccf90b815.png', category: 'boss' },
+  flying_boss_06: { src: 'assets/sprites/20 Free Fantasy Flying Creatures/_43a4a1fc-831a-4df4-82d2-d616faffa982.png', category: 'boss' },
+  flying_boss_07: { src: 'assets/sprites/20 Free Fantasy Flying Creatures/_5c5aa9c4-dbaa-4e4f-a7d3-05b5c3e431f2.png', category: 'boss' },
+  flying_boss_08: { src: 'assets/sprites/20 Free Fantasy Flying Creatures/_639d8f01-beda-4200-90e0-594200ed742b.png', category: 'boss' },
+  flying_boss_09: { src: 'assets/sprites/20 Free Fantasy Flying Creatures/_6ca5dccf-0f9d-4459-97a3-2e7b322cc2ef.png', category: 'boss' },
+  flying_boss_10: { src: 'assets/sprites/20 Free Fantasy Flying Creatures/_72e8157d-f22a-4e4c-8d3e-232adc1deaed.png', category: 'boss' },
+  flying_boss_11: { src: 'assets/sprites/20 Free Fantasy Flying Creatures/_734ee735-93b2-462f-9848-4fef483589b9.png', category: 'boss' },
+  flying_boss_12: { src: 'assets/sprites/20 Free Fantasy Flying Creatures/_864ff4ac-4ae1-470d-84cf-d8df11355b59.png', category: 'boss' },
+  flying_boss_13: { src: 'assets/sprites/20 Free Fantasy Flying Creatures/_b1f8608b-d4c0-43ae-b604-67044f852e73.png', category: 'boss' },
+  flying_boss_14: { src: 'assets/sprites/20 Free Fantasy Flying Creatures/_b752da99-041a-4ee5-8a80-3ee5cecd5377.png', category: 'boss' },
+  flying_boss_15: { src: 'assets/sprites/20 Free Fantasy Flying Creatures/_bed5ac0c-0d92-44d0-9b5e-53ba10189ff6.png', category: 'boss' },
+  flying_boss_16: { src: 'assets/sprites/20 Free Fantasy Flying Creatures/_ca98d8ed-9128-4282-842e-7e813280b276.png', category: 'boss' },
+  flying_boss_17: { src: 'assets/sprites/20 Free Fantasy Flying Creatures/_cf0e1185-7269-467a-96de-4441e19b3e19.png', category: 'boss' },
+  flying_boss_18: { src: 'assets/sprites/20 Free Fantasy Flying Creatures/_eed4de61-dcf1-4f2c-ba14-b59f8b072647.png', category: 'boss' },
+  flying_boss_19: { src: 'assets/sprites/20 Free Fantasy Flying Creatures/_f224884e-004b-4405-9c7c-8f309cf3b9b0.png', category: 'boss' },
+  flying_boss_20: { src: 'assets/sprites/20 Free Fantasy Flying Creatures/_f6f41775-1359-4fb6-9b0c-1740c3fb3b04.png', category: 'boss' },
+  // Crystal Knight: animated boss sheet (384x768). Top row = 4 idle frames @96px.
+  crystal_knight: { src: 'assets/sprites/Crystal Knight.png', fw: 96, fh: 96, frames: 4, cols: 4, fps: 6, category: 'boss' },
+})
+
 // --- Optional assignment maps ----------------------------------------------
 // Map game-side keys -> sprite IDs. Empty entries simply fall back to geometry.
 // mob keys come from MOB_DEFS (e.key).
@@ -94,6 +130,30 @@ const SPRITE_REGISTRY = {
 // mob art exists, leave this EMPTY so every mob uses its geometric fallback.
 // Do not point mob keys at the weapons/armor/item sheets.
 const mobSpriteAssignments = {}
+
+// boss mob `e.key` (MOB_DEFS) -> sprite ID. Themed by color/style against the new
+// creature art (see sprites_debug.html). Bosses with no good fit are left out and
+// keep their geometric fallback. drawForMob consults this BEFORE mobSpriteAssignments.
+const bossSpriteAssignments = {
+  // --- open-world / OG dungeon bosses ---
+  goblin_warchief:    'flying_boss_19',  // fire/orange horned demon (warren)
+  mycelian_king:      'flying_boss_06',  // green (fungal)
+  void_harbinger:     'flying_boss_15',  // purple (void)
+  // --- biome dungeon bosses ---
+  singularity_tyrant: 'flying_boss_04',  // dark/horned (void/singularity)
+  frost_monarch:      'flying_boss_02',  // icy blue (frost)
+  infernal_lord:      'flying_boss_17',  // red/orange (fire)
+  plague_mother:      'flying_boss_18',  // green (plague)
+  fallen_monarch:     'flying_boss_09',  // grim/skeletal (ruined/cursed)
+  astral_pharaoh:     'flying_boss_10',  // single-eye mystical (astral)
+  // --- roaming world bosses ---
+  wb_event_horizon:   'flying_boss_08',  // dark devourer (void)
+  wb_frost_titan:     'crystal_knight',  // animated icy Crystal Knight (frost)
+  wb_ashen_worldeater:'flying_boss_12',  // red demon (fire)
+  wb_plague_matriarch:'flying_boss_14',  // green/yellow (plague)
+  wb_hollow_king:     'flying_boss_03',  // pale ornate (hollow/cursed)
+  wb_astral_pharaoh:  'flying_boss_20',  // large single-eye (astral)
+}
 // item baseKey -> sprite ID. Obvious starter-gear examples wired; everything
 // else falls back to the geometric letter icon. Maps to ITEM_BASES keys (items.js).
 const itemSpriteAssignments = {
@@ -120,7 +180,8 @@ const projectileSpriteAssignments = {}
 
 // --- Loader + draw helpers --------------------------------------------------
 const Sprites = {
-  _imgs: {},          // sheetName -> { img, loaded }
+  _imgs: {},          // sheetName -> { img, loaded }  (tile sheets)
+  _files: {},         // path -> { img, loaded }       (standalone image files)
   enabled: true,      // master toggle (e.g. for the debug page / fallback test)
 
   // Lazily load a sheet's image. Safe if the file doesn't exist yet — `loaded`
@@ -128,21 +189,49 @@ const Sprites = {
   sheet(name) {
     const def = SPRITE_SHEETS[name]
     if (!def) return null
-    let rec = this._imgs[name]
+    return this._load(this._imgs, name, def.path)
+  },
+
+  // Lazily load a standalone image file by path (used by `src` registry entries).
+  image(path) {
+    if (!path) return null
+    return this._load(this._files, path, path)
+  },
+
+  // Shared lazy-load into a cache bucket. Missing files just stay `loaded:false`.
+  _load(cache, key, path) {
+    let rec = cache[key]
     if (!rec) {
       rec = { img: new Image(), loaded: false }
       rec.img.onload = () => { rec.loaded = true }
       rec.img.onerror = () => { rec.loaded = false }
-      rec.img.src = def.path
-      this._imgs[name] = rec
+      rec.img.src = path
+      cache[key] = rec
     }
     return rec
   },
 
-  // Resolve a registry entry to source-rect px {sx,sy,sw,sh} or null.
+  // Return the loaded image record backing a registry entry (sheet OR file).
+  _rec(e) { return e.src ? this.image(e.src) : this.sheet(e.sheet) },
+
+  // Resolve a registry entry to source-rect px {sx,sy,sw,sh} or null. Handles
+  // tile-sheet entries, whole-image `src` entries, and animated `src` entries
+  // (current frame chosen from wall-clock time so no per-frame state is needed).
   rect(id) {
     const e = SPRITE_REGISTRY[id]
     if (!e) return null
+    if (e.src) {
+      const rec = this.image(e.src)
+      if (!rec || !rec.loaded) return null
+      if (e.fw) {
+        const cols = e.cols || Math.max(1, (rec.img.naturalWidth / e.fw) | 0)
+        const frames = e.frames || cols
+        const fps = e.fps || 6
+        const fi = Math.floor(Date.now() / (1000 / fps)) % frames
+        return { sx: (fi % cols) * e.fw, sy: ((fi / cols) | 0) * e.fh, sw: e.fw, sh: e.fh }
+      }
+      return { sx: 0, sy: 0, sw: rec.img.naturalWidth, sh: rec.img.naturalHeight }
+    }
     const sheet = SPRITE_SHEETS[e.sheet]
     if (!sheet) return null
     const t = sheet.tile
@@ -153,16 +242,17 @@ const Sprites = {
     return { sx, sy, sw, sh }
   },
 
-  // True only when the sprite's sheet image is decoded and ready to blit.
+  // True only when the sprite's backing image is decoded and ready to blit.
   ready(id) {
     const e = SPRITE_REGISTRY[id]
     if (!e) return false
-    const rec = this.sheet(e.sheet)
+    const rec = this._rec(e)
     return !!(rec && rec.loaded && rec.img.complete)
   },
 
-  // Draw sprite `id` centered at (cx,cy) scaled to `size` px (square-ish).
-  // Returns true if it actually drew, false if it couldn't (-> use fallback).
+  // Draw sprite `id` centered at (cx,cy), fit within a `size`-px box (aspect
+  // preserved — the larger source dimension maps to `size`). Square tiles behave
+  // exactly as before. Returns true if it drew, false if it couldn't (->fallback).
   draw(id, cx, cy, size, context) {
     if (!this.enabled) return false
     const e = SPRITE_REGISTRY[id]
@@ -170,8 +260,10 @@ const Sprites = {
     const r = this.rect(id)
     const c = context || (typeof ctx !== 'undefined' ? ctx : null)
     if (!c || !r) return false
-    const dw = size, dh = size * (r.sh / r.sw)
-    const rec = this.sheet(e.sheet)
+    const rec = this._rec(e)
+    if (!rec || !rec.img) return false
+    const scale = size / Math.max(r.sw, r.sh)
+    const dw = r.sw * scale, dh = r.sh * scale
     c.drawImage(rec.img, r.sx, r.sy, r.sw, r.sh, cx - dw / 2, cy - dh / 2, dw, dh)
     return true
   },
@@ -183,17 +275,21 @@ const Sprites = {
     const r = this.rect(id)
     const c = context || (typeof ctx !== 'undefined' ? ctx : null)
     if (!c || !r) return false
-    const rec = this.sheet(e.sheet)
+    const rec = this._rec(e)
+    if (!rec || !rec.img) return false
     c.drawImage(rec.img, r.sx, r.sy, r.sw, r.sh, dx, dy, dw, dh)
     return true
   },
 
-  // Convenience hook for renderMob: returns true if a mob sprite was drawn.
+  // Convenience hook for renderMob: returns true if a mob/boss sprite was drawn.
+  // Bosses (bossSpriteAssignments) take priority; creature art has wide wings/
+  // padding so it's drawn a touch larger than the geometric radius.
   drawForMob(e, sx, sy) {
     if (!e || !e.key) return false
-    const id = mobSpriteAssignments[e.key]
+    const id = (typeof bossSpriteAssignments !== 'undefined' && bossSpriteAssignments[e.key]) || mobSpriteAssignments[e.key]
     if (!id) return false
-    return this.draw(id, sx, sy, (e.radius || 12) * 2.2)
+    const scale = (typeof bossSpriteAssignments !== 'undefined' && bossSpriteAssignments[e.key]) ? 2.8 : 2.2
+    return this.draw(id, sx, sy, (e.radius || 12) * scale)
   },
 
   // Convenience hook for item rendering (inventory/equipment/loot): draws the
@@ -213,6 +309,7 @@ if (typeof window !== 'undefined') {
   window.SPRITE_REGISTRY = SPRITE_REGISTRY
   window.SPRITE_SHEETS = SPRITE_SHEETS
   window.mobSpriteAssignments = mobSpriteAssignments
+  window.bossSpriteAssignments = bossSpriteAssignments
   window.itemSpriteAssignments = itemSpriteAssignments
   window.projectileSpriteAssignments = projectileSpriteAssignments
 }

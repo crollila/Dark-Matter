@@ -217,8 +217,9 @@ const Wiki = (() => {
       ctx.fillStyle = col; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
       ctx.fillText(((icon.label || '?')[0] || '?').toUpperCase(), cx, cy + 1)
       ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
-    } else { // mob / boss
-      const id = window.mobSpriteAssignments && mobSpriteAssignments[icon.key]
+    } else { // mob / boss — bosses take priority; NEVER a weapon/item sprite
+      const id = (window.bossSpriteAssignments && bossSpriteAssignments[icon.key])
+        || (window.mobSpriteAssignments && mobSpriteAssignments[icon.key])
       if (id && window.Sprites && Sprites.draw && Sprites.draw(id, cx, cy, size)) return
       ctx.fillStyle = icon.color || '#aab8c8'
       ctx.beginPath(); ctx.arc(cx, cy, size / 2 - 1, 0, Math.PI * 2); ctx.fill()
