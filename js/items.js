@@ -355,6 +355,100 @@ Object.assign(ITEM_BASES, BIOME_UNIQUES)
 Object.assign(ITEM_BASES, DUNGEON_EXCLUSIVES)
 Object.assign(ITEM_BASES, WORLD_BOSS_MYTHICS)
 
+// ============================================================
+// CLASS GEAR SETS (100 items) — data-driven generator.
+// 5 classes × 4 tiers × (1 weapon + 4 armor/accessory) = 100 class-LOCKED bases.
+// Tier raises the base stat ranges (progression) ON TOP of rarity scaling, so a
+// tier-4 piece out-stats a tier-1 at the same rarity. Class themes keep stat
+// identity (no INT on warrior gear, wrong-class weapons never drop, etc.). Each
+// base carries `tier` (1 early → 4 chase), `set`, and `wikiSource` so loot
+// tables / the wiki can show where it drops. NON-unique → they flow through the
+// normal class-filtered random / gamble / boss rolls (tier-gated below).
+// ============================================================
+const CLASS_GEAR_TIERS = [
+  { mult: 1.00, src: 'World mobs (early)' },
+  { mult: 1.30, src: 'World / dungeon mobs (mid)' },
+  { mult: 1.65, src: 'Dungeon bosses (strong)' },
+  { mult: 2.05, src: 'Hard bosses (chase)' },
+]
+// Non-weapon slots assigned per tier — across the 4 tiers every slot is covered.
+const CLASS_GEAR_SLOTS = [
+  ['helmet', 'hands', 'boots', 'ring'],
+  ['chest', 'pants', 'amulet', 'ability'],
+  ['helmet', 'chest', 'ring', 'amulet'],
+  ['boots', 'hands', 'pants', 'ability'],
+]
+const SLOT_NOUN = { helmet: 'Helm', chest: 'Plate', hands: 'Grips', pants: 'Greaves', boots: 'Stride', ring: 'Band', amulet: 'Charm', ability: 'Sigil' }
+const AFFIX_RANGE = { hp: [60, 120], armor: [2, 5], str: [2, 5], dex: [2, 5], int: [2, 5], mp: [80, 160], hpRegen: [2, 5], spd: [2, 5] }
+
+// Per-class identity: main stat, secondary, weapon profile, set names, affix
+// pool (5 keys → enough affixes for every rarity up to mythic).
+const CLASS_GEAR_THEME = {
+  warrior: { main: 'str', sub: 'hpRegen', sets: ['Recruit', 'Legion', 'Warlord', 'Godforged'],
+    pool: ['hp', 'armor', 'str', 'hpRegen', 'spd'],
+    wpn: { noun: 'Greatblade', dmg: [70, 120], range: [95, 115], atkSpd: [0.46, 0.56], bspd: 330 },
+    ability: (M) => ({ hp: M(150, 260), str: M(3, 6) }) },
+  rogue: { main: 'dex', sub: 'spd', sets: ['Cutpurse', 'Shadow', 'Nightblade', 'Phantom'],
+    pool: ['dex', 'spd', 'hp', 'armor', 'str'],
+    wpn: { noun: 'Fangs', dmg: [34, 60], range: [140, 170], atkSpd: [0.15, 0.19], bspd: 380 },
+    ability: (M) => ({ spd: M(5, 11), dex: M(3, 6) }) },
+  mage: { main: 'int', sub: 'mp', sets: ['Apprentice', 'Adept', 'Archon', 'Astral'],
+    pool: ['int', 'mp', 'hp', 'hpRegen', 'spd'],
+    wpn: { noun: 'Spellstaff', dmg: [95, 155], range: [260, 300], atkSpd: [0.5, 0.6], bspd: 320 },
+    ability: (M) => ({ mp: M(160, 300), int: M(3, 7) }) },
+  priest: { main: 'int', sub: 'hpRegen', sets: ['Acolyte', 'Cleric', 'Bishop', 'Seraph'],
+    pool: ['int', 'mp', 'hpRegen', 'hp', 'armor'],
+    wpn: { noun: 'Censer', dmg: [42, 72], range: [200, 240], atkSpd: [0.22, 0.28], bspd: 300 },
+    ability: (M) => ({ mp: M(170, 300), hpRegen: M(3, 7) }) },
+  archer: { main: 'dex', sub: 'spd', sets: ['Scout', 'Ranger', 'Marksman', 'Stormshot'],
+    pool: ['dex', 'spd', 'hp', 'armor', 'hpRegen'],
+    wpn: { noun: 'Warbow', dmg: [52, 88], range: [300, 345], atkSpd: [0.27, 0.33], bspd: 500 },
+    ability: (M) => ({ spd: M(5, 10), dex: M(3, 6) }) },
+}
+
+function _armorCore(slot, theme, M) {
+  const m = theme.main
+  switch (slot) {
+    case 'helmet':  return { armor: M(4, 8), hp: M(70, 120), [m]: M(2, 4) }
+    case 'chest':   return { hp: M(150, 240), armor: M(5, 10) }
+    case 'hands':   return { [m]: M(2, 5), armor: M(2, 4) }
+    case 'pants':   return { hp: M(110, 190), armor: M(3, 7) }
+    case 'boots':   return { spd: M(4, 9), hp: M(60, 110) }
+    case 'ring':    return { [m]: M(3, 6), hp: M(70, 140) }
+    case 'amulet':  return { hp: M(130, 220), [theme.sub]: M(3, 6) }
+    case 'ability': return theme.ability(M)
+  }
+  return { hp: M(80, 140) }
+}
+
+function _buildClassGear() {
+  const out = {}
+  for (const cls in CLASS_GEAR_THEME) {
+    const theme = CLASS_GEAR_THEME[cls]
+    for (let ti = 0; ti < CLASS_GEAR_TIERS.length; ti++) {
+      const tier = ti + 1, T = CLASS_GEAR_TIERS[ti], mult = T.mult
+      const M = (lo, hi) => [Math.round(lo * mult), Math.round(hi * mult)]
+      const affixPool = theme.pool.map(s => ({ [s]: M(AFFIX_RANGE[s][0], AFFIX_RANGE[s][1]) }))
+      const setName = theme.sets[ti], w = theme.wpn
+      // weapon (class-locked; bspd fixed midpoint → single-value range)
+      out[`${cls}_t${tier}_weapon`] = {
+        name: `${setName} ${w.noun}`, slot: 'weapon', classes: [cls], tier, set: setName, wikiSource: T.src,
+        core: { dmg: M(w.dmg[0], w.dmg[1]), range: w.range, atkSpd: w.atkSpd, bspd: [w.bspd, w.bspd], [theme.main]: M(3, 6) },
+        affixPool,
+      }
+      // armor / accessories for this tier
+      for (const slot of CLASS_GEAR_SLOTS[ti]) {
+        out[`${cls}_t${tier}_${slot}`] = {
+          name: `${setName} ${SLOT_NOUN[slot]}`, slot, classes: [cls], tier, set: setName, wikiSource: T.src,
+          core: _armorCore(slot, theme, M), affixPool,
+        }
+      }
+    }
+  }
+  return out
+}
+Object.assign(ITEM_BASES, _buildClassGear())
+
 // Dungeon key → its exclusive base keys (built from the `dungeon` tag). Used by
 // boss/mob loot to roll a dungeon's signature gear. Unknown keys → undefined,
 // so non-biome dungeons (goblin_warren, etc.) safely have no exclusives.
@@ -538,6 +632,18 @@ function randomItem(source, opts) {
   bases = bases.concat(ck ? basesForSlot(slot, ck).filter(k => ITEM_BASES[k].classes) : [])
   bases = Array.from(new Set(bases))
   if (!bases.length) return null
+  // Tier gate: weaker sources (low maxTier) only roll early/mid gear; bosses
+  // (minTier) only roll strong/chase gear. Bases without a `tier` count as 1.
+  // Never produce an empty pool — if the filter clears everything, ignore it.
+  if (opts.maxTier != null || opts.minTier != null) {
+    const filtered = bases.filter(k => {
+      const t = ITEM_BASES[k].tier || 1
+      if (opts.maxTier != null && t > opts.maxTier) return false
+      if (opts.minTier != null && t < opts.minTier) return false
+      return true
+    })
+    if (filtered.length) bases = filtered
+  }
   // Weighted pick: bias toward bases carrying the class's preferred stats.
   const weights = bases.map(k => baseAffinityWeight(ITEM_BASES[k], ck))
   let total = 0; for (const w of weights) total += w
@@ -615,6 +721,10 @@ function gambleItem(acct, char, slot) {
   if (!char) return { error: 'No character' }
   if ((acct.glory || 0) < GAMBLE_COST) return { error: 'Not enough Glory' }
   let bases = basesForSlot(slot, char.classKey)
+  // Tier-4 "chase" gear stays boss-only — never gambled. Fall back to the full
+  // list if a slot somehow has only chase bases (keeps old slots working).
+  const nonChase = bases.filter(k => (ITEM_BASES[k].tier || 1) < 4)
+  if (nonChase.length) bases = nonChase
   if (!bases.length) return { error: 'No items for that slot' }
   acct.glory -= GAMBLE_COST
   const baseKey = bases[Math.random() * bases.length | 0]
@@ -651,9 +761,15 @@ function generateBossLoot(dungeonKey) {
     const ex = rollDungeonExclusive(dungeonKey, 0.7)
     if (ex) loot.items.push(ex)
   }
+  // Strong generic class gear (tier 2+ — never trash), plus a chance at a
+  // tier-3/4 chase piece so hard bosses remain the best gear source.
   if (Math.random() < 0.85) {
-    const it = randomItem(dungeonKey, { boost: 0.6 })
+    const it = randomItem(dungeonKey, { boost: 0.6, minTier: 2 })
     if (it) loot.items.push(it)
+  }
+  if (Math.random() < 0.4) {
+    const chase = randomItem(dungeonKey, { boost: 0.9, minTier: 3, maxTier: 4 })
+    if (chase) loot.items.push(chase)
   }
   return loot
 }
@@ -669,7 +785,10 @@ function rollMobDrop(stars, opts) {
   const chance = opts.chance != null ? opts.chance : 0.10
   if (Math.random() > chance) return null
   const loot = { items: [], materials: {} }
-  const it = randomItem(opts.source || 'world', { boost: (stars || 0) * 0.12 })
+  // Basic mobs drop weaker gear: stars → max tier (tier 4 is boss-only).
+  const s = stars || 0
+  const maxTier = s < 1 ? 1 : s < 3 ? 2 : 3
+  const it = randomItem(opts.source || 'world', { boost: s * 0.12, maxTier })
   if (it) loot.items.push(it)
   // Rare bonus: dungeon basic mobs can drop their dungeon-exclusive gear.
   if (EXCLUSIVES_BY_DUNGEON[opts.source] && Math.random() < EXCLUSIVE_MOB_CHANCE) {
@@ -933,79 +1052,119 @@ function renderItemTooltip(it, x, y) {
 // Drawn above a nearby loot bag. Hovering a row shows the item tooltip.
 // Last drawn preview hit-map: lets the click handler map a click onto a row so
 // the player can pick a single item from a multi-item chest. Rebuilt each frame.
-let _lootPreviewHit = null   // { bag, rows: [{ x, y, w, h, index }] }
+let _lootPreviewHit = null   // { frames: [{ bag, rows:[{x,y,w,h,index}] }] }
+const LOOT_PREVIEW_MAX = 3   // most loot frames shown at once (nearest first)
 
-function renderLootPreview(bag, offX, offY) {
-  _lootPreviewHit = null
-  if (!bag) return
+// Measure a bag's preview frame (row labels + panel size). No drawing.
+function _lootFrameMeasure(bag) {
   const rows = []
   for (let i = 0; i < bag.items.length; i++) {
     const it = bag.items[i]
     rows.push({ color: it.color || '#ccc', item: it, index: i,
       label: `${it.name}  ${typeof it.rating === 'number' ? it.rating + '%' : ''}` })
   }
-  if (!rows.length) return
-
   const lineH = 16, padX = 8, padY = 6, header = 14, footer = 12
   ctx.font = '11px monospace'
   let w = 0
   for (const r of rows) w = Math.max(w, ctx.measureText(r.label).width)
   const panelW = w + padX * 2 + 14
   const panelH = rows.length * lineH + padY * 2 + header + footer
-  // Drawn outside the world transform → anchor via worldToScreen so the panel
-  // points at the bag's true rotated screen position.
-  const [bsx, bsy] = worldToScreen(bag.x, bag.y)
-  let px = bsx - panelW / 2
-  let py = bsy - 34 - panelH
-  px = Math.max(8, Math.min(canvas.width - panelW - 8, px))
-  py = Math.max(8, py)
+  return { rows, panelW, panelH, lineH, padX, padY, header, footer }
+}
 
+// Draw one already-placed loot frame; returns the hovered item (or null) and
+// fills `hitRows` with clickable row rects (mapped back to the bag).
+function _lootFrameDraw(bag, px, py, F, hitRows) {
   ctx.fillStyle = 'rgba(6,8,18,0.92)'; ctx.strokeStyle = bag.color || '#888'; ctx.lineWidth = 1
-  ctx.fillRect(px, py, panelW, panelH); ctx.strokeRect(px, py, panelW, panelH)
+  ctx.fillRect(px, py, F.panelW, F.panelH); ctx.strokeRect(px, py, F.panelW, F.panelH)
   ctx.textAlign = 'left'
   ctx.fillStyle = '#9fb3c8'; ctx.font = 'bold 9px monospace'
-  const _cap = (typeof MAX_BAG_ITEMS === 'number') ? MAX_BAG_ITEMS : 12
-  const _cnt = bag.items.length
-  ctx.fillText('LOOT  ' + (_cnt >= _cap ? 'Bag full' : _cnt + '/' + _cap), px + padX, py + 11)
-
-  let y = py + header + padY + 8
+  const cap = (typeof MAX_BAG_ITEMS === 'number') ? MAX_BAG_ITEMS : 12
+  const cnt = bag.items.length
+  ctx.fillText('LOOT  ' + (cnt >= cap ? 'Bag full' : cnt + '/' + cap), px + F.padX, py + 11)
+  let y = py + F.header + F.padY + 8
   let hoverItem = null
-  const hitRows = []
-  for (const r of rows) {
-    const rx = px + padX, ry = y - lineH + 4, rw = panelW - padX * 2, rh = lineH
+  for (const r of F.rows) {
+    const rx = px + F.padX, ry = y - F.lineH + 4, rw = F.panelW - F.padX * 2, rh = F.lineH
     const over = mouse.x >= rx && mouse.x <= rx + rw && mouse.y >= ry && mouse.y <= ry + rh
     if (over && r.item) hoverItem = r.item
     if (over) { ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(rx, ry, rw, rh) }
     ctx.fillStyle = r.color
-    ctx.beginPath(); ctx.arc(px + padX + 4, y - 4, 3, 0, Math.PI * 2); ctx.fill()
+    ctx.beginPath(); ctx.arc(px + F.padX + 4, y - 4, 3, 0, Math.PI * 2); ctx.fill()
     ctx.font = '11px monospace'
-    ctx.fillText(r.label, px + padX + 12, y)
+    ctx.fillText(r.label, px + F.padX + 12, y)
     hitRows.push({ x: rx, y: ry, w: rw, h: rh, index: r.index })
-    y += lineH
+    y += F.lineH
   }
-  // Footer hint: click a row to take that single item.
   ctx.fillStyle = '#6b7b90'; ctx.font = '8px monospace'
-  ctx.fillText('click an item to take it', px + padX, py + panelH - 4)
+  ctx.fillText('click an item to take it', px + F.padX, py + F.panelH - 4)
   ctx.textAlign = 'left'
-  _lootPreviewHit = { bag, rows: hitRows }
-  if (hoverItem) renderItemTooltip(hoverItem, mouse.x + 12, mouse.y + 12)
+  return hoverItem
 }
+
+// Render up to LOOT_PREVIEW_MAX loot frames for nearby bags (nearest first).
+// Frames anchor above each bag (rotation-correct via worldToScreen) and are
+// nudged so they never overlap each other; only ONE tooltip (the hovered row)
+// is shown so tooltips never stack. Builds a combined hit-map so a click maps to
+// the correct bag + item.
+function renderLootPreviews(bags, offX, offY) {
+  _lootPreviewHit = null
+  if (!bags || !bags.length) return
+  const frames = []
+  const placed = []          // screen rects already occupied by a frame
+  let hoverItem = null
+  const n = Math.min(bags.length, LOOT_PREVIEW_MAX)
+  for (let bi = 0; bi < n; bi++) {
+    const bag = bags[bi]
+    if (!bag || !bag.items || !bag.items.length) continue
+    const F = _lootFrameMeasure(bag)
+    if (!F.rows.length) continue
+    const [bsx, bsy] = worldToScreen(bag.x, bag.y)
+    let px = bsx - F.panelW / 2 + bi * 8
+    let py = bsy - 34 - F.panelH
+    px = Math.max(8, Math.min(canvas.width - F.panelW - 8, px))
+    py = Math.max(8, py)
+    // Push clear of any already-placed frame: stack upward, else drop below.
+    for (let guard = 0; guard < 12; guard++) {
+      const clash = placed.find(p => !(px + F.panelW <= p.x || px >= p.x + p.w || py + F.panelH <= p.y || py >= p.y + p.h))
+      if (!clash) break
+      const up = clash.y - F.panelH - 6
+      if (up >= 8) py = up
+      else { py = clash.y + clash.h + 6; px = Math.max(8, Math.min(canvas.width - F.panelW - 8, px + 8)) }
+    }
+    py = Math.max(8, Math.min(canvas.height - F.panelH - 8, py))
+    placed.push({ x: px, y: py, w: F.panelW, h: F.panelH })
+    const hitRows = []
+    const h = _lootFrameDraw(bag, px, py, F, hitRows)
+    if (h) hoverItem = h
+    frames.push({ bag, rows: hitRows })
+  }
+  _lootPreviewHit = frames.length ? { frames } : null
+  if (hoverItem) renderItemTooltip(hoverItem, mouse.x + 14, mouse.y + 14)
+}
+
+// Back-compat single-bag wrapper (any caller still passing one bag).
+function renderLootPreview(bag, offX, offY) { renderLootPreviews(bag ? [bag] : [], offX, offY) }
 
 // Click handler for the loot-chest preview (single-item pickup). Returns true if
 // a row was clicked (so the caller can swallow the click). Bag emptiness is
 // cleaned up by the owning zone's update loop.
 function handleLootPreviewClick(mx, my) {
   const hit = _lootPreviewHit
-  if (!hit || !hit.bag) return false
-  for (const r of hit.rows) {
-    if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
-      const char = (typeof G !== 'undefined') && G.char
-      const acct = (typeof account !== 'undefined') ? account : {}
-      if (char) {
-        pickLootItem(char, acct, hit.bag, r.index)
-        if (window.saveGame) saveGame()
+  if (!hit) return false
+  // New multi-frame shape; tolerate the old single-bag shape too.
+  const frames = hit.frames || (hit.bag ? [{ bag: hit.bag, rows: hit.rows }] : [])
+  for (const f of frames) {
+    for (const r of f.rows) {
+      if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+        const char = (typeof G !== 'undefined') && G.char
+        const acct = (typeof account !== 'undefined') ? account : {}
+        if (char) {
+          pickLootItem(char, acct, f.bag, r.index)
+          if (window.saveGame) saveGame()
+        }
+        return true
       }
-      return true
     }
   }
   return false
@@ -1038,10 +1197,8 @@ function renderLootHUD(char, acct) {
   const inv = char.inventory || []
   const present = inv.filter(Boolean)
   y += 6
-  ctx.fillStyle = '#9fb3c8'
-  ctx.font = 'bold 10px monospace'
-  ctx.fillText(`INVENTORY ${present.length}/${INVENTORY_CAP}`, x, y)
-  y += 15
+  // (HUD inventory count removed — it was clutter; the count still shows inside
+  // the inventory panel itself.) Keep the compact recent-items list below.
   ctx.font = '10px monospace'
   const start = Math.max(0, present.length - 8)
   for (let i = start; i < present.length; i++) {
@@ -1125,4 +1282,5 @@ window.genTierItem = genTierItem
 window.rollMobDrop = rollMobDrop
 window.fmtStatLine = fmtStatLine
 window.renderLootPreview = renderLootPreview
+window.renderLootPreviews = renderLootPreviews
 window.renderItemTooltip = renderItemTooltip
