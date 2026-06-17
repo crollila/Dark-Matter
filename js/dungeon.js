@@ -306,6 +306,9 @@ const DungeonZone = (() => {
 
   function renderDungeonTiles() {
     const tc = map.tileColor || {}
+    // Env theme for this dungeon (visual only; data-driven map in sprites.js).
+    const envTheme = (typeof Sprites !== 'undefined' && Sprites.envThemeForDungeon)
+      ? Sprites.envThemeForDungeon(defKey) : 'neutral'
     const offX = (canvas.width/2 - cam.x) | 0
     const offY = (canvas.height/2 - cam.y) | 0
     const startX = Math.max(0, (cam.x - canvas.width/2)  / TILE | 0)
@@ -329,7 +332,32 @@ const DungeonZone = (() => {
         else color = TILE_COLORS[t] || '#111'
         ctx.fillStyle = color
         ctx.fillRect(px, py, TILE, TILE)
-        if (t === T_WALL) {
+        // Environment sprite layer (VISUAL ONLY) — paints themed floors/walls/
+        // hazards (+ sparse decor) over the flat fill; flat color stays as the
+        // fallback when a sheet is unmapped/unloaded. Collision/generation/loot
+        // unaffected. Portal tiles are handled by the entity pass below.
+        let drewEnv = false
+        if (typeof Sprites !== 'undefined' && Sprites.drawEnvTile && t !== T_PORTAL_DUNGEON) {
+          let role = null
+          if (t === T_FLOOR) {
+            const hv = Sprites.envHash(tx, ty, 1)
+            role = (hv % 17 === 0) ? 'path' : (hv % 7 === 0) ? 'floorAlt' : 'floor'
+          } else if (t === T_WALL) {
+            role = (Sprites.envHash(tx, ty, 2) % 9 === 0) ? 'wallAlt' : 'wall'
+          } else if (t === T_LAVA || t === T_ICE) { role = 'hazard' }
+          else if (t === T_WATER) { role = 'water' }
+          if (role) {
+            drewEnv = Sprites.drawEnvTile(envTheme, role, px + TILE/2, py + TILE/2, TILE, ctx, Sprites.envHash(tx, ty, 3))
+            if (drewEnv && t === T_FLOOR) {
+              const dch = Sprites.envDecorChance(envTheme)
+              if (dch > 0) {
+                const dh = Sprites.envHash(tx, ty, 9)
+                if ((dh % 1000) < dch * 1000) Sprites.drawEnvDecor(envTheme, dh, px + TILE/2, py + TILE/2, TILE, ctx)
+              }
+            }
+          }
+        }
+        if (t === T_WALL && !drewEnv) {
           ctx.fillStyle = 'rgba(255,255,255,0.04)'
           ctx.fillRect(px, py, TILE, 3)
         }

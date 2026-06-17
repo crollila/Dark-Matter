@@ -96,7 +96,26 @@ const SPRITE_SHEETS = {
   //   projectiles_weapons -> player weapon shots (keyed by class/weapon family)
   //   projectiles_bosses  -> boss/enemy shots (keyed by boss/mob key)
   projectiles_weapons: { path: 'assets/sprites/projectiles_weapons_32.png', cols: 8, rows: 8 },
-  projectiles_bosses:  { path: 'assets/sprites/projectiles_bosses_32.png',  cols: 8, rows: 8 }
+  projectiles_bosses:  { path: 'assets/sprites/projectiles_bosses_32.png',  cols: 8, rows: 8 },
+
+  // --- Environment sheets (biome + dungeon terrain: floors/walls/hazards/decor) -
+  // 9 themed sheets, each 1254x1254 = a clean 8x8 grid (156.75px cells, addressed
+  // by grid FRACTION via _drawSheetTile; the implied "32" cell size is the display
+  // target, not the source px). First-pass row interpretation (shared layout, see
+  // ENV_ROLE_ASSIGNMENTS): TOP rows = ground/floor/path, upper rows = wall/edges,
+  // MIDDLE rows = decor/props, LOWER rows = hazards/liquids/structures. Exactly ONE
+  // cell is sampled per tile/decor (never a multi-cell block). VISUAL-ONLY — see
+  // the theme/role tables + Sprites.drawEnvTile below; generation/collision/hazards
+  // are untouched (the flat-color tile fill remains as the fallback).
+  env_neutral:  { path: 'assets/sprites/env_neutral.png',  cols: 8, rows: 8 },
+  env_forest:   { path: 'assets/sprites/env_forest.png',   cols: 8, rows: 8 },
+  env_goblin:   { path: 'assets/sprites/env_goblin.png',   cols: 8, rows: 8 },
+  env_fungal:   { path: 'assets/sprites/env_fungal.png',   cols: 8, rows: 8 },
+  env_void:     { path: 'assets/sprites/env_void.png',     cols: 8, rows: 8 },
+  env_frost:    { path: 'assets/sprites/env_frost.png',    cols: 8, rows: 8 },
+  env_infernal: { path: 'assets/sprites/env_infernal.png', cols: 8, rows: 8 },
+  env_cursed:   { path: 'assets/sprites/env_cursed.png',   cols: 8, rows: 8 },
+  env_plague:   { path: 'assets/sprites/env_plague.png',   cols: 8, rows: 8 }
 }
 
 // --- Portal sprite system (SEPARATE from mob + item sprites) -----------------
@@ -643,6 +662,117 @@ const projectileBossAssignments = {
   sunseer:        { sheet: 'projectiles_bosses', col: 0, row: 3 }
 }
 
+// === ENVIRONMENT TILE/DECOR SYSTEM (data-driven, easy to remap) =============
+// All choices below are EXPLICIT (never auto-picked from training). VISUAL-ONLY:
+// nothing here changes generation, collision, hazards, portals, mobs, loot, or
+// stations — callers keep their flat-color fill as the fallback. Deterministic
+// per-tile variant selection (by tile coords) means no frame-to-frame flicker.
+
+// theme key -> sheet name.
+const ENV_SHEET_BY_THEME = {
+  neutral:  'env_neutral',
+  forest:   'env_forest',
+  goblin:   'env_goblin',
+  fungal:   'env_fungal',
+  void:     'env_void',
+  frost:    'env_frost',
+  infernal: 'env_infernal',
+  cursed:   'env_cursed',
+  plague:   'env_plague'
+}
+
+// role -> candidate cells [{col,row}, ...]. The deterministic variant picker
+// chooses ONE cell from the list per tile (seeded by tile coords), giving several
+// floor variants / occasional alternate walls / sparse decor with zero flicker.
+// SHARED first-pass layout applied to every sheet (per the row interpretation in
+// SPRITE_SHEETS). Per-theme tweaks live in ENV_ROLE_OVERRIDES. Cells are GUESSES —
+// retune any line; nothing else depends on these coordinates.
+const ENV_ROLE_ASSIGNMENTS = {
+  floor:        [ { col: 0, row: 0 }, { col: 1, row: 0 }, { col: 2, row: 0 }, { col: 3, row: 0 } ],
+  floorAlt:     [ { col: 0, row: 1 }, { col: 1, row: 1 }, { col: 2, row: 1 } ],
+  path:         [ { col: 4, row: 0 }, { col: 5, row: 0 } ],
+  wall:         [ { col: 6, row: 0 }, { col: 7, row: 0 } ],
+  wallAlt:      [ { col: 6, row: 1 }, { col: 7, row: 1 } ],
+  specialFloor: [ { col: 4, row: 1 } ],
+  hazard:       [ { col: 0, row: 7 }, { col: 1, row: 7 } ],
+  water:        [ { col: 2, row: 7 }, { col: 3, row: 7 } ],
+  smallDecor:   [ { col: 0, row: 3 }, { col: 1, row: 3 }, { col: 2, row: 3 }, { col: 3, row: 3 } ],
+  largeDecor:   [ { col: 0, row: 4 }, { col: 1, row: 4 } ],
+  ruin:         [ { col: 5, row: 4 }, { col: 6, row: 4 } ]
+}
+
+// Per-theme role overrides (theme -> { role -> cells }). First pass only repoints
+// hazards/liquids to each sheet's signature pool tiles. Anything not overridden
+// uses ENV_ROLE_ASSIGNMENTS. Edit/extend freely.
+const ENV_ROLE_OVERRIDES = {
+  infernal: { hazard: [ { col: 4, row: 7 }, { col: 5, row: 7 } ] }, // lava pools
+  plague:   { hazard: [ { col: 4, row: 7 }, { col: 5, row: 7 } ], water: [ { col: 6, row: 7 }, { col: 7, row: 7 } ] }, // ooze / sewer
+  void:     { hazard: [ { col: 6, row: 7 }, { col: 7, row: 7 } ] }, // dark pools / vortex
+  frost:    { hazard: [ { col: 4, row: 7 }, { col: 5, row: 7 } ] }  // cracked ice
+}
+
+// Tile-type name -> env role (callers translate their T_* constant to a name so
+// sprites.js stays standalone — it must NOT reference engine globals at load).
+const envHazardAssignments = { lava: 'hazard', ice: 'hazard', water: 'water' }
+
+// Sparse decor density per theme (chance, 0..1, that an eligible walkable floor
+// tile gets a smallDecor sprite). Conservative first pass. _default covers any
+// theme not listed. Selection is deterministic per tile (no per-frame random).
+const envDecorAssignments = {
+  _default: 0.05,
+  neutral: 0.06, forest: 0.10, fungal: 0.10, goblin: 0.07,
+  void: 0.05, frost: 0.06, infernal: 0.05, cursed: 0.06, plague: 0.06
+}
+
+// World biome id (biomes.js BIOMES / BOSS_BIOMES) -> env theme. (env_goblin has no
+// world biome — it's dungeon-only.) 0 = neutral home.
+const biomeEnvThemeMap = {
+  0: 'neutral',
+  1: 'void',     // dark_matter
+  2: 'frost',    // snow
+  3: 'infernal', // hell
+  4: 'fungal',   // toxic / Fungal Mire
+  5: 'cursed',   // ruined
+  6: 'void',     // astral (no env_astral; void covers cosmic/astral)
+  // runtime BOSS_BIOMES (7-12)
+  7: 'void',     // event_horizon
+  8: 'frost',    // glacial_throne
+  9: 'infernal', // ash_caldera
+  10: 'plague',  // rot_garden
+  11: 'cursed',  // cursed_court
+  12: 'void',    // starfall_dunes (astral)
+  // low/mid biomes (13-19)
+  13: 'forest',  // meadow / Greenwood Vale
+  14: 'plague',  // fen / Quiet Fen
+  15: 'frost',   // frostfields
+  16: 'cursed',  // sunken ruins
+  17: 'infernal',// scorched
+  18: 'void',    // starlit (astral)
+  19: 'void'     // nullfringe
+}
+
+// Dungeon key (DUNGEONS, mobs.js/map.js) -> env theme. Fallback 'neutral'.
+const dungeonEnvThemeMap = {
+  // OG dungeons
+  goblin_warren:       'goblin',
+  fungal_cavern:       'fungal',
+  void_rift:           'void',
+  // biome dungeons
+  dark_matter_core:    'void',
+  frozen_catacombs:    'frost',
+  infernal_pit:        'infernal',
+  plague_grotto:       'plague',
+  fallen_keep:         'cursed',
+  astral_tomb:         'void',
+  // world-boss dungeons
+  event_horizon_vault: 'void',
+  titan_glacier:       'frost',
+  worldeater_forge:    'infernal',
+  plague_hive:         'plague',
+  cursed_throne:       'cursed',
+  starfall_pyramid:    'void'
+}
+
 // --- Loader + draw helpers --------------------------------------------------
 const Sprites = {
   _imgs: {},          // sheetName -> { img, loaded }  (tile sheets)
@@ -1025,6 +1155,51 @@ const Sprites = {
   drawBossProjectile(kind, cx, cy, angle, size, context) {
     if (!kind) return false
     return this._drawRotatedTile(projectileBossAssignments[kind], cx, cy, angle, size, context)
+  },
+
+  // --- Environment helpers --------------------------------------------------
+  // Resolve a world biome id / dungeon key -> env theme (data-driven maps above).
+  envThemeForBiome(biomeId) { return biomeEnvThemeMap[biomeId | 0] || 'neutral' },
+  envThemeForDungeon(key)   { return dungeonEnvThemeMap[key] || 'neutral' },
+  // Sparse-decor chance for a theme (0..1).
+  envDecorChance(theme) {
+    const v = envDecorAssignments[theme]
+    return (v != null ? v : envDecorAssignments._default) || 0
+  },
+
+  // Stable hash for deterministic per-tile variant/decor selection (no per-frame
+  // randomness → no flicker). Same (x,y,salt) always yields the same value.
+  envHash(x, y, salt) {
+    let h = ((x | 0) * 374761393 + (y | 0) * 668265263 + ((salt | 0) * 2147483647)) | 0
+    h = (h ^ (h >>> 13)) >>> 0
+    h = Math.imul(h, 1274126177) >>> 0
+    return h
+  },
+
+  // Resolve a theme+role to its candidate cell list (override beats base).
+  _envCells(theme, role) {
+    const ov = ENV_ROLE_OVERRIDES[theme]
+    return (ov && ov[role]) || ENV_ROLE_ASSIGNMENTS[role] || null
+  },
+
+  // Draw exactly ONE environment cell for (theme, role), CENTERED at (x,y), fit to
+  // a `size` box. `seed` (e.g. an envHash of tile coords) deterministically picks a
+  // variant from the role's cell list. Returns false if the theme/role is unmapped
+  // or the sheet isn't loaded → caller keeps its existing flat-color fill. Samples
+  // a single 8x8 cell only (no neighbour bleed, no animation). `opts` reserved.
+  drawEnvTile(theme, role, x, y, size, context, seed, opts) {
+    if (!this.enabled) return false
+    const sheet = ENV_SHEET_BY_THEME[theme]
+    if (!sheet) return false
+    const cells = this._envCells(theme, role)
+    if (!cells || !cells.length) return false
+    const cell = cells[(seed >>> 0) % cells.length]
+    return this._drawSheetTile(sheet, cell.col, cell.row, x, y, size, context)
+  },
+
+  // Convenience: draw a sparse smallDecor prop for a theme (visual only).
+  drawEnvDecor(theme, seed, x, y, size, context) {
+    return this.drawEnvTile(theme, 'smallDecor', x, y, size, context, seed)
   }
 }
 
@@ -1068,6 +1243,14 @@ if (typeof window !== 'undefined') {
   window.itemIconAssignments = itemIconAssignments
   window.projectileWeaponAssignments = projectileWeaponAssignments
   window.projectileBossAssignments = projectileBossAssignments
+  // Environment tile/decor system (biome + dungeon terrain sheets).
+  window.ENV_SHEET_BY_THEME = ENV_SHEET_BY_THEME
+  window.ENV_ROLE_ASSIGNMENTS = ENV_ROLE_ASSIGNMENTS
+  window.ENV_ROLE_OVERRIDES = ENV_ROLE_OVERRIDES
+  window.envHazardAssignments = envHazardAssignments
+  window.envDecorAssignments = envDecorAssignments
+  window.biomeEnvThemeMap = biomeEnvThemeMap
+  window.dungeonEnvThemeMap = dungeonEnvThemeMap
   window.PORTAL_THEME_SHEET = PORTAL_THEME_SHEET
   window.dungeonPortalTheme = dungeonPortalTheme
   // Explicit portal variant system (read by portal_debug.html + zones).

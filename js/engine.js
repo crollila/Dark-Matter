@@ -337,17 +337,48 @@ function renderTileMap(tileMap, labels) {
       }
       ctx.fillStyle = color
       ctx.fillRect(px, py, TILE, TILE)
-      if (t === T_LAVA) {
+      // --- Environment sprite layer (VISUAL ONLY) -------------------------------
+      // Paints floors/walls/hazards/liquids (+ sparse decor) from the themed env
+      // sheets over the flat fill above. If a sheet is unmapped/unloaded the draw
+      // returns false and the flat color stays — collision/generation/hazards are
+      // unaffected. Theme = per-tile world biome, or the map's envTheme elsewhere.
+      // Variant/decor selection is deterministic per tile (no flicker).
+      let drewEnv = false
+      if (typeof Sprites !== 'undefined' && Sprites.drawEnvTile &&
+          !isPortal && t !== T_STATION && t !== T_SPAWN) {
+        const biomeId = tileMap.biome ? tileMap.biome[ty * tileMap.w + tx] : 0
+        const theme = tileMap.biome ? Sprites.envThemeForBiome(biomeId)
+                                    : (tileMap.envTheme || 'neutral')
+        let role = null
+        if (t === T_FLOOR || t === T_GRASS) {
+          const hv = Sprites.envHash(tx, ty, 1)
+          role = (hv % 17 === 0) ? 'path' : (hv % 7 === 0) ? 'floorAlt' : 'floor'
+        } else if (t === T_WALL) {
+          role = (Sprites.envHash(tx, ty, 2) % 9 === 0) ? 'wallAlt' : 'wall'
+        } else if (t === T_LAVA || t === T_ICE) { role = 'hazard' }
+        else if (t === T_WATER) { role = 'water' }
+        if (role) {
+          drewEnv = Sprites.drawEnvTile(theme, role, px + TILE/2, py + TILE/2, TILE, ctx, Sprites.envHash(tx, ty, 3))
+          if (drewEnv && (t === T_FLOOR || t === T_GRASS)) {
+            const dch = Sprites.envDecorChance(theme)
+            if (dch > 0) {
+              const dh = Sprites.envHash(tx, ty, 9)
+              if ((dh % 1000) < dch * 1000) Sprites.drawEnvDecor(theme, dh, px + TILE/2, py + TILE/2, TILE, ctx)
+            }
+          }
+        }
+      }
+      if (t === T_LAVA && !drewEnv) {
         const pulse = 0.4 + Math.sin(Date.now()/260 + tx*0.7 + ty*0.5) * 0.25
         ctx.fillStyle = `rgba(255,110,40,${pulse})`
         ctx.fillRect(px+3, py+3, TILE-6, TILE-6)
       }
-      if (t === T_ICE) {
+      if (t === T_ICE && !drewEnv) {
         ctx.fillStyle = 'rgba(255,255,255,0.18)'
         ctx.fillRect(px+2, py+2, TILE-4, 4)
       }
 
-      if (t === T_WALL) {
+      if (t === T_WALL && !drewEnv) {
         ctx.fillStyle = '#333'
         ctx.fillRect(px, py, TILE, 3)
       }
