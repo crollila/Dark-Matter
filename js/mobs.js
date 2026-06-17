@@ -601,6 +601,33 @@ function updateMob(e, dt, char, tileMap) {
       return
     }
   }
+  // World-boss leash: a world boss never sleeps, but it must NOT chase the player
+  // across the map out of its spawned boss-biome patch. If dragged beyond its
+  // leash radius from spawn it stops fighting and walks back toward center
+  // (de-aggro), re-engaging once it's back well inside the zone (hysteresis).
+  // No teleport. Other bosses (dungeon) are unaffected (no e.worldBoss/leashRadius).
+  if (e.worldBoss && char && e.homeX != null && e.leashRadius) {
+    const hx = e.x - e.homeX, hy = e.y - e.homeY
+    const hd2 = hx * hx + hy * hy
+    const lr = e.leashRadius
+    if (e._returning) {
+      const inner = lr * 0.4
+      if (hd2 <= inner * inner) e._returning = false
+    } else if (hd2 > lr * lr) {
+      e._returning = true
+    }
+    if (e._returning) {
+      e.asleep = false
+      MobDebug.active++
+      const rx = e.homeX - e.x, ry = e.homeY - e.y
+      const rd = Math.sqrt(rx * rx + ry * ry)
+      if (rd > 6) { e.vx = rx / rd * e.spd; e.vy = ry / rd * e.spd }
+      else { e.vx = 0; e.vy = 0 }
+      moveWithCollision(e, e.vx, e.vy, dt, e.radius, tileMap)
+      if (e.hitFlash > 0) e.hitFlash -= dt
+      return
+    }
+  }
   e.asleep = false
   MobDebug.active++
   MOB_AI[e.ai](e, dt, char, tileMap)
@@ -622,9 +649,13 @@ function renderMob(e, offX, offY) {
   MobDebug.rendered++
   const flash = e.hitFlash > 0
 
-  // Shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.3)'
-  ctx.beginPath(); ctx.ellipse(sx, sy + e.radius - 2, e.radius * 0.8, e.radius * 0.3, 0, 0, Math.PI*2); ctx.fill()
+  // Shadow — drawn UPRIGHT (like the HP bar) so it stays a flat ellipse pinned
+  // under the mob on screen at any screen rotation, instead of tilting with the
+  // world. Position still tracks the mob via the sx,sy anchor.
+  drawUpright(sx, sy, () => {
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'
+    ctx.beginPath(); ctx.ellipse(0, e.radius - 2, e.radius * 0.8, e.radius * 0.3, 0, 0, Math.PI*2); ctx.fill()
+  })
 
   // Body
   ctx.shadowBlur = flash ? 16 : 6

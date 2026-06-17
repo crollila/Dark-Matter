@@ -546,8 +546,11 @@ const Minimap = (() => {
 
     // Player + facing
     const [px, py] = w2m(char.x, char.y)
-    const [wx, wy] = screenToWorld(mouse.x, mouse.y)
-    const ang = Math.atan2(wy - char.y, wx - char.x)
+    // Arrow shows the player's screen-up / world-facing direction for the current
+    // screen rotation (NOT mouse aim): at 0° it points north/up and swings as the
+    // view rotates with Q/E. world-up-on-screen = (-sin a, -cos a).
+    const a = (typeof screenRotationRad === 'function') ? screenRotationRad() : 0
+    const ang = Math.atan2(-Math.cos(a), -Math.sin(a))
     ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5
     ctx.beginPath(); ctx.moveTo(px, py)
     ctx.lineTo(px + Math.cos(ang) * 9, py + Math.sin(ang) * 9); ctx.stroke()
@@ -631,13 +634,17 @@ function renderPlayer(char, offX, offY) {
   // WITH the map/screen rotation (Q/E). This makes the body's rotation clearly
   // visible even for the rotationally-symmetric (circle) class shapes — the
   // body now visibly turns with the world. Distinct from the mouse aim dot.
-  ctx.fillStyle = '#0a0a12'
+  // Bright, prominent fill (was near-black/invisible) so the rotation reads on
+  // every class — including the symmetric circle classes whose round body shows
+  // no rotation on its own. This wedge is world-anchored (no counter-rotation),
+  // so it visibly swings WITH the map/screen as you rotate (Q/E).
+  ctx.fillStyle = '#ffffff'
   ctx.beginPath()
-  ctx.moveTo(sx, sy - PLAYER_RADIUS - 5)
-  ctx.lineTo(sx - 5, sy - PLAYER_RADIUS + 4)
-  ctx.lineTo(sx + 5, sy - PLAYER_RADIUS + 4)
+  ctx.moveTo(sx, sy - PLAYER_RADIUS - 9)
+  ctx.lineTo(sx - 6, sy - PLAYER_RADIUS + 3)
+  ctx.lineTo(sx + 6, sy - PLAYER_RADIUS + 3)
   ctx.closePath(); ctx.fill()
-  ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.2; ctx.stroke()
+  ctx.strokeStyle = cls.color; ctx.lineWidth = 2; ctx.stroke()
 
   // Direction dot (toward mouse)
   const [wx, wy] = screenToWorld(mouse.x, mouse.y)
