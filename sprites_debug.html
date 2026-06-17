@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Epsteins Island — Sprite Contact Sheet</title>
+  <style>
+    body { background:#15171c; color:#e6e6e6; font-family:monospace; margin:0; padding:18px; }
+    h1 { font-size:16px; margin:0 0 4px; }
+    p  { font-size:12px; color:#9aa; margin:0 0 14px; }
+    .grid { display:flex; flex-wrap:wrap; gap:10px; }
+    .cell { width:120px; background:#1f2229; border:1px solid #2c3038; border-radius:6px;
+            padding:8px; text-align:center; }
+    .cell canvas { background:#0c0d10 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="8" height="8" fill="%23222"/><rect x="8" y="8" width="8" height="8" fill="%23222"/></svg>');
+                   image-rendering:pixelated; border-radius:4px; }
+    .id  { font-size:11px; margin-top:6px; word-break:break-all; }
+    .meta{ font-size:10px; color:#8a8f99; margin-top:2px; }
+    .cat { display:inline-block; font-size:9px; padding:1px 5px; border-radius:3px;
+           margin-top:4px; background:#333; color:#ddd; }
+    .cat.mob{background:#2d5a3d}.cat.boss{background:#6a2d2d}.cat.item{background:#2d3f6a}
+    .cat.weapon{background:#6a5a2d}.cat.armor{background:#4a4a4a}.cat.projectile{background:#5a2d6a}
+    .cat.unknown{background:#333}
+    .note{font-size:11px;color:#c9a36a;margin:10px 0;}
+  </style>
+</head>
+<body>
+  <h1>Sprite Contact Sheet</h1>
+  <p>All registered sprites with IDs and metadata. Use these IDs in
+     <code>mobSpriteAssignments</code> / <code>itemSpriteAssignments</code> /
+     <code>projectileSpriteAssignments</code> in <code>js/sprites.js</code>.</p>
+  <div class="note" id="note"></div>
+  <div class="grid" id="grid"></div>
+
+  <script src="js/sprites.js"></script>
+  <script>
+    const PREVIEW = 48; // px box per sprite
+    const grid = document.getElementById('grid');
+    const note = document.getElementById('note');
+
+    function build() {
+      grid.innerHTML = '';
+      const ids = Object.keys(SPRITE_REGISTRY);
+      for (const id of ids) {
+        const e = SPRITE_REGISTRY[id];
+        const r = Sprites.rect(id) || { sw: 16, sh: 16 };
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+
+        const cv = document.createElement('canvas');
+        cv.width = PREVIEW; cv.height = PREVIEW;
+        const c = cv.getContext('2d');
+        c.imageSmoothingEnabled = false;
+        if (!Sprites.drawAt(id, 0, 0, PREVIEW, PREVIEW, c)) {
+          // Sheet not loaded — draw an ID-stamped placeholder so the page is useful
+          // even before art exists.
+          c.fillStyle = '#26303a'; c.fillRect(0, 0, PREVIEW, PREVIEW);
+          c.fillStyle = '#557'; c.font = '8px monospace'; c.textAlign = 'center';
+          c.fillText('no img', PREVIEW/2, PREVIEW/2 + 3);
+        }
+        cell.appendChild(cv);
+
+        const idEl = document.createElement('div');
+        idEl.className = 'id'; idEl.textContent = id;
+        cell.appendChild(idEl);
+
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        const sheet = SPRITE_SHEETS[e.sheet] || {};
+        const t = sheet.tile || 16;
+        const sx = e.x != null ? e.x : (e.col || 0) * t;
+        const sy = e.y != null ? e.y : (e.row || 0) * t;
+        meta.textContent = `${e.sheet} @ ${sx},${sy} · ${r.sw}x${r.sh}`;
+        cell.appendChild(meta);
+
+        const cat = document.createElement('div');
+        cat.className = 'cat ' + (e.category || 'unknown');
+        cat.textContent = e.category || 'unknown';
+        cell.appendChild(cat);
+
+        grid.appendChild(cell);
+      }
+      note.textContent = anyLoaded()
+        ? `Loaded ${ids.length} sprites.`
+        : `Sheet image(s) not found yet (placeholders shown). Drop a sheet at: ` +
+          Object.values(SPRITE_SHEETS).map(s => s.path).join(', ');
+    }
+    function anyLoaded() {
+      return Object.keys(SPRITE_REGISTRY).some(id => Sprites.ready(id));
+    }
+    build();
+    // Rebuild a couple times in case sheet images finish decoding after first paint.
+    let tries = 0;
+    const timer = setInterval(() => { build(); if (++tries > 6 || anyLoaded()) clearInterval(timer); }, 400);
+  </script>
+</body>
+</html>

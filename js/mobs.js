@@ -657,22 +657,27 @@ function renderMob(e, offX, offY) {
     ctx.beginPath(); ctx.ellipse(0, e.radius - 2, e.radius * 0.8, e.radius * 0.3, 0, 0, Math.PI*2); ctx.fill()
   })
 
-  // Body
-  ctx.shadowBlur = flash ? 16 : 6
-  ctx.shadowColor = flash ? '#fff' : e.color
-  ctx.fillStyle = flash ? '#ffffff' : e.color
-  if (e.isBoss) {
-    // Boss: diamond shape
-    ctx.beginPath()
-    ctx.moveTo(sx, sy - e.radius)
-    ctx.lineTo(sx + e.radius, sy)
-    ctx.lineTo(sx, sy + e.radius)
-    ctx.lineTo(sx - e.radius, sy)
-    ctx.closePath(); ctx.fill()
-  } else {
-    ctx.beginPath(); ctx.arc(sx, sy, e.radius, 0, Math.PI*2); ctx.fill()
+  // Body — try an assigned sprite first; fall back to geometric art if no
+  // sprite is assigned or its sheet image isn't loaded (foundation: art is opt-in).
+  let drewSprite = false
+  if (typeof Sprites !== 'undefined') drewSprite = Sprites.drawForMob(e, sx, sy)
+  if (!drewSprite) {
+    ctx.shadowBlur = flash ? 16 : 6
+    ctx.shadowColor = flash ? '#fff' : e.color
+    ctx.fillStyle = flash ? '#ffffff' : e.color
+    if (e.isBoss) {
+      // Boss: diamond shape
+      ctx.beginPath()
+      ctx.moveTo(sx, sy - e.radius)
+      ctx.lineTo(sx + e.radius, sy)
+      ctx.lineTo(sx, sy + e.radius)
+      ctx.lineTo(sx - e.radius, sy)
+      ctx.closePath(); ctx.fill()
+    } else {
+      ctx.beginPath(); ctx.arc(sx, sy, e.radius, 0, Math.PI*2); ctx.fill()
+    }
+    ctx.shadowBlur = 0
   }
-  ctx.shadowBlur = 0
 
   // HP bar (+ boss name) — anchored at the mob but drawn upright via drawUpright
   // so it stays readable and pinned above the enemy at any screen rotation

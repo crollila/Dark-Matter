@@ -106,6 +106,17 @@ Update this map after each patch so future prompts can point Claude to exact fil
 - Check script order when adding globals used by later files.
 - `js/wiki.js` loads after `stations.js`, before `chat.js` (needs items/mobs/map globals).
 
+### `js/sprites.js`
+- Sprite-sheet indexing FOUNDATION (opt-in; does not replace geometric art). Loaded right after `engine.js` in `index.html`.
+- `SPRITE_SHEETS` (one+ sheets under `assets/sprites/`, each `{path,tile}`), `SPRITE_REGISTRY` (per-ID `{sheet,col/row or x/y,w/h,category}`; category hint mob/boss/item/weapon/armor/projectile/unknown). Assignment maps `mobSpriteAssignments` (mob `e.key`→id), `itemSpriteAssignments`, `projectileSpriteAssignments`. 5 mob examples wired (slime/forest_sprite/goblin_scout/cave_bat/void_wisp).
+- `Sprites` global: lazy `sheet()` image load (missing file = silent no-op), `rect(id)`, `ready(id)`, `draw(id,cx,cy,size[,ctx])` centered (returns false→fallback), `drawAt(id,dx,dy,dw,dh[,ctx])`, `drawForMob(e,sx,sy)`. `renderMob` (mobs.js) calls `Sprites.drawForMob` and only draws the geometric body when it returns false.
+- No image ships yet, so everything currently falls back to geometry. Drop a sheet at `assets/sprites/sheet.png` (16px tiles) to activate. `sprites_debug.html` (standalone, loads `js/sprites.js`) = contact sheet of all IDs + metadata + placeholders.
+
+Use for:
+- assigning real sprites to mobs/bosses/items/projectiles
+- sprite registry / sheet coords / draw helpers
+- the dev contact sheet
+
 ### `js/biomes.js`
 - Data-driven world biome defs (`BIOMES`, `BIOME_BY_ID`): palette, mob pool, hazard tile, minimap tint, related dungeon-drop key.
 - `BOSS_BIOMES` (ids 7-12: Event Horizon/Glacial Throne/Ash Caldera/Rot Garden/Cursed Court/Starfall Dunes): floor/floorAlt/accent/mini/name. Deliberately NOT in `BIOMES` (so assignBiomes never world-scatters them) but folded into `BIOME_BY_ID` so in-world floor tint + minimap tint + biome-name label resolve them. Painted at runtime by world.js around a world boss.
