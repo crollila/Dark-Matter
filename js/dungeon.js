@@ -67,6 +67,7 @@ const DungeonZone = (() => {
     camFollow(char.x, char.y, dt)
 
     // Shoot
+    _pBulletKind = char.classKey   // visual-only: tag player shots for weapon projectile sprites
     const w = equippedWeapon(char)
     if (mouse.down && char.shootTimer <= 0 && !inputBlocked) {
       const [wx, wy] = screenToWorld(mouse.x, mouse.y)
@@ -311,6 +312,7 @@ const DungeonZone = (() => {
     const endX   = Math.min(map.w, startX + (canvas.width  / TILE | 0) + 2)
     const startY = Math.max(0, (cam.y - canvas.height/2) / TILE | 0)
     const endY   = Math.min(map.h, startY + (canvas.height / TILE | 0) + 2)
+    const portalDraws = []   // exit portals, rendered in a 2nd pass (entity treatment)
 
     for (let ty = startY; ty < endY; ty++) {
       for (let tx = startX; tx < endX; tx++) {
@@ -321,6 +323,9 @@ const DungeonZone = (() => {
         let color
         if (t === T_WALL) color = alt ? tc.wall || '#1a1a2a' : (tc.accent || '#1e1e2e')
         else if (t === T_FLOOR) color = alt ? tc.floor || '#2a2a3a' : '#252535'
+        // Portal tiles paint a floor base (no bright square backing); the entity
+        // treatment is deferred to a 2nd pass so its aura isn't clipped by neighbours.
+        else if (t === T_PORTAL_DUNGEON) { color = alt ? (tc.floor || '#2a2a3a') : '#252535'; portalDraws.push({ tx, ty, px, py }) }
         else color = TILE_COLORS[t] || '#111'
         ctx.fillStyle = color
         ctx.fillRect(px, py, TILE, TILE)
@@ -328,22 +333,34 @@ const DungeonZone = (() => {
           ctx.fillStyle = 'rgba(255,255,255,0.04)'
           ctx.fillRect(px, py, TILE, 3)
         }
-        if (t === T_PORTAL_DUNGEON) {
-          ctx.fillStyle = '#2a2a3a'; ctx.fillRect(px, py, TILE, TILE)
-          const pulse = 0.6 + Math.sin(Date.now()/500) * 0.4
-          ctx.fillStyle = `rgba(100,220,120,${pulse})`
-          ctx.fillRect(px+4, py+4, TILE-8, TILE-8)
-          // Upright-but-world-anchored (counter-rotates with screen rotation,
-          // like other rotated world labels) so "EXIT" stays readable.
-          drawUpright(px + TILE/2, py + TILE/2, () => {
-            ctx.fillStyle = '#fff'; ctx.font = '7px monospace'
-            ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-            ctx.fillText('EXIT', 0, 0)
-            ctx.textBaseline = 'alphabetic'
-          })
-          ctx.textAlign = 'left'
-        }
       }
+    }
+
+    // Exit portal entity pass (after all base tiles so the aura isn't clipped).
+    for (const p of portalDraws) {
+      // Exit portal as a living entity (bob/glow/pulse/shadow), counter-rotated via
+      // drawUpright so it stays screen-coherent under rotation. Falls back to the old
+      // pulsing rect if the portal sheet isn't loaded.
+      let drew = false
+      if (typeof Sprites !== 'undefined' && Sprites.drawPortalEntity) {
+        drawUpright(p.px + TILE/2, p.py + TILE/2, () => {
+          drew = Sprites.drawPortalEntity('magic', 0, 0, TILE + 8, ctx, p.tx * 7 + p.ty * 13)
+        })
+      }
+      if (!drew) {
+        const pulse = 0.6 + Math.sin(Date.now()/500) * 0.4
+        ctx.fillStyle = `rgba(100,220,120,${pulse})`
+        ctx.fillRect(p.px+4, p.py+4, TILE-8, TILE-8)
+      }
+      // "EXIT" label BELOW the portal, upright + world-anchored (counter-rotates
+      // with screen rotation like other rotated world labels).
+      drawUpright(p.px + TILE/2, p.py + TILE/2, () => {
+        ctx.fillStyle = '#fff'; ctx.font = '7px monospace'
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+        ctx.fillText('EXIT', 0, TILE/2 + 8)
+        ctx.textBaseline = 'alphabetic'
+      })
+      ctx.textAlign = 'left'
     }
   }
 

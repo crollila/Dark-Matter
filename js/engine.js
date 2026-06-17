@@ -176,12 +176,22 @@ function makePool(factory, size = 512) {
   }
 }
 
-const pBullets = makePool(() => ({ alive:false, x:0, y:0, vx:0, vy:0, dmg:0, range:0, dist:0 }))
-const eBullets = makePool(() => ({ alive:false, x:0, y:0, vx:0, vy:0, dmg:0 }))
+const pBullets = makePool(() => ({ alive:false, x:0, y:0, vx:0, vy:0, dmg:0, range:0, dist:0, kind:null }))
+const eBullets = makePool(() => ({ alive:false, x:0, y:0, vx:0, vy:0, dmg:0, kind:null }))
+
+// VISUAL-ONLY shot tags. The firer sets these just before spawning so renderBullets
+// can pick a projectile sprite without changing spawnBullet's signature or any
+// bullet gameplay (speed/damage/hitbox/lifetime/collision are untouched):
+//   _pBulletKind = player class (set in world.js/dungeon.js before shooting)
+//   _eBulletKind = mob/boss e.key (set in mobs.js before each mob's AI runs)
+var _pBulletKind = null
+var _eBulletKind = null
 
 function spawnBullet(pool, x, y, vx, vy, dmg, range = 300) {
   const b = pool.get()
   b.alive = true; b.x = x; b.y = y; b.vx = vx; b.vy = vy; b.dmg = dmg; b.range = range; b.dist = 0
+  // Stamp a visual-only kind based on which pool fired it (no gameplay effect).
+  b.kind = (pool === pBullets) ? _pBulletKind : (pool === eBullets) ? _eBulletKind : null
 }
 
 function updateBullets(pool, tileBlocked, dt) {
@@ -298,6 +308,7 @@ function renderTileMap(tileMap, labels) {
   // Circular cull: skip tiles whose center is beyond the radius (+1 tile pad so
   // edge tiles aren't clipped). Cheaper than the square span when zoomed out.
   const cullR2 = (maxR + TILE) * (maxR + TILE)
+  const portalDraws = []   // portal tiles, rendered in a 2nd pass (entity treatment)
 
   for (let ty = startY; ty < endY; ty++) {
     for (let tx = startX; tx < endX; tx++) {
@@ -307,10 +318,18 @@ function renderTileMap(tileMap, labels) {
       if (cdx*cdx + cdy*cdy > cullR2) continue
       const px = tx * TILE + offX, py = ty * TILE + offY
       const alt = (tx + ty) % 2 === 0
+      const isPortal = (t === T_PORTAL_WORLD || t === T_PORTAL_RAID || t === T_PORTAL_DUNGEON || t === T_PORTAL_VAULT)
       let color = TILE_COLORS[t] || '#111'
       if (alt && TILE_COLORS_ALT[t]) color = TILE_COLORS_ALT[t]
+      // Portals are world entities, not bright tiles — paint the ground beneath them
+      // as the surrounding terrain (grass on the world, floor elsewhere) so no
+      // saturated square backing shows behind the portal art.
+      if (isPortal) {
+        const base = tileMap.biome ? T_GRASS : T_FLOOR
+        color = (alt && TILE_COLORS_ALT[base]) ? TILE_COLORS_ALT[base] : TILE_COLORS[base]
+      }
       // Biome floor tint (world map only) — gives each region its own palette.
-      if ((t === T_FLOOR || t === T_GRASS) && tileMap.biome &&
+      if ((t === T_FLOOR || t === T_GRASS || isPortal) && tileMap.biome &&
           typeof BIOME_BY_ID !== 'undefined') {
         const b = tileMap.biome[ty * tileMap.w + tx]
         const bd = b && BIOME_BY_ID[b]
@@ -332,26 +351,10 @@ function renderTileMap(tileMap, labels) {
         ctx.fillStyle = '#333'
         ctx.fillRect(px, py, TILE, 3)
       }
-      // Portal tiles: try the animated portal sprite first (themed per tile, or
-      // per-dungeon via tileMap.portalThemeAt), else keep the pulsing-rect glow.
-      if (t === T_PORTAL_WORLD || t === T_PORTAL_RAID || t === T_PORTAL_DUNGEON || t === T_PORTAL_VAULT) {
-        const theme = (tileMap.portalThemeAt && tileMap.portalThemeAt(tx, ty)) || PORTAL_TILE_THEME[t]
-        const drew = typeof Sprites !== 'undefined' && Sprites.drawPortal &&
-          Sprites.drawPortal(theme, px + TILE/2, py + TILE/2, TILE + 6)
-        if (!drew) {
-          const speed = t === T_PORTAL_RAID ? 300 : t === T_PORTAL_VAULT ? 450 : t === T_PORTAL_DUNGEON ? 500 : 400
-          const phase = t === T_PORTAL_DUNGEON ? tx : 0
-          const pulse = 0.6 + Math.sin(Date.now()/speed + phase) * 0.4
-          ctx.fillStyle = t === T_PORTAL_WORLD ? `rgba(40,220,100,${pulse})`
-            : t === T_PORTAL_RAID ? `rgba(220,40,40,${pulse})`
-            : t === T_PORTAL_VAULT ? `rgba(160,90,240,${pulse})`
-            : `rgba(160,40,220,${pulse})`
-          ctx.fillRect(px+4, py+4, TILE-8, TILE-8)
-        }
-        if (labels && t !== T_PORTAL_DUNGEON) {
-          ctx.fillStyle = '#fff'; ctx.font = '7px monospace'; ctx.textAlign = 'center'
-          ctx.fillText(t === T_PORTAL_WORLD ? 'WORLD' : t === T_PORTAL_RAID ? 'RAID' : 'VAULT', px + TILE/2, py + TILE/2 + 3)
-        }
+      // Portal tiles: defer to a second pass (after all base tiles) so the soft
+      // aura isn't clipped by neighbouring tiles painted later in this loop.
+      if (isPortal) {
+        portalDraws.push({ t, tx, ty, px, py })
       }
       if (t === T_STATION) {
         ctx.fillStyle = '#8888cc'
@@ -374,6 +377,36 @@ function renderTileMap(tileMap, labels) {
   for (let ty = startY; ty <= endY; ty++) {
     ctx.beginPath(); ctx.moveTo(startX*TILE+offX, ty*TILE+offY); ctx.lineTo(endX*TILE+offX, ty*TILE+offY); ctx.stroke()
   }
+
+  // --- Portal entity pass (after all base tiles + grid so the aura isn't clipped).
+  // Each portal draws as a living world object (bob/glow/pulse/shadow) via
+  // drawPortalEntity, counter-rotated through drawUpright so glow + shadow + art stay
+  // screen-coherent under rotation (like loot bags). Falls back to the pulsing-rect
+  // glow if the portal sheet isn't loaded.
+  for (const p of portalDraws) {
+    const theme = (tileMap.portalThemeAt && tileMap.portalThemeAt(p.tx, p.ty)) || PORTAL_TILE_THEME[p.t]
+    let drew = false
+    if (typeof Sprites !== 'undefined' && Sprites.drawPortalEntity) {
+      drawUpright(p.px + TILE/2, p.py + TILE/2, () => {
+        drew = Sprites.drawPortalEntity(theme, 0, 0, TILE + 8, ctx, p.tx * 7 + p.ty * 13)
+      })
+    }
+    if (!drew) {
+      const speed = p.t === T_PORTAL_RAID ? 300 : p.t === T_PORTAL_VAULT ? 450 : p.t === T_PORTAL_DUNGEON ? 500 : 400
+      const phase = p.t === T_PORTAL_DUNGEON ? p.tx : 0
+      const pulse = 0.6 + Math.sin(Date.now()/speed + phase) * 0.4
+      ctx.fillStyle = p.t === T_PORTAL_WORLD ? `rgba(40,220,100,${pulse})`
+        : p.t === T_PORTAL_RAID ? `rgba(220,40,40,${pulse})`
+        : p.t === T_PORTAL_VAULT ? `rgba(160,90,240,${pulse})`
+        : `rgba(160,40,220,${pulse})`
+      ctx.fillRect(p.px+4, p.py+4, TILE-8, TILE-8)
+    }
+    if (labels && p.t !== T_PORTAL_DUNGEON) {
+      ctx.fillStyle = '#fff'; ctx.font = '7px monospace'; ctx.textAlign = 'center'
+      ctx.fillText(p.t === T_PORTAL_WORLD ? 'WORLD' : p.t === T_PORTAL_RAID ? 'RAID' : 'VAULT', p.px + TILE/2, p.py + TILE/2 + 3)
+      ctx.textAlign = 'left'
+    }
+  }
 }
 
 // --- RENDER BULLET ---
@@ -381,19 +414,31 @@ const BULLET_RADIUS = 4
 const PLAYER_RADIUS = 10
 const ENEMY_RADIUS  = 14
 
+// Projectile sprite draw sizes (px, on-screen). Visual only — bullet hitboxes
+// stay BULLET_RADIUS. Sprites are drawn centered on the bullet position and
+// rotated to travel direction; if no sprite is mapped/loaded we fall back to the
+// original glowing circle (unchanged look/colors).
+const PROJ_SPRITE_SIZE_P = 22   // player weapon shots
+const PROJ_SPRITE_SIZE_E = 26   // boss/enemy shots
+
 function renderBullets() {
-  ctx.shadowBlur = 10
   const offX = (canvas.width/2 - cam.x) | 0
   const offY = (canvas.height/2 - cam.y) | 0
+  const S = (typeof Sprites !== 'undefined') ? Sprites : null
   eBullets.each(b => {
-    ctx.shadowColor = '#ff6b35'; ctx.fillStyle = '#ff6b35'
-    ctx.beginPath(); ctx.arc(b.x+offX, b.y+offY, BULLET_RADIUS, 0, Math.PI*2); ctx.fill()
+    const sx = b.x+offX, sy = b.y+offY
+    if (S && S.drawBossProjectile(b.kind, sx, sy, Math.atan2(b.vy, b.vx), PROJ_SPRITE_SIZE_E)) return
+    ctx.shadowBlur = 10; ctx.shadowColor = '#ff6b35'; ctx.fillStyle = '#ff6b35'
+    ctx.beginPath(); ctx.arc(sx, sy, BULLET_RADIUS, 0, Math.PI*2); ctx.fill()
+    ctx.shadowBlur = 0
   })
   pBullets.each(b => {
-    ctx.shadowColor = '#48cae4'; ctx.fillStyle = '#48cae4'
-    ctx.beginPath(); ctx.arc(b.x+offX, b.y+offY, BULLET_RADIUS-1, 0, Math.PI*2); ctx.fill()
+    const sx = b.x+offX, sy = b.y+offY
+    if (S && S.drawWeaponProjectile(b.kind, sx, sy, Math.atan2(b.vy, b.vx), PROJ_SPRITE_SIZE_P)) return
+    ctx.shadowBlur = 10; ctx.shadowColor = '#48cae4'; ctx.fillStyle = '#48cae4'
+    ctx.beginPath(); ctx.arc(sx, sy, BULLET_RADIUS-1, 0, Math.PI*2); ctx.fill()
+    ctx.shadowBlur = 0
   })
-  ctx.shadowBlur = 0
 }
 
 // --- FLOATING TEXT ---

@@ -70,7 +70,33 @@ const SPRITE_SHEETS = {
   // fixed px), so a re-export at another resolution won't break the layout.
   bosses_core:  { path: 'assets/sprites/bosses_sheet_01_core.png',               cols: 9, rows: 6 },
   bosses_void:  { path: 'assets/sprites/bosses_sheet_02_void_plague_astral.png', cols: 9, rows: 6 },
-  bosses_world: { path: 'assets/sprites/bosses_sheet_03_world_bosses.png',       cols: 9, rows: 6 }
+  bosses_world: { path: 'assets/sprites/bosses_sheet_03_world_bosses.png',       cols: 9, rows: 6 },
+
+  // --- Gear ICON sheets (static item icons for inventory/equip/loot/wiki) ------
+  // Two 1254x1254 sheets. Despite the "32" naming convention used elsewhere, the
+  // SOURCE is NOT a clean 32px grid (1254/32 = 39.2, non-integer); it IS a clean
+  // 8x8 grid (1254/8 = 156.75 per cell, same convention as the mob/portal atlases).
+  // So `cols:8, rows:8` and cells are addressed by grid FRACTION of the loaded
+  // image's natural size (via _drawSheetTile) — a re-export at another resolution
+  // won't break layout. Exactly ONE 8x8 cell is sampled per icon (no multi-cell
+  // blocks). Slot/item -> cell mapping lives in the assignment tables below
+  // (itemSlotIconAssignments + itemIconAssignments) — edit one line to remap.
+  //   gear_armor_icons                    -> helmet/chest/hands/pants/boots
+  //   gear_accessory_ability_relic_icons  -> ring/amulet/ability/relic/accessory
+  gear_armor_icons:                   { path: 'assets/sprites/gear_armor_icons.png',                   cols: 8, rows: 8 },
+  gear_accessory_ability_relic_icons: { path: 'assets/sprites/gear_accessory_ability_relic_icons.png', cols: 8, rows: 8 },
+
+  // --- Projectile sheets (player + boss/enemy shot sprites) --------------------
+  // Two 1254x1254 sheets, same clean 8x8 grid (156.75px cells, addressed by grid
+  // fraction). The "32" naming = intended on-screen size, not the source cell px.
+  // Exactly ONE cell is sampled per projectile (no multi-cell sampling); optional
+  // animation steps to ADJACENT cells on the same row (see _drawRotatedTile +
+  // the `frames`/`fps` fields). Shot -> cell mapping lives in the projectile
+  // assignment tables below (projectileWeaponAssignments / projectileBossAssignments).
+  //   projectiles_weapons -> player weapon shots (keyed by class/weapon family)
+  //   projectiles_bosses  -> boss/enemy shots (keyed by boss/mob key)
+  projectiles_weapons: { path: 'assets/sprites/projectiles_weapons_32.png', cols: 8, rows: 8 },
+  projectiles_bosses:  { path: 'assets/sprites/projectiles_bosses_32.png',  cols: 8, rows: 8 }
 }
 
 // --- Portal sprite system (SEPARATE from mob + item sprites) -----------------
@@ -502,8 +528,120 @@ const itemSpriteAssignments = {
   vital_amulet:   'armor_3_7',  // blue gem
   arcane_focus:   'weapons_7_7' // blue crystal focus
 }
-// projectile kind/source -> sprite ID (none assigned yet; foundation only)
+// projectile kind/source -> sprite ID (legacy/back-compat; superseded by the
+// projectileWeaponAssignments / projectileBossAssignments tables below).
 const projectileSpriteAssignments = {}
+
+// === GEAR ICON SYSTEM (new 8x8 icon sheets) =================================
+// Item icons are chosen EXPLICITLY (never auto-picked) in two tables:
+//   1) itemSlotIconAssignments  — by item SLOT (the default, covers every item
+//      of that slot from the gear icon sheets).
+//   2) itemIconAssignments      — by item baseKey (per-item OVERRIDE; wins over
+//      the slot default). Add a line here only when one item needs a unique icon.
+// Each value is { sheet, col, row } OR { sheet, index } (index = row-major over
+// the sheet's cols). Weapons are intentionally NOT mapped here so they keep their
+// existing weapon art / placeholder (see itemSpriteAssignments). Anything
+// unmapped falls back to the geometric rarity/letter icon.
+//
+// NOTE: the exact cell for each slot is a FIRST-PASS guess (the sheets are 8x8 =
+// 64 icons; layout was assumed one row-start per piece type). Retune any line by
+// changing its col/row — nothing else depends on these coordinates.
+const itemSlotIconAssignments = {
+  // gear_armor_icons.png — armor pieces
+  helmet: { sheet: 'gear_armor_icons', col: 0, row: 0 },
+  chest:  { sheet: 'gear_armor_icons', col: 0, row: 1 },
+  hands:  { sheet: 'gear_armor_icons', col: 0, row: 2 },
+  pants:  { sheet: 'gear_armor_icons', col: 0, row: 3 },
+  boots:  { sheet: 'gear_armor_icons', col: 0, row: 4 },
+  // gear_accessory_ability_relic_icons.png — accessories / ability / relic
+  ring:    { sheet: 'gear_accessory_ability_relic_icons', col: 0, row: 0 },
+  amulet:  { sheet: 'gear_accessory_ability_relic_icons', col: 0, row: 1 },
+  ability: { sheet: 'gear_accessory_ability_relic_icons', col: 0, row: 2 },
+  relic:   { sheet: 'gear_accessory_ability_relic_icons', col: 0, row: 3 },
+  accessory:{ sheet: 'gear_accessory_ability_relic_icons', col: 0, row: 4 }
+}
+
+// Per-item icon overrides (baseKey -> { sheet, col, row } | { sheet, index }).
+// Empty by default — every item uses its slot icon. Add a line to give one
+// specific item a distinct icon, e.g.  vital_amulet: { sheet:'gear_accessory_ability_relic_icons', col:3, row:1 }
+const itemIconAssignments = {}
+
+// === PROJECTILE SPRITE SYSTEM (new 8x8 projectile sheets) ===================
+// Shot visuals are chosen EXPLICITLY here; rendering is VISUAL-ONLY (never
+// changes bullet speed/damage/hitbox/lifetime/collision — see engine.js
+// renderBullets). Each value is { sheet, col, row } OR { sheet, index }, plus an
+// optional { frames, fps } for a tiny same-row animation (default = one stable
+// cell) and an optional { angleOffset } radians if the art's "forward" isn't +x.
+
+// Player weapon shots keyed by character class (weapons are class-locked, so
+// class == weapon family). Bullets carry the firer's class as a visual `kind`.
+// Unmapped -> the existing cyan circle. First-pass cells; retune freely.
+const projectileWeaponAssignments = {
+  warrior: { sheet: 'projectiles_weapons', col: 0, row: 0 },
+  rogue:   { sheet: 'projectiles_weapons', col: 1, row: 0 },
+  archer:  { sheet: 'projectiles_weapons', col: 2, row: 0 },
+  mage:    { sheet: 'projectiles_weapons', col: 3, row: 0 },
+  priest:  { sheet: 'projectiles_weapons', col: 4, row: 0 }
+}
+
+// Boss/enemy shots keyed by mob/boss key (e.key). Bullets carry the firer's key
+// as a visual `kind`. Bosses get distinct cells (rows 0-1); regular mobs share a
+// per-biome cell (rows 2+). Unmapped -> the existing orange circle. First-pass
+// cells; retune freely (change one { sheet,col,row } line per shooter).
+const projectileBossAssignments = {
+  // --- dungeon + world bosses (one cell each) ---
+  goblin_warchief:     { sheet: 'projectiles_bosses', col: 0, row: 0 },
+  mycelian_king:       { sheet: 'projectiles_bosses', col: 1, row: 0 },
+  void_harbinger:      { sheet: 'projectiles_bosses', col: 2, row: 0 },
+  singularity_tyrant:  { sheet: 'projectiles_bosses', col: 3, row: 0 },
+  frost_monarch:       { sheet: 'projectiles_bosses', col: 4, row: 0 },
+  infernal_lord:       { sheet: 'projectiles_bosses', col: 5, row: 0 },
+  plague_mother:       { sheet: 'projectiles_bosses', col: 6, row: 0 },
+  fallen_monarch:      { sheet: 'projectiles_bosses', col: 7, row: 0 },
+  astral_pharaoh:      { sheet: 'projectiles_bosses', col: 0, row: 1 },
+  wb_event_horizon:    { sheet: 'projectiles_bosses', col: 1, row: 1 },
+  wb_frost_titan:      { sheet: 'projectiles_bosses', col: 2, row: 1 },
+  wb_ashen_worldeater: { sheet: 'projectiles_bosses', col: 3, row: 1 },
+  wb_plague_matriarch: { sheet: 'projectiles_bosses', col: 4, row: 1 },
+  wb_hollow_king:      { sheet: 'projectiles_bosses', col: 5, row: 1 },
+  wb_astral_pharaoh:   { sheet: 'projectiles_bosses', col: 6, row: 1 },
+  // --- regular mobs by biome theme (share a cell; remap individually if wanted) ---
+  // forest / goblin / fungal
+  forest_sprite:  { sheet: 'projectiles_bosses', col: 0, row: 2 },
+  goblin_scout:   { sheet: 'projectiles_bosses', col: 1, row: 2 },
+  goblin_brute:   { sheet: 'projectiles_bosses', col: 1, row: 2 },
+  goblin_shaman:  { sheet: 'projectiles_bosses', col: 1, row: 2 },
+  cave_bat:       { sheet: 'projectiles_bosses', col: 2, row: 2 },
+  fungal_shroom:  { sheet: 'projectiles_bosses', col: 2, row: 2 },
+  mycelian_drone: { sheet: 'projectiles_bosses', col: 2, row: 2 },
+  // void / dark matter
+  void_wisp:     { sheet: 'projectiles_bosses', col: 3, row: 2 },
+  rift_stalker:  { sheet: 'projectiles_bosses', col: 3, row: 2 },
+  null_orbiter:  { sheet: 'projectiles_bosses', col: 3, row: 2 },
+  matter_wraith: { sheet: 'projectiles_bosses', col: 3, row: 2 },
+  gravity_maw:   { sheet: 'projectiles_bosses', col: 3, row: 2 },
+  null_apostle:  { sheet: 'projectiles_bosses', col: 3, row: 2 },
+  // frost
+  frost_skater:    { sheet: 'projectiles_bosses', col: 4, row: 2 },
+  icebound_archer: { sheet: 'projectiles_bosses', col: 4, row: 2 },
+  snow_golem:      { sheet: 'projectiles_bosses', col: 4, row: 2 },
+  // infernal
+  ember_imp:    { sheet: 'projectiles_bosses', col: 5, row: 2 },
+  chainscourge: { sheet: 'projectiles_bosses', col: 5, row: 2 },
+  lava_brute:   { sheet: 'projectiles_bosses', col: 5, row: 2 },
+  // plague
+  spore_crawler:   { sheet: 'projectiles_bosses', col: 6, row: 2 },
+  venom_cap:       { sheet: 'projectiles_bosses', col: 6, row: 2 },
+  mycelium_horror: { sheet: 'projectiles_bosses', col: 6, row: 2 },
+  // cursed
+  fallen_squire: { sheet: 'projectiles_bosses', col: 7, row: 2 },
+  cursed_archer: { sheet: 'projectiles_bosses', col: 7, row: 2 },
+  grave_priest:  { sheet: 'projectiles_bosses', col: 7, row: 2 },
+  // astral
+  star_scarab:    { sheet: 'projectiles_bosses', col: 0, row: 3 },
+  mirage_stalker: { sheet: 'projectiles_bosses', col: 0, row: 3 },
+  sunseer:        { sheet: 'projectiles_bosses', col: 0, row: 3 }
+}
 
 // --- Loader + draw helpers --------------------------------------------------
 const Sprites = {
@@ -802,16 +940,99 @@ const Sprites = {
     return this.drawMobSheet(e, sx, sy, (e.radius || 12) * 2.6)
   },
 
-  // Convenience hook for item rendering (inventory/equipment/loot): draws the
-  // assigned sprite centered at (cx,cy) sized `size` px. Returns true if drawn,
-  // false to fall back to the existing letter/dot icon.
-  drawForItem(it, cx, cy, size) {
-    if (!it || !it.baseKey) return false
-    const id = itemSpriteAssignments[it.baseKey]
-    if (!id) return false
-    return this.draw(id, cx, cy, size)
+  // Normalize an assignment ({sheet,col,row} | {sheet,index}) to {col,row}.
+  _iconCell(a) {
+    if (!a) return null
+    if (a.col != null) return { col: a.col | 0, row: a.row | 0 }
+    const def = SPRITE_SHEETS[a.sheet]
+    const cols = (def && def.cols) || 8
+    const i = a.index | 0
+    return { col: i % cols, row: (i / cols) | 0 }
+  },
+
+  // Draw a single icon for an item (object with .baseKey/.slot) OR a baseKey
+  // string, centered at (cx,cy) fit to `size`. Resolution order (all explicit,
+  // data-driven): per-item override -> slot icon (new gear sheets) -> legacy
+  // registry sprite (keeps weapon art working). Returns false -> caller draws its
+  // geometric letter/dot fallback. Exactly one 8x8 cell is sampled (no slideshow).
+  drawItemIcon(itemOrKey, cx, cy, size, context) {
+    if (!this.enabled) return false
+    let baseKey, slot
+    if (typeof itemOrKey === 'string') { baseKey = itemOrKey }
+    else if (itemOrKey) { baseKey = itemOrKey.baseKey; slot = itemOrKey.slot }
+    if (!baseKey) return false
+    const bases = (typeof ITEM_BASES !== 'undefined') ? ITEM_BASES
+                : (typeof window !== 'undefined' ? window.ITEM_BASES : null)
+    const base = bases && bases[baseKey]
+    if (!slot && base) slot = base.slot
+    // 1) per-item override
+    let a = itemIconAssignments[baseKey]
+    let cell = a && a.sheet && this._iconCell(a)
+    if (cell) return this._drawSheetTile(a.sheet, cell.col, cell.row, cx, cy, size, context)
+    // 2) slot icon from the new gear sheets
+    a = slot && itemSlotIconAssignments[slot]
+    cell = a && a.sheet && this._iconCell(a)
+    if (cell) return this._drawSheetTile(a.sheet, cell.col, cell.row, cx, cy, size, context)
+    // 3) legacy registry sprite (weapons / starter gear keep their existing art)
+    const id = itemSpriteAssignments[baseKey]
+    if (id) return this.draw(id, cx, cy, size, context)
+    return false
+  },
+
+  // Convenience hook for item rendering (inventory/equipment/loot/wiki): draws the
+  // assigned icon centered at (cx,cy) sized `size` px. Returns true if drawn,
+  // false to fall back to the existing letter/dot icon. Thin wrapper over
+  // drawItemIcon so existing callers keep working.
+  drawForItem(it, cx, cy, size, context) {
+    return this.drawItemIcon(it, cx, cy, size, context)
+  },
+
+  // Draw an assignment ({sheet,col,row}|{sheet,index} + optional frames/fps/
+  // angleOffset) centered at (cx,cy), fit to `size`, ROTATED so the art points
+  // along `angle` (the bullet's world-space travel angle). Because callers draw
+  // inside the world transform, the single rotation here + the world transform =
+  // correct on-screen facing at any screen rotation (NO double-rotation). Returns
+  // true if drawn, false -> caller's circle fallback. Optional same-row animation
+  // steps to ADJACENT cells (never neighbouring rows / multi-cell blocks).
+  _drawRotatedTile(a, cx, cy, angle, size, context) {
+    if (!this.enabled || !a || !a.sheet) return false
+    const c = context || (typeof ctx !== 'undefined' ? ctx : null)
+    if (!c) return false
+    const cell = this._iconCell(a)
+    if (!cell) return false
+    let col = cell.col
+    if (a.frames && a.frames > 1) {
+      const fps = a.fps || 8
+      col += Math.floor(Date.now() / (1000 / fps)) % a.frames
+    }
+    c.save()
+    c.translate(cx, cy)
+    if (angle != null) c.rotate(angle + (a.angleOffset || PROJECTILE_ART_ANGLE || 0))
+    const drew = this._drawSheetTile(a.sheet, col, cell.row, 0, 0, size, c)
+    c.restore()
+    return drew
+  },
+
+  // Player weapon shot sprite for visual `kind` (the firer's class). Returns
+  // false (unmapped/unloaded) so renderBullets keeps the circle. Visual only.
+  drawWeaponProjectile(kind, cx, cy, angle, size, context) {
+    if (!kind) return false
+    return this._drawRotatedTile(projectileWeaponAssignments[kind], cx, cy, angle, size, context)
+  },
+
+  // Boss/enemy shot sprite for visual `kind` (the firer's mob/boss key). Returns
+  // false (unmapped/unloaded) so renderBullets keeps the circle. Visual only.
+  drawBossProjectile(kind, cx, cy, angle, size, context) {
+    if (!kind) return false
+    return this._drawRotatedTile(projectileBossAssignments[kind], cx, cy, angle, size, context)
   }
 }
+
+// Global angle offset (radians) applied to projectile sprites if the source art's
+// "forward" direction isn't +x (e.g. set to Math.PI/2 if the art points UP). Kept
+// here so projectile facing is tuned in ONE place. Per-assignment `angleOffset`
+// overrides this for a single shot.
+const PROJECTILE_ART_ANGLE = 0
 
 // Debug helper (console-safe, no UI output): list every boss key -> sprite ID,
 // its backing file, and whether the image is currently decoded/ready. Run
@@ -842,6 +1063,11 @@ if (typeof window !== 'undefined') {
   window.bossSheetAssignments = bossSheetAssignments
   window.itemSpriteAssignments = itemSpriteAssignments
   window.projectileSpriteAssignments = projectileSpriteAssignments
+  // Gear icon + projectile sprite systems (new 8x8 sheets).
+  window.itemSlotIconAssignments = itemSlotIconAssignments
+  window.itemIconAssignments = itemIconAssignments
+  window.projectileWeaponAssignments = projectileWeaponAssignments
+  window.projectileBossAssignments = projectileBossAssignments
   window.PORTAL_THEME_SHEET = PORTAL_THEME_SHEET
   window.dungeonPortalTheme = dungeonPortalTheme
   // Explicit portal variant system (read by portal_debug.html + zones).

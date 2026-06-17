@@ -198,6 +198,7 @@ const WorldZone = (() => {
     camFollow(char.x, char.y, dt)
 
     // Shoot
+    _pBulletKind = char.classKey   // visual-only: tag player shots for weapon projectile sprites
     const w = equippedWeapon(char)
     if (mouse.down && char.shootTimer <= 0 && !inputBlocked) {
       const [wx, wy] = screenToWorld(mouse.x, mouse.y)
@@ -585,13 +586,8 @@ const WorldZone = (() => {
     const offX = (canvas.width/2 - cam.x) | 0
     const offY = (canvas.height/2 - cam.y) | 0
 
-    // Pending portals glow
-    for (const p of pendingPortals) {
-      const sx = p.x + offX, sy = p.y + offY
-      const pulse = 0.5 + Math.sin(Date.now()/300) * 0.3
-      ctx.fillStyle = `rgba(160,40,220,${pulse})`
-      ctx.beginPath(); ctx.arc(sx, sy, 14, 0, Math.PI*2); ctx.fill()
-    }
+    // (Dropped portals now render with the full portal-entity treatment via the
+    // portal tile in renderTileMap — no separate flat glow circle needed.)
 
     // Portal name + stars floating above each (fixed + pending) dungeon portal
     drawPortalLabels(offX, offY)

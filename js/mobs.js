@@ -630,6 +630,7 @@ function updateMob(e, dt, char, tileMap) {
   }
   e.asleep = false
   MobDebug.active++
+  _eBulletKind = e.key   // visual-only: tag this mob's shots for projectile sprites
   MOB_AI[e.ai](e, dt, char, tileMap)
   moveWithCollision(e, e.vx, e.vy, dt, e.radius, tileMap)
   if (e.hitFlash > 0) e.hitFlash -= dt
