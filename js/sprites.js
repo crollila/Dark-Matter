@@ -33,7 +33,71 @@ const SPRITE_SHEETS = {
   mobs_infernal: { path: 'assets/sprites/mobs_infernal.png', cols: 8, rows: 8 },
   mobs_plague:   { path: 'assets/sprites/mobs_plague.png',   cols: 8, rows: 8 },
   mobs_astral:   { path: 'assets/sprites/mobs_astral.png',   cols: 8, rows: 8 },
-  mobs_cursed:   { path: 'assets/sprites/mobs_cursed.png',   cols: 8, rows: 8 }
+  mobs_cursed:   { path: 'assets/sprites/mobs_cursed.png',   cols: 8, rows: 8 },
+
+  // --- Portal sheets (animated 3-frame portal atlases) ----------------------
+  // 32x32-style portals; frames run left-to-right in groups of 3 (A calm/idle,
+  // B active swirl, C bright/peak). Same 1254x1254 non-power-of-two format as the
+  // mob sheets, so we address by an 8x8 grid fraction of the natural size. We use
+  // VARIANT 0 (row 0, cols 0,1,2) as the first-pass animation per sheet; a sheet
+  // may hold more variants in later columns/rows — remap via PORTAL_VARIANT below.
+  portal_void_arcane: { path: 'assets/sprites/portal_sheet_01_void_arcane.png',       cols: 8, rows: 8 },
+  portal_blue_green:  { path: 'assets/sprites/portal_sheet_02_blue_green.png',        cols: 8, rows: 8 },
+  portal_ice:         { path: 'assets/sprites/portal_sheet_03_ice.png',               cols: 8, rows: 8 },
+  portal_void_dark:   { path: 'assets/sprites/portal_sheet_04_void_dark.png',         cols: 8, rows: 8 },
+  portal_forest:      { path: 'assets/sprites/portal_sheet_05_forest.png',            cols: 8, rows: 8 },
+  portal_infernal:    { path: 'assets/sprites/portal_sheet_06_infernal.png',          cols: 8, rows: 8 },
+  portal_plague:      { path: 'assets/sprites/portal_sheet_07_plague_corruption.png', cols: 8, rows: 8 },
+  portal_astral:      { path: 'assets/sprites/portal_sheet_08_astral.png',            cols: 8, rows: 8 },
+  portal_fungal:      { path: 'assets/sprites/portal_sheet_09_mushroom_fungal.png',   cols: 8, rows: 8 },
+  portal_cursed:      { path: 'assets/sprites/portal_sheet_10_gothic_cursed.png',     cols: 8, rows: 8 }
+}
+
+// --- Portal sprite system (SEPARATE from mob + item sprites) -----------------
+// Portals are themed by a short THEME string, not by entity key. Each theme maps
+// to one portal sheet (above). Render via Sprites.drawPortal(theme, ...). Unknown
+// themes fall back to the generic blue-green sheet; if the image isn't loaded the
+// caller keeps its existing pulsing-rect fallback.
+const PORTAL_THEME_SHEET = {
+  forest:   'portal_forest',       // forest / nature / grove / low-tier natural
+  fungal:   'portal_fungal',       // fungal / mushroom
+  infernal: 'portal_infernal',     // infernal / fire / ash
+  plague:   'portal_plague',       // plague / corruption / rot
+  astral:   'portal_astral',       // astral / celestial
+  arcane:   'portal_void_arcane',  // arcane / singularity / dark-matter (purple)
+  void:     'portal_void_dark',    // void / dark
+  frost:    'portal_ice',          // frost / ice
+  cursed:   'portal_cursed',       // cursed / hollow / fallen / court (gothic)
+  magic:    'portal_blue_green'    // generic magic / fallback
+}
+
+// Per-theme animation variant (which group of 3 frames to play on its sheet).
+// All default to variant 0 (row 0, cols 0,1,2) for now; bump a value to pick a
+// different variant once we know what each sheet's later columns/rows contain.
+const PORTAL_VARIANT = {}
+
+// Dungeon key (DUNGEONS, mobs.js) -> portal theme. Zones that know which dungeon a
+// portal leads to resolve through this; tiles with no known dungeon use a default
+// theme by portal tile type (engine.js). Easy to retune per dungeon.
+const dungeonPortalTheme = {
+  // OG dungeons
+  goblin_warren:      'forest',    // low-tier natural warren
+  fungal_cavern:      'fungal',
+  void_rift:          'void',
+  // biome dungeons
+  dark_matter_core:   'arcane',    // singularity / dark matter
+  frozen_catacombs:   'frost',
+  infernal_pit:       'infernal',
+  plague_grotto:      'plague',
+  fallen_keep:        'cursed',
+  astral_tomb:        'astral',
+  // world-boss dungeons
+  event_horizon_vault:'arcane',    // singularity
+  titan_glacier:      'frost',
+  worldeater_forge:   'infernal',
+  plague_hive:        'plague',
+  cursed_throne:      'cursed',
+  starfall_pyramid:   'astral'
 }
 
 // --- Registry ---------------------------------------------------------------
@@ -424,6 +488,19 @@ const Sprites = {
     return this._drawSheetTile(a.sheet, col + (useB ? 1 : 0), row, cx, cy, size)
   },
 
+  // Draw an animated portal of `theme` centered at (cx,cy), fit to a `size` box.
+  // Loops the 3 frames (calm -> swirl -> peak) on a slow timer. Returns true if it
+  // drew, false (unknown/unloaded) so the caller keeps its pulsing-rect fallback.
+  // This is the SEPARATE portal path — it never touches mob/item sprite maps.
+  drawPortal(theme, cx, cy, size, context) {
+    const sheet = PORTAL_THEME_SHEET[theme] || PORTAL_THEME_SHEET.magic
+    if (!sheet) return false
+    const variant = PORTAL_VARIANT[theme] || 0
+    const base = variant * 3                         // first frame col of this variant
+    const fi = Math.floor(Date.now() / 160) % 3      // A->B->C loop, ~6.25 fps
+    return this._drawSheetTile(sheet, base + fi, 0, cx, cy, size, context)
+  },
+
   // Convenience hook for renderMob: returns true if a mob/boss sprite was drawn.
   // Bosses (bossSpriteAssignments) take priority; creature art has wide wings/
   // padding so it's drawn a touch larger than the geometric radius. Regular +
@@ -477,4 +554,6 @@ if (typeof window !== 'undefined') {
   window.bossSpriteAssignments = bossSpriteAssignments
   window.itemSpriteAssignments = itemSpriteAssignments
   window.projectileSpriteAssignments = projectileSpriteAssignments
+  window.PORTAL_THEME_SHEET = PORTAL_THEME_SHEET
+  window.dungeonPortalTheme = dungeonPortalTheme
 }

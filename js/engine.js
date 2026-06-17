@@ -108,6 +108,16 @@ const T_PORTAL_VAULT = 10  // purple portal in nexus → vault room
 const T_ICE  = 11  // snow biome — slippery floor (no block, momentum slide)
 const T_LAVA = 12  // hell biome — damages + slows (no block)
 
+// Default portal sprite theme by tile type (sprites.js). Used when a zone does
+// not provide a per-tile resolver (tileMap.portalThemeAt). World portals read as
+// green/nature, raid as fire, vault as arcane, generic dungeon as plain magic.
+const PORTAL_TILE_THEME = {
+  [T_PORTAL_WORLD]:   'forest',
+  [T_PORTAL_RAID]:    'infernal',
+  [T_PORTAL_DUNGEON]: 'magic',
+  [T_PORTAL_VAULT]:   'arcane'
+}
+
 const TILE_COLORS = {
   [T_VOID]:  '#000000',
   [T_FLOOR]: '#3a3a2a',
@@ -322,41 +332,30 @@ function renderTileMap(tileMap, labels) {
         ctx.fillStyle = '#333'
         ctx.fillRect(px, py, TILE, 3)
       }
-      if (t === T_PORTAL_WORLD) {
-        const pulse = 0.6 + Math.sin(Date.now()/400) * 0.4
-        ctx.fillStyle = `rgba(40,220,100,${pulse})`
-        ctx.fillRect(px+4, py+4, TILE-8, TILE-8)
-        if (labels) {
-          ctx.fillStyle = '#fff'; ctx.font = '7px monospace'; ctx.textAlign = 'center'
-          ctx.fillText('WORLD', px + TILE/2, py + TILE/2 + 3)
+      // Portal tiles: try the animated portal sprite first (themed per tile, or
+      // per-dungeon via tileMap.portalThemeAt), else keep the pulsing-rect glow.
+      if (t === T_PORTAL_WORLD || t === T_PORTAL_RAID || t === T_PORTAL_DUNGEON || t === T_PORTAL_VAULT) {
+        const theme = (tileMap.portalThemeAt && tileMap.portalThemeAt(tx, ty)) || PORTAL_TILE_THEME[t]
+        const drew = typeof Sprites !== 'undefined' && Sprites.drawPortal &&
+          Sprites.drawPortal(theme, px + TILE/2, py + TILE/2, TILE + 6)
+        if (!drew) {
+          const speed = t === T_PORTAL_RAID ? 300 : t === T_PORTAL_VAULT ? 450 : t === T_PORTAL_DUNGEON ? 500 : 400
+          const phase = t === T_PORTAL_DUNGEON ? tx : 0
+          const pulse = 0.6 + Math.sin(Date.now()/speed + phase) * 0.4
+          ctx.fillStyle = t === T_PORTAL_WORLD ? `rgba(40,220,100,${pulse})`
+            : t === T_PORTAL_RAID ? `rgba(220,40,40,${pulse})`
+            : t === T_PORTAL_VAULT ? `rgba(160,90,240,${pulse})`
+            : `rgba(160,40,220,${pulse})`
+          ctx.fillRect(px+4, py+4, TILE-8, TILE-8)
         }
-      }
-      if (t === T_PORTAL_RAID) {
-        const pulse = 0.6 + Math.sin(Date.now()/300) * 0.4
-        ctx.fillStyle = `rgba(220,40,40,${pulse})`
-        ctx.fillRect(px+4, py+4, TILE-8, TILE-8)
-        if (labels) {
+        if (labels && t !== T_PORTAL_DUNGEON) {
           ctx.fillStyle = '#fff'; ctx.font = '7px monospace'; ctx.textAlign = 'center'
-          ctx.fillText('RAID', px + TILE/2, py + TILE/2 + 3)
+          ctx.fillText(t === T_PORTAL_WORLD ? 'WORLD' : t === T_PORTAL_RAID ? 'RAID' : 'VAULT', px + TILE/2, py + TILE/2 + 3)
         }
-      }
-      if (t === T_PORTAL_DUNGEON) {
-        const pulse = 0.6 + Math.sin(Date.now()/500 + tx) * 0.4
-        ctx.fillStyle = `rgba(160,40,220,${pulse})`
-        ctx.fillRect(px+4, py+4, TILE-8, TILE-8)
       }
       if (t === T_STATION) {
         ctx.fillStyle = '#8888cc'
         ctx.fillRect(px+6, py+6, TILE-12, TILE-12)
-      }
-      if (t === T_PORTAL_VAULT) {
-        const pulse = 0.6 + Math.sin(Date.now()/450) * 0.4
-        ctx.fillStyle = `rgba(160,90,240,${pulse})`
-        ctx.fillRect(px+4, py+4, TILE-8, TILE-8)
-        if (labels) {
-          ctx.fillStyle = '#fff'; ctx.font = '7px monospace'; ctx.textAlign = 'center'
-          ctx.fillText('VAULT', px + TILE/2, py + TILE/2 + 3)
-        }
       }
       if (t === T_SPAWN) {
         ctx.fillStyle = '#4cc9f022'
@@ -400,12 +399,22 @@ function renderBullets() {
 // --- FLOATING TEXT ---
 const floatTexts = []
 function spawnFloatText(x, y, text, color = '#fff') {
-  floatTexts.push({ x, y, text, color, life: 1.0, vy: -40 })
+  // vx/vy are SCREEN-relative drift (screen-up). Motion is converted to world
+  // space per-frame so the number rises UP ON SCREEN at any rotation.
+  floatTexts.push({ x, y, text, color, life: 1.0, vx: 0, vy: -40 })
 }
 function updateFloatTexts(dt) {
   for (let i = floatTexts.length - 1; i >= 0; i--) {
     const f = floatTexts[i]
-    f.life -= dt; f.y += f.vy * dt
+    f.life -= dt
+    // Drift "up on screen": convert the screen-relative velocity into a world
+    // velocity (the float anchor lives in world space and is drawn through the
+    // rotating world transform). Without this, world-up ≠ screen-up when the
+    // view is rotated and numbers slide off at an angle. renderFloatTexts still
+    // counter-rotates so the glyphs stay upright.
+    let vx = f.vx || 0, vy = f.vy || 0
+    if (typeof inputToWorld === 'function') { const w = inputToWorld(vx, vy); vx = w[0]; vy = w[1] }
+    f.x += vx * dt; f.y += vy * dt
     if (f.life <= 0) floatTexts.splice(i, 1)
   }
 }
