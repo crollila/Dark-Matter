@@ -16,7 +16,24 @@
 const SPRITE_SHEETS = {
   weapons: { path: 'assets/sprites/weapons_black_outline.png', tile: 16 },
   armor:   { path: 'assets/sprites/armor.png', tile: 16 },
-  main:    { path: 'assets/sprites/sheet.png', tile: 16 }  // fallback / general sheet
+  main:    { path: 'assets/sprites/sheet.png', tile: 16 },  // fallback / general sheet
+
+  // --- Mob sheets (forward-facing 2-frame mob atlases) ----------------------
+  // Each is an 8x8 grid = 64 tiles = 32 mob pairs. Every mob occupies two
+  // ADJACENT tiles on a row: frame A (idle/move) at an even col, frame B
+  // (active/attack) at col+1. The source images are 1254x1254 (NOT a power of
+  // two: 1254/8 = 156.75), so we address tiles by `cols`/`rows` grid fractions
+  // of the loaded image's natural size rather than a fixed integer tile px.
+  mobs_neutral:  { path: 'assets/sprites/mobs_neutral.png',  cols: 8, rows: 8 },
+  mobs_forest:   { path: 'assets/sprites/mobs_forest.png',   cols: 8, rows: 8 },
+  mobs_goblin:   { path: 'assets/sprites/mobs_goblin.png',   cols: 8, rows: 8 },
+  mobs_fungal:   { path: 'assets/sprites/mobs_fungal.png',   cols: 8, rows: 8 },
+  mobs_void:     { path: 'assets/sprites/mobs_void.png',     cols: 8, rows: 8 },
+  mobs_frost:    { path: 'assets/sprites/mobs_frost.png',    cols: 8, rows: 8 },
+  mobs_infernal: { path: 'assets/sprites/mobs_infernal.png', cols: 8, rows: 8 },
+  mobs_plague:   { path: 'assets/sprites/mobs_plague.png',   cols: 8, rows: 8 },
+  mobs_astral:   { path: 'assets/sprites/mobs_astral.png',   cols: 8, rows: 8 },
+  mobs_cursed:   { path: 'assets/sprites/mobs_cursed.png',   cols: 8, rows: 8 }
 }
 
 // --- Registry ---------------------------------------------------------------
@@ -158,6 +175,57 @@ Object.assign(SPRITE_REGISTRY, {
 // mob art exists, leave this EMPTY so every mob uses its geometric fallback.
 // Do not point mob keys at the weapons/armor/item sheets.
 const mobSpriteAssignments = {}
+
+// Regular + dungeon mob `e.key` (MOB_DEFS) -> { sheet, pair } on a 2-frame mob
+// atlas (see SPRITE_SHEETS mobs_*). `pair` is the mob index 0..31 on that 8x8
+// sheet; frame A (idle/move) sits at col `pair*2`, frame B (active/attack) at the
+// adjacent col. drawForMob consults this AFTER bosses + mobSpriteAssignments, so
+// any mapped boss/registry sprite still wins; unmapped keys keep geometry.
+//
+// First-pass mapping is by biome/theme + obvious names (see task spec). To remap
+// a single mob, just change its { sheet, pair } here — nothing else depends on it.
+// (Dark-matter mobs ride the void sheet; no dedicated dark-matter art ships.)
+const mobSheetAssignments = {
+  // open-world / neutral starter
+  slime:           { sheet: 'mobs_neutral', pair: 0 },
+  // forest
+  forest_sprite:   { sheet: 'mobs_forest', pair: 0 },
+  // goblin
+  goblin_scout:    { sheet: 'mobs_goblin', pair: 0 },
+  goblin_brute:    { sheet: 'mobs_goblin', pair: 1 },
+  goblin_shaman:   { sheet: 'mobs_goblin', pair: 2 },
+  // fungal
+  cave_bat:        { sheet: 'mobs_fungal', pair: 0 },
+  fungal_shroom:   { sheet: 'mobs_fungal', pair: 1 },
+  mycelian_drone:  { sheet: 'mobs_fungal', pair: 2 },
+  // void (+ dark-matter biome, closest theme)
+  void_wisp:       { sheet: 'mobs_void', pair: 0 },
+  rift_stalker:    { sheet: 'mobs_void', pair: 1 },
+  null_orbiter:    { sheet: 'mobs_void', pair: 2 },
+  matter_wraith:   { sheet: 'mobs_void', pair: 3 },
+  gravity_maw:     { sheet: 'mobs_void', pair: 4 },
+  null_apostle:    { sheet: 'mobs_void', pair: 5 },
+  // frost / snow
+  frost_skater:    { sheet: 'mobs_frost', pair: 0 },
+  icebound_archer: { sheet: 'mobs_frost', pair: 1 },
+  snow_golem:      { sheet: 'mobs_frost', pair: 2 },
+  // infernal / hell
+  ember_imp:       { sheet: 'mobs_infernal', pair: 0 },
+  chainscourge:    { sheet: 'mobs_infernal', pair: 1 },
+  lava_brute:      { sheet: 'mobs_infernal', pair: 2 },
+  // plague / toxic
+  spore_crawler:   { sheet: 'mobs_plague', pair: 0 },
+  venom_cap:       { sheet: 'mobs_plague', pair: 1 },
+  mycelium_horror: { sheet: 'mobs_plague', pair: 2 },
+  // cursed / ruined-kingdom (fallen/hollow/court)
+  fallen_squire:   { sheet: 'mobs_cursed', pair: 0 },
+  cursed_archer:   { sheet: 'mobs_cursed', pair: 1 },
+  grave_priest:    { sheet: 'mobs_cursed', pair: 2 },
+  // astral / desert
+  star_scarab:     { sheet: 'mobs_astral', pair: 0 },
+  mirage_stalker:  { sheet: 'mobs_astral', pair: 1 },
+  sunseer:         { sheet: 'mobs_astral', pair: 2 }
+}
 
 // boss mob `e.key` (MOB_DEFS) -> sprite ID. Themed by color/style against the new
 // creature art (see sprites_debug.html). Bosses with no good fit are left out and
@@ -319,15 +387,55 @@ const Sprites = {
     return true
   },
 
+  // Draw one grid tile (col,row) of a mob sheet, centered at (cx,cy) and fit to a
+  // `size`-px box. Tile px is derived from the loaded image's natural size / grid
+  // (handles non-power-of-two sheets like the 1254x1254 mob atlases). Returns
+  // true if it drew, false otherwise (-> caller falls back to geometry).
+  _drawSheetTile(sheetName, col, row, cx, cy, size, context) {
+    const def = SPRITE_SHEETS[sheetName]
+    if (!def) return false
+    const rec = this.sheet(sheetName)
+    if (!rec || !rec.loaded || !rec.img.complete) return false
+    const c = context || (typeof ctx !== 'undefined' ? ctx : null)
+    if (!c) return false
+    const cols = def.cols || 8, rows = def.rows || 8
+    const tw = rec.img.naturalWidth / cols, th = rec.img.naturalHeight / rows
+    if (!tw || !th) return false
+    const scale = size / Math.max(tw, th)
+    const dw = tw * scale, dh = th * scale
+    try {
+      c.drawImage(rec.img, col * tw, row * th, tw, th, cx - dw / 2, cy - dh / 2, dw, dh)
+    } catch (err) { return false }
+    return true
+  },
+
+  // Draw an assigned 2-frame mob-sheet sprite for `e` (needs `e.key`). Frame A
+  // (idle/move) and frame B (active/attack) are adjacent tiles. We show frame B
+  // when the mob just fired (read-only: shootTimer freshly reset toward atkSpd),
+  // otherwise we alternate A/B on a slow timer so idle mobs still animate.
+  drawMobSheet(e, cx, cy, size) {
+    const a = e && mobSheetAssignments[e.key]
+    if (!a) return false
+    const base = (a.pair | 0) * 2
+    const col = base % 8, row = (base / 8) | 0
+    const attacking = e.atkSpd > 0 && e.shootTimer != null && e.shootTimer >= e.atkSpd - 0.18
+    const animB = (Math.floor(Date.now() / 180) % 2) === 1   // ~2.8 Hz idle flip
+    const useB = attacking || animB
+    return this._drawSheetTile(a.sheet, col + (useB ? 1 : 0), row, cx, cy, size)
+  },
+
   // Convenience hook for renderMob: returns true if a mob/boss sprite was drawn.
   // Bosses (bossSpriteAssignments) take priority; creature art has wide wings/
-  // padding so it's drawn a touch larger than the geometric radius.
+  // padding so it's drawn a touch larger than the geometric radius. Regular +
+  // dungeon mobs then try their 2-frame mob-sheet sprite; unmapped keep geometry.
   drawForMob(e, sx, sy) {
     if (!e || !e.key) return false
     const id = (typeof bossSpriteAssignments !== 'undefined' && bossSpriteAssignments[e.key]) || mobSpriteAssignments[e.key]
-    if (!id) return false
-    const scale = (typeof bossSpriteAssignments !== 'undefined' && bossSpriteAssignments[e.key]) ? 2.8 : 2.2
-    return this.draw(id, sx, sy, (e.radius || 12) * scale)
+    if (id) {
+      const scale = (typeof bossSpriteAssignments !== 'undefined' && bossSpriteAssignments[e.key]) ? 2.8 : 2.2
+      return this.draw(id, sx, sy, (e.radius || 12) * scale)
+    }
+    return this.drawMobSheet(e, sx, sy, (e.radius || 12) * 2.6)
   },
 
   // Convenience hook for item rendering (inventory/equipment/loot): draws the
@@ -365,6 +473,7 @@ if (typeof window !== 'undefined') {
   window.SPRITE_REGISTRY = SPRITE_REGISTRY
   window.SPRITE_SHEETS = SPRITE_SHEETS
   window.mobSpriteAssignments = mobSpriteAssignments
+  window.mobSheetAssignments = mobSheetAssignments
   window.bossSpriteAssignments = bossSpriteAssignments
   window.itemSpriteAssignments = itemSpriteAssignments
   window.projectileSpriteAssignments = projectileSpriteAssignments

@@ -150,10 +150,13 @@ const Wiki = (() => {
   let _L = null
   let _contentH = 0
   let _hoverItem = null
+  let search = ''          // Gear-tab search query
+  let searchFocused = false
+  let _drag = false        // dragging the scrollbar thumb
 
   function isOpen() { return open }
   function openPanel() { open = true; registry() }
-  function close() { open = false }
+  function close() { open = false; searchFocused = false; _drag = false }
 
   // ---- layout ----
   function layout() {
@@ -164,8 +167,13 @@ const Wiki = (() => {
     const closeBtn = { x: px + PW - 30, y: py + 10, w: 20, h: 20 }
     const tabW = ((PW - 40) / TABS.length) | 0
     const tabs = TABS.map((t, i) => ({ t, i, x: px + 20 + i * tabW, y: py + 40, w: tabW - 6, h: 26 }))
-    const lx = px + 20, ly = py + 80, lw = PW - 40, lh = PH - 100
-    return { PW, PH, px, py, closeBtn, tabs, lx, ly, lw, lh }
+    let lx = px + 20, ly = py + 80, lw = PW - 40, lh = PH - 100
+    // Gear tab gets a search box above the list (shrinks the list area).
+    let searchBox = null
+    if (tab === 2) { searchBox = { x: lx, y: ly, w: lw, h: 22 }; ly += 30; lh -= 30 }
+    // Visible scrollbar gutter on the right edge of the list (all tabs).
+    const sb = { x: lx + lw - 6, y: ly, w: 6, h: lh }
+    return { PW, PH, px, py, closeBtn, tabs, lx, ly, lw, lh, searchBox, sb }
   }
   function hit(r, x, y) { return r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h }
 
@@ -174,9 +182,22 @@ const Wiki = (() => {
     if (!open || !_L) return false
     const L = _L
     if (hit(L.closeBtn, x, y)) { close(); return true }
-    for (const t of L.tabs) if (hit(t, x, y)) { tab = t.i; return true }
+    for (const t of L.tabs) if (hit(t, x, y)) { tab = t.i; searchFocused = false; return true }
+    // Scrollbar: click/drag the track to scroll.
+    if (hit(L.sb, x, y)) { _drag = true; scrollToY(y); searchFocused = false; return true }
+    // Gear search box focus toggle.
+    if (L.searchBox && hit(L.searchBox, x, y)) { searchFocused = true; return true }
+    searchFocused = false
     if (x < L.px || x > L.px + L.PW || y < L.py || y > L.py + L.PH) { close(); return true }
     return true   // swallow clicks inside the panel
+  }
+  function scrollToY(y) {
+    if (!_L) return
+    const viewH = _L.lh
+    const max = Math.max(0, _contentH - viewH)
+    if (max <= 0) { scroll[tab] = 0; return }
+    const t = (y - _L.sb.y) / _L.sb.h
+    scroll[tab] = Math.max(0, Math.min(max, t * max))
   }
   function onWheel(dy) {
     if (!open) return
@@ -221,6 +242,9 @@ const Wiki = (() => {
       const id = (window.bossSpriteAssignments && bossSpriteAssignments[icon.key])
         || (window.mobSpriteAssignments && mobSpriteAssignments[icon.key])
       if (id && window.Sprites && Sprites.draw && Sprites.draw(id, cx, cy, size)) return
+      // Regular mobs: 2-frame mob-sheet sprite (idle alternates over time; no
+      // shootTimer here so it just animates). Bosses already handled above.
+      if (window.Sprites && Sprites.drawMobSheet && Sprites.drawMobSheet({ key: icon.key }, cx, cy, size)) return
       ctx.fillStyle = icon.color || '#aab8c8'
       ctx.beginPath(); ctx.arc(cx, cy, size / 2 - 1, 0, Math.PI * 2); ctx.fill()
       ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1; ctx.stroke()
@@ -272,6 +296,19 @@ const Wiki = (() => {
     return total
   }
 
+  // Visible scrollbar (all tabs): always draws a track; a proportional thumb
+  // appears when content overflows the view. Track is click/drag-scrollable.
+  function drawScrollbar(L) {
+    const sb = L.sb, viewH = L.lh
+    ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(sb.x, sb.y, sb.w, sb.h)
+    const max = Math.max(0, _contentH - viewH)
+    if (max <= 0) return
+    const thumbH = Math.max(24, sb.h * (viewH / _contentH))
+    const thumbY = sb.y + (scroll[tab] / max) * (sb.h - thumbH)
+    ctx.fillStyle = _drag ? '#b15bff' : 'rgba(177,91,255,0.55)'
+    ctx.fillRect(sb.x, thumbY, sb.w, thumbH)
+  }
+
   function rowsForDungeons(reg) {
     const comp = (typeof account !== 'undefined' && account.dungeonCompletions) || {}
     return reg.dungeons.map(d => {
@@ -298,7 +335,18 @@ const Wiki = (() => {
     })
   }
   function rowsForGear(reg) {
-    return reg.gear.map(g => {
+    let list = reg.gear
+    const q = search.trim().toLowerCase()
+    if (q) {
+      const terms = q.split(/\s+/)
+      list = list.filter(g => {
+        const hay = [g.name, g.key, g.slot, g.classes, g.cat,
+          (g.sources || []).join(' '), g.unique ? 'unique' : '']
+          .join(' ').toLowerCase()
+        return terms.every(t => hay.indexOf(t) >= 0)
+      })
+    }
+    return list.map(g => {
       const lines = [
         { t: g.name + (g.unique ? '  ✦' : ''), c: '#e0e6f2', b: true },
         { t: g.slot + '  •  ' + g.classes + '  •  ' + g.cat, c: '#9fb3c8' },
@@ -349,6 +397,17 @@ const Wiki = (() => {
     }
     ctx.textAlign = 'left'
 
+    // Gear search box
+    if (L.searchBox) {
+      const s = L.searchBox
+      ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(s.x, s.y, s.w, s.h)
+      ctx.strokeStyle = searchFocused ? '#b15bff' : '#2a2f44'; ctx.lineWidth = 1
+      ctx.strokeRect(s.x, s.y, s.w, s.h)
+      ctx.font = '11px monospace'; ctx.textAlign = 'left'
+      if (search) { ctx.fillStyle = '#e0e6f2'; ctx.fillText(search + (searchFocused ? '_' : ''), s.x + 8, s.y + 15) }
+      else { ctx.fillStyle = '#6a7290'; ctx.fillText('Search gear (name / slot / class / source)…', s.x + 8, s.y + 15) }
+    }
+
     let rows
     if (tab === 0) rows = rowsForDungeons(reg)
     else if (tab === 1) rows = rowsForBosses(reg)
@@ -356,10 +415,11 @@ const Wiki = (() => {
     else rows = rowsForMobs(reg)
 
     _contentH = renderList(L, rows)
+    drawScrollbar(L)
 
     // scrollbar hint
     ctx.fillStyle = '#6a7290'; ctx.font = '9px monospace'; ctx.textAlign = 'right'
-    ctx.fillText('scroll: wheel   •   esc / click outside: close', L.px + L.PW - 16, L.py + L.PH - 8)
+    ctx.fillText('scroll: wheel / drag bar   •   esc / click outside: close', L.px + L.PW - 16, L.py + L.PH - 8)
     ctx.textAlign = 'left'
 
     if (_hoverItem && typeof renderItemTooltip === 'function') renderItemTooltip(_hoverItem, mouse.x + 12, mouse.y + 12)
@@ -367,12 +427,29 @@ const Wiki = (() => {
 
   // ---- listeners (mirror stations.js) ----
   window.addEventListener('keydown', e => {
-    if (open && e.code === 'Escape') { close(); e.stopPropagation(); e.preventDefault() }
+    if (!open) return
+    if (e.code === 'Escape') {
+      // Esc clears search focus first, then closes the panel.
+      if (searchFocused) { searchFocused = false } else { close() }
+      e.stopPropagation(); e.preventDefault(); return
+    }
+    // Gear search typing (only while the box is focused).
+    if (searchFocused) {
+      if (e.code === 'Backspace') search = search.slice(0, -1)
+      else if (e.key && e.key.length === 1 && search.length < 40) search += e.key
+      else return
+      scroll[2] = 0   // reset scroll when the filter changes
+      e.stopPropagation(); e.preventDefault()
+    }
   }, true)
   canvas.addEventListener('mousedown', e => {
     if (e.button !== 0 || !open) return
     if (onClick(e.clientX, e.clientY)) e.stopPropagation()
   }, true)
+  canvas.addEventListener('mousemove', e => {
+    if (open && _drag) { scrollToY(e.clientY); e.stopPropagation() }
+  }, true)
+  window.addEventListener('mouseup', () => { _drag = false })
   canvas.addEventListener('wheel', e => {
     if (!open) return
     onWheel(e.deltaY)
