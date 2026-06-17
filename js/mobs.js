@@ -659,8 +659,14 @@ function renderMob(e, offX, offY) {
 
   // Body — try an assigned sprite first; fall back to geometric art if no
   // sprite is assigned or its sheet image isn't loaded (foundation: art is opt-in).
+  // Sprite ART is drawn UPRIGHT (counter-rotated via drawUpright, like the shadow/HP
+  // bar + loot bags + portal entities) so boss/enemy art keeps facing the player and
+  // never tilts with the world under screen rotation. Position still tracks the mob
+  // via the sx,sy anchor; we draw at the local origin (0,0) inside drawUpright.
   let drewSprite = false
-  if (typeof Sprites !== 'undefined') drewSprite = Sprites.drawForMob(e, sx, sy)
+  if (typeof Sprites !== 'undefined') {
+    drawUpright(sx, sy, () => { drewSprite = Sprites.drawForMob(e, 0, 0) })
+  }
   if (!drewSprite) {
     ctx.shadowBlur = flash ? 16 : 6
     ctx.shadowColor = flash ? '#fff' : e.color

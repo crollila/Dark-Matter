@@ -57,7 +57,20 @@ const SPRITE_SHEETS = {
   portal_plague:      { path: 'assets/sprites/portal_sheet_07_plague_corruption.png', cols: 8, rows: 8 },
   portal_astral:      { path: 'assets/sprites/portal_sheet_08_astral.png',            cols: 8, rows: 8 },
   portal_fungal:      { path: 'assets/sprites/portal_sheet_09_mushroom_fungal.png',   cols: 8, rows: 8 },
-  portal_cursed:      { path: 'assets/sprites/portal_sheet_10_gothic_cursed.png',     cols: 8, rows: 8 }
+  portal_cursed:      { path: 'assets/sprites/portal_sheet_10_gothic_cursed.png',     cols: 8, rows: 8 },
+
+  // --- Boss sheets (2-frame boss animation atlases) -------------------------
+  // Three sheets, each 1536x1024. ASSUMED LAYOUT: a 6x4 grid = 24 tiles = 12 boss
+  // PAIRS, 3 pairs per row. Each boss occupies two ADJACENT tiles on a row: frame A
+  // (idle/move) at an even col, frame B (active/attack) at col+1 — same 2-frame model
+  // as the mob atlases. 1536/6 = 256 and 1024/4 = 256 → clean 256px square tiles, but
+  // tiles are addressed by `cols`/`rows` grid FRACTIONS of the loaded image's natural
+  // size (not fixed px), so a re-export at another resolution won't break the layout.
+  // If a sheet's real grid differs from 6x4, change cols/rows here (and the pair
+  // numbers in bossSheetAssignments) — nothing else needs editing.
+  bosses_core:  { path: 'assets/sprites/bosses_sheet_01_core.png',               cols: 6, rows: 4 },
+  bosses_void:  { path: 'assets/sprites/bosses_sheet_02_void_plague_astral.png', cols: 6, rows: 4 },
+  bosses_world: { path: 'assets/sprites/bosses_sheet_03_world_bosses.png',       cols: 6, rows: 4 }
 }
 
 // --- Portal sprite system (SEPARATE from mob + item sprites) -----------------
@@ -177,6 +190,42 @@ const biomePortalAssignments = {
 function dungeonPortalSpec(key) {
   const a = dungeonPortalAssignments[key]
   return (a != null) ? a : null
+}
+
+// --- Portal VISUAL treatment (data-driven, easy to tune) --------------------
+// Makes a portal read as a living world entity (bob/glow/pulse/shadow) instead of
+// a flat sheet tile. All knobs live here so behaviour is tuned in one place and
+// applied uniformly to every portal (no per-portal hardcoding). Sprites.drawPortalEntity
+// uses these; the bare 3-frame Sprites.drawPortal (used by portal_debug.html) is unchanged.
+const PORTAL_VIS = {
+  bobAmp: 3.2,        // px vertical bob (screen-space, like loot bags)
+  bobSpeed: 520,      // ms time-divisor for the bob sine
+  pulseSpeed: 360,    // ms time-divisor for the glow/scale shimmer sine
+  pulseAmt: 0.07,     // +/- scale shimmer fraction (subtle breathing)
+  glowAlpha: 0.55,    // base radial aura alpha
+  glowSize: 1.9,      // aura radius as a multiple of the portal half-size
+  glowBlur: 14,       // shadowBlur added to the portal art (edge glow)
+  shadowW: 0.62,      // ground shadow width as a fraction of size
+  shadowH: 0.2,       // ground shadow height as a fraction of size
+  shadowAlpha: 0.32,  // ground shadow darkness
+  shadowDrop: 0.34,   // shadow vertical offset below center as a fraction of size
+  fps: 7,             // sheet-frame animation rate (blended with bob/glow so it reads smooth)
+  cropInset: 0.07     // fraction cropped in from each sheet-tile edge (drops baked-in square padding)
+}
+
+// Per-sheet aura/shadow tint so the glow matches each portal's art. Keyed by sheet
+// so it resolves for BOTH theme strings and explicit { sheet, variant } overrides.
+const PORTAL_SHEET_GLOW = {
+  portal_void_arcane: '#8a5cff',
+  portal_blue_green:  '#3ad6c0',
+  portal_ice:         '#9fd8ff',
+  portal_void_dark:   '#9b3cff',
+  portal_forest:      '#46d36a',
+  portal_infernal:    '#ff6a2a',
+  portal_plague:      '#8fd34a',
+  portal_astral:      '#c0a0ff',
+  portal_fungal:      '#d36ad0',
+  portal_cursed:      '#b04acc'
 }
 
 // --- Registry ---------------------------------------------------------------
@@ -396,6 +445,40 @@ const bossSpriteAssignments = {
   wb_hollow_king:     'flying_boss_03',  // pale ornate (hollow/cursed)
   wb_astral_pharaoh:  'flying_boss_20',  // large single-eye (astral)
 }
+
+// boss `e.key` (MOB_DEFS / WORLD_BOSSES) -> { sheet, pair } on the NEW 2-frame boss
+// atlases. EXPLICIT + data-driven (never auto-picked). `pair` indexes a 2-frame
+// animation block (frame A idle/move, frame B active/attack) on the sheet's 6x4 grid
+// (3 pairs per row → pairs 0..11; pair p sits at col = (p*2)%cols, row = ((p*2)/cols)|0).
+// drawForMob consults this FIRST (before the legacy standalone bossSpriteAssignments
+// and the mob sheets), so these are the active boss visuals; the legacy table stays as
+// a graceful fallback if a boss sheet image is missing.
+//
+// First-pass mapping is by theme (verify/retune against the actual sheets):
+//   sheet 01 core  -> goblin / fungal / frost / infernal dungeon bosses
+//   sheet 02 v/p/a -> void / singularity / plague / cursed / astral dungeon bosses
+//   sheet 03 world -> all roaming WORLD bosses (wb_*)
+// To REMAP one boss to a different tile, change ONLY its { sheet, pair } below.
+const bossSheetAssignments = {
+  // --- bosses_sheet_01_core (dungeon bosses, "core" themes) ---
+  goblin_warchief:    { sheet: 'bosses_core', pair: 0 },  // goblin warren
+  mycelian_king:      { sheet: 'bosses_core', pair: 1 },  // fungal
+  frost_monarch:      { sheet: 'bosses_core', pair: 2 },  // frost
+  infernal_lord:      { sheet: 'bosses_core', pair: 3 },  // infernal / fire
+  // --- bosses_sheet_02_void_plague_astral (dark / corrupt / celestial) ---
+  void_harbinger:     { sheet: 'bosses_void', pair: 0 },  // void
+  singularity_tyrant: { sheet: 'bosses_void', pair: 1 },  // dark / singularity
+  plague_mother:      { sheet: 'bosses_void', pair: 2 },  // plague
+  fallen_monarch:     { sheet: 'bosses_void', pair: 3 },  // cursed / ruined
+  astral_pharaoh:     { sheet: 'bosses_void', pair: 4 },  // astral
+  // --- bosses_sheet_03_world_bosses (roaming overworld bosses) ---
+  wb_event_horizon:   { sheet: 'bosses_world', pair: 0 },  // dark devourer (void)
+  wb_frost_titan:     { sheet: 'bosses_world', pair: 1 },  // frost
+  wb_ashen_worldeater:{ sheet: 'bosses_world', pair: 2 },  // fire
+  wb_plague_matriarch:{ sheet: 'bosses_world', pair: 3 },  // plague
+  wb_hollow_king:     { sheet: 'bosses_world', pair: 4 },  // hollow / cursed
+  wb_astral_pharaoh:  { sheet: 'bosses_world', pair: 5 }   // astral
+}
 // item baseKey -> sprite ID. Obvious starter-gear examples wired; everything
 // else falls back to the geometric letter icon. Maps to ITEM_BASES keys (items.js).
 const itemSpriteAssignments = {
@@ -534,7 +617,7 @@ const Sprites = {
   // `size`-px box. Tile px is derived from the loaded image's natural size / grid
   // (handles non-power-of-two sheets like the 1254x1254 mob atlases). Returns
   // true if it drew, false otherwise (-> caller falls back to geometry).
-  _drawSheetTile(sheetName, col, row, cx, cy, size, context) {
+  _drawSheetTile(sheetName, col, row, cx, cy, size, context, inset) {
     const def = SPRITE_SHEETS[sheetName]
     if (!def) return false
     const rec = this.sheet(sheetName)
@@ -544,10 +627,18 @@ const Sprites = {
     const cols = def.cols || 8, rows = def.rows || 8
     const tw = rec.img.naturalWidth / cols, th = rec.img.naturalHeight / rows
     if (!tw || !th) return false
-    const scale = size / Math.max(tw, th)
-    const dw = tw * scale, dh = th * scale
+    // Optional crop inset: trim a fraction off each edge of the source tile so any
+    // square padding/background baked into the frame is dropped and the cropped art
+    // is scaled to fill the `size` box.
+    let sxp = col * tw, syp = row * th, sw = tw, sh = th
+    if (inset) {
+      const ix = tw * inset, iy = th * inset
+      sxp += ix; syp += iy; sw -= ix * 2; sh -= iy * 2
+    }
+    const scale = size / Math.max(sw, sh)
+    const dw = sw * scale, dh = sh * scale
     try {
-      c.drawImage(rec.img, col * tw, row * th, tw, th, cx - dw / 2, cy - dh / 2, dw, dh)
+      c.drawImage(rec.img, sxp, syp, sw, sh, cx - dw / 2, cy - dh / 2, dw, dh)
     } catch (err) { return false }
     return true
   },
@@ -565,6 +656,26 @@ const Sprites = {
     const animB = (Math.floor(Date.now() / 180) % 2) === 1   // ~2.8 Hz idle flip
     const useB = attacking || animB
     return this._drawSheetTile(a.sheet, col + (useB ? 1 : 0), row, cx, cy, size)
+  },
+
+  // Draw an assigned 2-frame BOSS-sheet sprite for `e` (needs `e.key`). Same 2-frame
+  // model as drawMobSheet, but reads bossSheetAssignments and the boss sheet's own
+  // grid (cols may differ from the mob atlases). Frame A sits at col = (pair*2)%cols,
+  // frame B at the adjacent col. Shows B on a fresh shot, else alternates A/B on a
+  // slow timer so idle bosses still breathe. Returns false (unmapped/unloaded) so the
+  // caller can fall through to the legacy boss sprite / geometry.
+  drawBossSheet(e, cx, cy, size, context) {
+    const a = e && bossSheetAssignments[e.key]
+    if (!a) return false
+    const def = SPRITE_SHEETS[a.sheet]
+    if (!def) return false
+    const cols = def.cols || 8
+    const base = (a.pair | 0) * 2
+    const col = base % cols, row = (base / cols) | 0
+    const attacking = e.atkSpd > 0 && e.shootTimer != null && e.shootTimer >= e.atkSpd - 0.18
+    const animB = (Math.floor(Date.now() / 200) % 2) === 1   // ~2.5 Hz idle flip
+    const useB = attacking || animB
+    return this._drawSheetTile(a.sheet, col + (useB ? 1 : 0), row, cx, cy, size, context)
   },
 
   // Resolve a portal THEME string OR an explicit { sheet, variant } into a concrete
@@ -591,17 +702,92 @@ const Sprites = {
     return this._drawSheetTile(spec.sheet, r.col + fi, r.row, cx, cy, size, context)
   },
 
+  // Aura/shadow tint for a portal sheet (falls back to a generic violet).
+  portalGlow(sheet) { return PORTAL_SHEET_GLOW[sheet] || '#9b6bff' },
+
+  // hex (#rgb/#rrggbb) -> rgba() string with alpha `a`.
+  _rgba(hex, a) {
+    let h = (hex || '#9b6bff').replace('#', '')
+    if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2]
+    const n = parseInt(h, 16) || 0
+    return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`
+  },
+
+  // FULL portal entity treatment: ground shadow + soft radial aura + time-based
+  // bob + subtle pulse/scale shimmer + the cropped, glowing 3-frame art. Frame
+  // animation is blended with the continuous bob/glow so it never reads as a harsh
+  // slideshow. `seed` (e.g. tile coords) gives each portal a stable phase so a field
+  // of portals doesn't pulse in lockstep — no per-portal state object needed.
+  // Call from inside drawUpright(anchor, ...) with cx,cy = 0,0 so the whole effect
+  // stays screen-upright and coherent under screen rotation (like loot bags).
+  // Returns true if it drew the art; false (sheet unloaded) so the caller keeps its
+  // pulsing-rect fallback.
+  drawPortalEntity(themeOrSpec, cx, cy, size, context, seed) {
+    if (!this.enabled) return false
+    const spec = this.portalSpec(themeOrSpec)
+    if (!spec || !spec.sheet) return false
+    const rec = this.sheet(spec.sheet)
+    if (!rec || !rec.loaded || !rec.img.complete) return false   // -> caller fallback
+    const c = context || (typeof ctx !== 'undefined' ? ctx : null)
+    if (!c) return false
+
+    const V = PORTAL_VIS
+    const t = Date.now()
+    const ph = (seed || 0) * 0.7
+    const bob = Math.sin(t / V.bobSpeed + ph) * V.bobAmp
+    const pulse = Math.sin(t / V.pulseSpeed + ph)   // -1..1
+    const glow = this.portalGlow(spec.sheet)
+    const yc = cy + bob
+
+    // Ground shadow — flat ellipse pinned under the portal (does not bob with it).
+    c.save()
+    c.globalAlpha = V.shadowAlpha
+    c.fillStyle = '#000'
+    c.beginPath()
+    c.ellipse(cx, cy + size * V.shadowDrop, size * V.shadowW * 0.5, size * V.shadowH * 0.5, 0, 0, Math.PI * 2)
+    c.fill()
+    c.restore()
+
+    // Soft radial aura behind the art (pulsing presence).
+    const gr = size * 0.5 * V.glowSize * (1 + 0.08 * pulse)
+    const ga = V.glowAlpha * (0.78 + 0.22 * pulse)
+    const grad = c.createRadialGradient(cx, yc, 0, cx, yc, gr)
+    grad.addColorStop(0, this._rgba(glow, ga))
+    grad.addColorStop(0.55, this._rgba(glow, ga * 0.35))
+    grad.addColorStop(1, this._rgba(glow, 0))
+    c.save()
+    c.fillStyle = grad
+    c.beginPath(); c.arc(cx, yc, gr, 0, Math.PI * 2); c.fill()
+    c.restore()
+
+    // The cropped 3-frame art, scaled by the pulse, with an edge glow.
+    const r = portalVariantRect(spec.variant)
+    const fi = Math.floor(t / (1000 / V.fps)) % r.frames
+    const scl = 1 + V.pulseAmt * pulse
+    c.save()
+    c.shadowBlur = V.glowBlur + (pulse + 1) * 4
+    c.shadowColor = glow
+    const drew = this._drawSheetTile(spec.sheet, r.col + fi, r.row, cx, yc, size * scl, c, V.cropInset)
+    c.restore()
+    return drew
+  },
+
   // Convenience hook for renderMob: returns true if a mob/boss sprite was drawn.
   // Bosses (bossSpriteAssignments) take priority; creature art has wide wings/
   // padding so it's drawn a touch larger than the geometric radius. Regular +
   // dungeon mobs then try their 2-frame mob-sheet sprite; unmapped keep geometry.
   drawForMob(e, sx, sy) {
     if (!e || !e.key) return false
+    // 1) NEW boss-sheet art (2-frame boss atlases) — highest priority, data-driven.
+    if (this.drawBossSheet(e, sx, sy, (e.radius || 12) * 3.0)) return true
+    // 2) Legacy standalone boss / registry sprite (flying creatures, crystal knight) —
+    //    graceful fallback if a boss sheet is missing but a legacy entry exists.
     const id = (typeof bossSpriteAssignments !== 'undefined' && bossSpriteAssignments[e.key]) || mobSpriteAssignments[e.key]
     if (id) {
       const scale = (typeof bossSpriteAssignments !== 'undefined' && bossSpriteAssignments[e.key]) ? 2.8 : 2.2
       return this.draw(id, sx, sy, (e.radius || 12) * scale)
     }
+    // 3) Regular 2-frame mob-sheet sprite; unmapped keys keep geometry.
     return this.drawMobSheet(e, sx, sy, (e.radius || 12) * 2.6)
   },
 
@@ -642,6 +828,7 @@ if (typeof window !== 'undefined') {
   window.mobSpriteAssignments = mobSpriteAssignments
   window.mobSheetAssignments = mobSheetAssignments
   window.bossSpriteAssignments = bossSpriteAssignments
+  window.bossSheetAssignments = bossSheetAssignments
   window.itemSpriteAssignments = itemSpriteAssignments
   window.projectileSpriteAssignments = projectileSpriteAssignments
   window.PORTAL_THEME_SHEET = PORTAL_THEME_SHEET
@@ -657,4 +844,6 @@ if (typeof window !== 'undefined') {
   window.dungeonPortalAssignments = dungeonPortalAssignments
   window.biomePortalAssignments = biomePortalAssignments
   window.dungeonPortalSpec = dungeonPortalSpec
+  window.PORTAL_VIS = PORTAL_VIS                 // live-tunable portal visual config
+  window.PORTAL_SHEET_GLOW = PORTAL_SHEET_GLOW
 }

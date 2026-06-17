@@ -239,6 +239,8 @@ const Wiki = (() => {
       ctx.fillText(((icon.label || '?')[0] || '?').toUpperCase(), cx, cy + 1)
       ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
     } else { // mob / boss — bosses take priority; NEVER a weapon/item sprite
+      // New 2-frame boss-sheet art first (matches in-world boss rendering).
+      if (window.Sprites && Sprites.drawBossSheet && Sprites.drawBossSheet({ key: icon.key }, cx, cy, size)) return
       const id = (window.bossSpriteAssignments && bossSpriteAssignments[icon.key])
         || (window.mobSpriteAssignments && mobSpriteAssignments[icon.key])
       if (id && window.Sprites && Sprites.draw && Sprites.draw(id, cx, cy, size)) return
