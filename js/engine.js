@@ -343,28 +343,29 @@ function renderTileMap(tileMap, labels) {
       // returns false and the flat color stays — collision/generation/hazards are
       // unaffected. Theme = per-tile world biome, or the map's envTheme elsewhere.
       // Variant/decor selection is deterministic per tile (no flicker).
+      // Step B: ONE terrain tile (by map tile kind). Step C: ONE sparse object on
+      // walkable floor only. Nexus/safe maps opt out via tileMap.disableEnvSprites.
       let drewEnv = false
-      if (typeof Sprites !== 'undefined' && Sprites.drawEnvTile &&
+      if (typeof ENV_SPRITES_ENABLED !== 'undefined' && ENV_SPRITES_ENABLED &&
+          typeof Sprites !== 'undefined' && Sprites.drawEnvTile && !tileMap.disableEnvSprites &&
           !isPortal && t !== T_STATION && t !== T_SPAWN) {
         const biomeId = tileMap.biome ? tileMap.biome[ty * tileMap.w + tx] : 0
         const theme = tileMap.biome ? Sprites.envThemeForBiome(biomeId)
                                     : (tileMap.envTheme || 'neutral')
         let role = null
-        if (t === T_FLOOR || t === T_GRASS) {
+        const isFloor = (t === T_FLOOR || t === T_GRASS)
+        if (isFloor) {
           const hv = Sprites.envHash(tx, ty, 1)
-          role = (hv % 17 === 0) ? 'path' : (hv % 7 === 0) ? 'floorAlt' : 'floor'
+          role = (hv % 23 === 0) ? 'path' : (hv % 6 === 0) ? 'floorAlt' : 'floor'
         } else if (t === T_WALL) {
           role = (Sprites.envHash(tx, ty, 2) % 9 === 0) ? 'wallAlt' : 'wall'
         } else if (t === T_LAVA || t === T_ICE) { role = 'hazard' }
         else if (t === T_WATER) { role = 'water' }
         if (role) {
-          drewEnv = Sprites.drawEnvTile(theme, role, px + TILE/2, py + TILE/2, TILE, ctx, Sprites.envHash(tx, ty, 3))
-          if (drewEnv && (t === T_FLOOR || t === T_GRASS)) {
-            const dch = Sprites.envDecorChance(theme)
-            if (dch > 0) {
-              const dh = Sprites.envHash(tx, ty, 9)
-              if ((dh % 1000) < dch * 1000) Sprites.drawEnvDecor(theme, dh, px + TILE/2, py + TILE/2, TILE, ctx)
-            }
+          // +1px terrain oversize reduces hard black gaps between transparent edges.
+          drewEnv = Sprites.drawEnvTile(theme, role, px + TILE/2, py + TILE/2, TILE + 1, ctx, Sprites.envHash(tx, ty, 3))
+          if (drewEnv && isFloor) {
+            Sprites.drawEnvObject(theme, tx, ty, px + TILE/2, py + TILE/2, TILE, ctx)
           }
         }
       }
@@ -430,7 +431,8 @@ function renderTileMap(tileMap, labels) {
         : p.t === T_PORTAL_RAID ? `rgba(220,40,40,${pulse})`
         : p.t === T_PORTAL_VAULT ? `rgba(160,90,240,${pulse})`
         : `rgba(160,40,220,${pulse})`
-      ctx.fillRect(p.px+4, p.py+4, TILE-8, TILE-8)
+      // Circular fallback (no art): a pulsing glowing disc, not a square tile.
+      ctx.beginPath(); ctx.arc(p.px + TILE/2, p.py + TILE/2, TILE/2 - 3, 0, Math.PI*2); ctx.fill()
     }
     if (labels && p.t !== T_PORTAL_DUNGEON) {
       ctx.fillStyle = '#fff'; ctx.font = '7px monospace'; ctx.textAlign = 'center'

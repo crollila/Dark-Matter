@@ -10,6 +10,16 @@
 //   - *SpriteAssignments: optional maps from game keys -> sprite ID
 //   - Sprites.draw / drawForMob: canvas draw helpers (return true if they drew)
 
+// --- Environment sprite master switch ---------------------------------------
+// The themed env_* terrain/decor sheets don't tile the grid cleanly yet (1254x1254
+// 8x8 = 156.75px cells + transparent padding), which made biomes noisy/unreadable.
+// While that's being tuned, env tile rendering is GLOBALLY DISABLED — world/dungeon
+// fall back to the clean basic colored tiles. The whole system (sheets, roles,
+// helpers, env_debug.html) is preserved; flip this to true to re-enable. drawEnvTile
+// / drawEnvObject short-circuit on it, and renderTileMap/renderDungeonTiles also gate
+// on it so no env underpaint/oversize/decor touches the basic tiles.
+const ENV_SPRITES_ENABLED = false
+
 // --- Sheets -----------------------------------------------------------------
 // Register each sprite sheet once. `tile` is the grid cell size in source px;
 // registry entries may address cells by col/row (preferred) or raw x/y.
@@ -243,19 +253,32 @@ function dungeonPortalSpec(key) {
 // applied uniformly to every portal (no per-portal hardcoding). Sprites.drawPortalEntity
 // uses these; the bare 3-frame Sprites.drawPortal (used by portal_debug.html) is unchanged.
 const PORTAL_VIS = {
-  bobAmp: 3.2,        // px vertical bob (screen-space, like loot bags)
+  // motion / shimmer (the portal "breathes" and bobs so it never reads as a static tile)
+  bobAmp: 3.2,        // (a.k.a. bobAmplitude) px vertical bob (screen-space, like loot bags)
   bobSpeed: 520,      // ms time-divisor for the bob sine
   pulseSpeed: 360,    // ms time-divisor for the glow/scale shimmer sine
-  pulseAmt: 0.07,     // +/- scale shimmer fraction (subtle breathing)
-  glowAlpha: 0.55,    // base radial aura alpha
-  glowSize: 1.9,      // aura radius as a multiple of the portal half-size
+  pulseAmt: 0.07,     // (a.k.a. pulseAmount) +/- scale shimmer fraction (subtle breathing)
+  spinSpeed: 3200,    // ms time-divisor for the vortex SWIRL (art slowly rotates in its disc); 0 = no spin
+  // CIRCULAR portal body — the art is clipped to this disc so the square sheet-tile
+  // edges disappear and the portal reads as a round glowing vortex.
+  coreScale: 0.94,    // disc radius as a fraction of the half-size box
+  artScale: 1.22,     // art drawn this much larger than the disc so it fills edge-to-edge
+  artCropInset: 0.16, // fraction cropped off each sheet-tile edge BEFORE clipping (drops square padding; tighter than the legacy cropInset since we also circle-clip)
+  coreBloom: 0.9,     // inner energy-core bloom radius as a fraction of the disc
+  coreAlpha: 0.5,     // inner energy-core brightness (additive)
+  rimAlpha: 0.5,      // glowing rim-ring alpha that defines the circular edge (0 = no ring)
+  particles: 3,       // # of orbiting themed sparks (0 = none) — cheap, time-based
+  // aura / glow
+  glowAlpha: 0.6,     // base radial aura alpha
+  glowSize: 2.1,      // (a.k.a. glowRadius) aura radius as a multiple of the portal half-size
   glowBlur: 14,       // shadowBlur added to the portal art (edge glow)
-  shadowW: 0.62,      // ground shadow width as a fraction of size
+  // ground anchor
+  shadowW: 0.62,      // (a.k.a. shadowSize) ground shadow width as a fraction of size
   shadowH: 0.2,       // ground shadow height as a fraction of size
   shadowAlpha: 0.32,  // ground shadow darkness
   shadowDrop: 0.34,   // shadow vertical offset below center as a fraction of size
-  fps: 7,             // sheet-frame animation rate (blended with bob/glow so it reads smooth)
-  cropInset: 0.07     // fraction cropped in from each sheet-tile edge (drops baked-in square padding)
+  fps: 7,             // sheet-frame animation rate (blended with bob/glow/spin so it reads smooth, not slideshow)
+  cropInset: 0.07     // LEGACY fallback crop if artCropInset is unset (kept for back-compat)
 }
 
 // Per-sheet aura/shadow tint so the glow matches each portal's art. Keyed by sheet
@@ -681,47 +704,242 @@ const ENV_SHEET_BY_THEME = {
   plague:   'env_plague'
 }
 
-// role -> candidate cells [{col,row}, ...]. The deterministic variant picker
-// chooses ONE cell from the list per tile (seeded by tile coords), giving several
-// floor variants / occasional alternate walls / sparse decor with zero flicker.
-// SHARED first-pass layout applied to every sheet (per the row interpretation in
-// SPRITE_SHEETS). Per-theme tweaks live in ENV_ROLE_OVERRIDES. Cells are GUESSES —
-// retune any line; nothing else depends on these coordinates.
-const ENV_ROLE_ASSIGNMENTS = {
-  floor:        [ { col: 0, row: 0 }, { col: 1, row: 0 }, { col: 2, row: 0 }, { col: 3, row: 0 } ],
-  floorAlt:     [ { col: 0, row: 1 }, { col: 1, row: 1 }, { col: 2, row: 1 } ],
-  path:         [ { col: 4, row: 0 }, { col: 5, row: 0 } ],
-  wall:         [ { col: 6, row: 0 }, { col: 7, row: 0 } ],
-  wallAlt:      [ { col: 6, row: 1 }, { col: 7, row: 1 } ],
-  specialFloor: [ { col: 4, row: 1 } ],
-  hazard:       [ { col: 0, row: 7 }, { col: 1, row: 7 } ],
-  water:        [ { col: 2, row: 7 }, { col: 3, row: 7 } ],
-  smallDecor:   [ { col: 0, row: 3 }, { col: 1, row: 3 }, { col: 2, row: 3 }, { col: 3, row: 3 } ],
-  largeDecor:   [ { col: 0, row: 4 }, { col: 1, row: 4 } ],
-  ruin:         [ { col: 5, row: 4 }, { col: 6, row: 4 } ]
+// === TWO SEPARATE environment concepts (never mixed) ========================
+// 1. ENV_TERRAIN_ROLES  — true ground/wall/liquid TILES; exactly ONE fills each
+//    map cell (floor/floorAlt/path/wall/wallAlt/hazard/water/specialFloor).
+// 2. ENV_OBJECT_ROLES   — props/decor (tree/rock/crystal/...) drawn ON TOP of a
+//    terrain tile, sparse + deterministic. Object cells must NEVER be used as
+//    terrain.
+// Both are PER-THEME — the 9 env sheets do NOT share a layout (verified from the
+// art). Every entry is a {col,row} into that theme's 8x8 sheet. Cells are a
+// first pass, tuned visually via env_debug.html; nothing else depends on them.
+// Only obvious ground/stone/liquid cells go in terrain; special/symbol/lava/
+// vortex cells are kept OUT of plain floor (they're hazard/specialFloor only).
+const ENV_TERRAIN_ROLES = {
+  neutral: {
+    floor:        [ {col:0,row:0},{col:1,row:0},{col:2,row:0},{col:3,row:0},{col:4,row:0} ],
+    floorAlt:     [ {col:1,row:0},{col:3,row:0} ],
+    path:         [ {col:5,row:0},{col:3,row:1},{col:4,row:1},{col:5,row:1} ],
+    wall:         [ {col:6,row:0},{col:7,row:0} ],
+    wallAlt:      [ {col:6,row:1},{col:7,row:1} ],
+    water:        [ {col:0,row:6},{col:1,row:6},{col:2,row:6} ],
+    specialFloor: [ {col:4,row:7} ]
+  },
+  forest: {
+    floor:        [ {col:0,row:0},{col:1,row:0},{col:2,row:0},{col:3,row:0},{col:4,row:0} ],
+    floorAlt:     [ {col:0,row:2},{col:1,row:2} ],
+    path:         [ {col:0,row:1},{col:1,row:1} ],
+    wall:         [ {col:6,row:1},{col:7,row:1} ],
+    water:        [ {col:4,row:7},{col:5,row:7} ]
+  },
+  goblin: {
+    floor:        [ {col:0,row:0},{col:1,row:0},{col:2,row:0} ],
+    floorAlt:     [ {col:4,row:0},{col:5,row:0} ],
+    path:         [ {col:3,row:0} ],
+    wall:         [ {col:0,row:5},{col:1,row:5},{col:2,row:5} ],
+    hazard:       [ {col:0,row:7} ],
+    specialFloor: [ {col:6,row:0} ]
+  },
+  fungal: {
+    floor:        [ {col:0,row:0},{col:1,row:0},{col:2,row:0} ],
+    floorAlt:     [ {col:4,row:0},{col:5,row:0},{col:6,row:0} ],
+    wall:         [ {col:0,row:6},{col:1,row:6} ],
+    hazard:       [ {col:0,row:5},{col:1,row:5} ],
+    water:        [ {col:2,row:5},{col:3,row:5} ],
+    specialFloor: [ {col:3,row:0} ]
+  },
+  void: {
+    floor:        [ {col:0,row:0},{col:1,row:0},{col:0,row:1},{col:1,row:1} ],
+    floorAlt:     [ {col:4,row:0},{col:2,row:1} ],
+    wall:         [ {col:0,row:2},{col:1,row:2} ],
+    wallAlt:      [ {col:6,row:2},{col:7,row:2} ],
+    hazard:       [ {col:3,row:1},{col:5,row:1} ],
+    water:        [ {col:0,row:4},{col:1,row:4} ],
+    specialFloor: [ {col:0,row:3},{col:1,row:3} ]
+  },
+  frost: {
+    floor:        [ {col:0,row:0},{col:1,row:0},{col:2,row:0} ],
+    floorAlt:     [ {col:3,row:0},{col:4,row:0},{col:5,row:0} ],
+    path:         [ {col:2,row:0} ],
+    wall:         [ {col:0,row:1},{col:1,row:1} ],
+    hazard:       [ {col:3,row:1},{col:4,row:1} ],
+    water:        [ {col:0,row:6},{col:1,row:6} ],
+    specialFloor: [ {col:0,row:5},{col:1,row:5} ]
+  },
+  infernal: {
+    floor:        [ {col:0,row:0},{col:1,row:0},{col:3,row:0},{col:4,row:0} ],
+    floorAlt:     [ {col:5,row:0} ],
+    wall:         [ {col:0,row:4},{col:1,row:4} ],
+    hazard:       [ {col:0,row:1},{col:1,row:1},{col:2,row:1} ],
+    specialFloor: [ {col:0,row:2},{col:1,row:2} ]
+  },
+  cursed: {
+    floor:        [ {col:0,row:0},{col:1,row:0},{col:2,row:0} ],
+    floorAlt:     [ {col:0,row:1},{col:1,row:1} ],
+    path:         [ {col:3,row:0},{col:4,row:0} ],
+    wall:         [ {col:0,row:6},{col:1,row:6} ],
+    hazard:       [ {col:5,row:0},{col:6,row:0} ],
+    specialFloor: [ {col:3,row:1},{col:4,row:1} ]
+  },
+  plague: {
+    floor:        [ {col:0,row:0},{col:1,row:0},{col:2,row:0} ],
+    floorAlt:     [ {col:1,row:1},{col:2,row:1} ],
+    wall:         [ {col:0,row:4},{col:1,row:4} ],
+    hazard:       [ {col:4,row:0},{col:3,row:1} ],
+    water:        [ {col:5,row:0} ],
+    specialFloor: [ {col:6,row:1} ]
+  }
 }
 
-// Per-theme role overrides (theme -> { role -> cells }). First pass only repoints
-// hazards/liquids to each sheet's signature pool tiles. Anything not overridden
-// uses ENV_ROLE_ASSIGNMENTS. Edit/extend freely.
-const ENV_ROLE_OVERRIDES = {
-  infernal: { hazard: [ { col: 4, row: 7 }, { col: 5, row: 7 } ] }, // lava pools
-  plague:   { hazard: [ { col: 4, row: 7 }, { col: 5, row: 7 } ], water: [ { col: 6, row: 7 }, { col: 7, row: 7 } ] }, // ooze / sewer
-  void:     { hazard: [ { col: 6, row: 7 }, { col: 7, row: 7 } ] }, // dark pools / vortex
-  frost:    { hazard: [ { col: 4, row: 7 }, { col: 5, row: 7 } ] }  // cracked ice
+// Object/decor cells per theme (taxonomy role -> candidate cells). These draw ON
+// TOP of a terrain tile via Sprites.drawEnvObject — never as terrain. ENV_OBJECT_
+// RULES (below) decides which of these roles feed the sparse small/large passes.
+const ENV_OBJECT_ROLES = {
+  neutral: {
+    tree:      [ {col:3,row:3},{col:4,row:3} ],
+    bush:      [ {col:0,row:3},{col:1,row:3},{col:2,row:3} ],
+    rock:      [ {col:4,row:2},{col:5,row:2},{col:6,row:2},{col:7,row:2} ],
+    plant:     [ {col:4,row:4},{col:5,row:4},{col:6,row:4},{col:7,row:4} ],
+    smallDecor:[ {col:0,row:4},{col:1,row:4},{col:2,row:4},{col:3,row:4} ],
+    fence:     [ {col:2,row:5},{col:3,row:5},{col:1,row:2} ],
+    campProp:  [ {col:4,row:5},{col:5,row:5},{col:6,row:5},{col:7,row:5} ],
+    ruin:      [ {col:0,row:7},{col:2,row:7},{col:3,row:7} ],
+    pillar:    [ {col:1,row:7} ],
+    miscProp:  [ {col:0,row:5},{col:1,row:5},{col:6,row:3},{col:7,row:3} ]
+  },
+  forest: {
+    stump:     [ {col:0,row:3},{col:1,row:3},{col:2,row:3} ],
+    tree:      [ {col:0,row:4},{col:1,row:4},{col:2,row:4},{col:3,row:4} ],
+    bush:      [ {col:4,row:3},{col:5,row:3},{col:6,row:3} ],
+    log:       [ {col:5,row:4},{col:6,row:4},{col:7,row:4} ],
+    rock:      [ {col:0,row:5},{col:1,row:5},{col:2,row:5},{col:3,row:5} ],
+    ruin:      [ {col:4,row:5},{col:5,row:5},{col:6,row:5},{col:7,row:5} ],
+    plant:     [ {col:0,row:6},{col:1,row:6},{col:2,row:6},{col:3,row:6} ],
+    mushroom:  [ {col:4,row:6},{col:5,row:6} ],
+    smallDecor:[ {col:0,row:6},{col:1,row:6},{col:2,row:6},{col:3,row:6} ],
+    fence:     [ {col:0,row:7},{col:1,row:7},{col:2,row:7},{col:3,row:7} ]
+  },
+  goblin: {
+    tent:      [ {col:0,row:2},{col:1,row:2} ],
+    cage:      [ {col:2,row:2},{col:4,row:2} ],
+    gate:      [ {col:3,row:2} ],
+    totem:     [ {col:5,row:2} ],
+    barrel:    [ {col:0,row:3},{col:1,row:3},{col:2,row:3} ],
+    campfire:  [ {col:3,row:3},{col:4,row:3} ],
+    bone:      [ {col:5,row:3},{col:5,row:4} ],
+    banner:    [ {col:2,row:4},{col:7,row:1} ],
+    skull:     [ {col:0,row:4},{col:1,row:4} ],
+    spike:     [ {col:1,row:1},{col:2,row:1},{col:3,row:1},{col:4,row:1} ],
+    rock:      [ {col:0,row:6},{col:1,row:6},{col:2,row:6},{col:3,row:6} ],
+    fence:     [ {col:4,row:6},{col:5,row:6},{col:6,row:6} ],
+    smallDecor:[ {col:0,row:6},{col:5,row:4},{col:6,row:4} ]
+  },
+  fungal: {
+    mushroom:  [ {col:0,row:1},{col:1,row:1},{col:2,row:1},{col:3,row:1},{col:4,row:1} ],
+    bigShroom: [ {col:0,row:2},{col:1,row:2},{col:2,row:2} ],
+    stump:     [ {col:3,row:2},{col:4,row:2},{col:5,row:2},{col:6,row:2} ],
+    pod:       [ {col:0,row:3},{col:1,row:3},{col:2,row:3},{col:3,row:3} ],
+    fleshpod:  [ {col:4,row:3},{col:5,row:3},{col:6,row:3} ],
+    root:      [ {col:0,row:4},{col:1,row:4},{col:2,row:4},{col:3,row:4} ],
+    tendril:   [ {col:4,row:4},{col:5,row:4},{col:6,row:4} ],
+    crystal:   [ {col:0,row:7},{col:1,row:7},{col:2,row:7} ],
+    smallDecor:[ {col:5,row:1},{col:6,row:1},{col:3,row:7},{col:4,row:7} ]
+  },
+  void: {
+    crystal:   [ {col:0,row:5},{col:1,row:5},{col:5,row:5},{col:6,row:5},{col:7,row:5} ],
+    obelisk:   [ {col:2,row:5},{col:3,row:5},{col:4,row:5} ],
+    rock:      [ {col:0,row:6},{col:1,row:6},{col:2,row:6},{col:3,row:6} ],
+    eye:       [ {col:0,row:7},{col:1,row:7},{col:2,row:7},{col:3,row:7} ],
+    coral:     [ {col:4,row:4},{col:4,row:7},{col:5,row:7} ],
+    orb:       [ {col:5,row:4},{col:6,row:4} ],
+    smallDecor:[ {col:0,row:6},{col:1,row:6},{col:6,row:7},{col:7,row:7} ]
+  },
+  frost: {
+    crystal:   [ {col:0,row:2},{col:1,row:2},{col:2,row:2},{col:3,row:2},{col:7,row:2} ],
+    pillar:    [ {col:4,row:2},{col:5,row:2},{col:6,row:2} ],
+    snowdrift: [ {col:0,row:3},{col:1,row:3},{col:2,row:3} ],
+    iceChunk:  [ {col:0,row:4},{col:1,row:4},{col:2,row:4} ],
+    ruin:      [ {col:3,row:4},{col:4,row:4},{col:5,row:4},{col:6,row:4} ],
+    brazier:   [ {col:4,row:5},{col:5,row:5} ],
+    bone:      [ {col:0,row:7},{col:1,row:7},{col:2,row:7} ],
+    smallDecor:[ {col:4,row:7},{col:5,row:7},{col:6,row:7},{col:7,row:7} ]
+  },
+  infernal: {
+    spike:     [ {col:5,row:1},{col:6,row:1} ],
+    brazier:   [ {col:4,row:2},{col:5,row:2} ],
+    cage:      [ {col:6,row:2} ],
+    pillar:    [ {col:0,row:3},{col:1,row:3},{col:2,row:3} ],
+    altar:     [ {col:3,row:3},{col:4,row:3} ],
+    chain:     [ {col:5,row:3},{col:6,row:3} ],
+    bone:      [ {col:4,row:4},{col:5,row:4},{col:6,row:4} ],
+    crystal:   [ {col:3,row:5},{col:5,row:5} ],
+    rock:      [ {col:1,row:5},{col:4,row:5} ],
+    skull:     [ {col:0,row:5},{col:2,row:5} ],
+    smallDecor:[ {col:0,row:5},{col:2,row:5},{col:1,row:6} ]
+  },
+  cursed: {
+    skullpile: [ {col:0,row:2},{col:1,row:2} ],
+    coffin:    [ {col:2,row:2},{col:3,row:2} ],
+    grave:     [ {col:4,row:2},{col:5,row:2} ],
+    bone:      [ {col:6,row:2} ],
+    statue:    [ {col:0,row:3},{col:1,row:3} ],
+    rubble:    [ {col:2,row:3} ],
+    column:    [ {col:3,row:3},{col:4,row:3} ],
+    deadtree:  [ {col:5,row:3},{col:6,row:3},{col:7,row:3} ],
+    brazier:   [ {col:0,row:4},{col:1,row:4},{col:2,row:4} ],
+    gate:      [ {col:3,row:4},{col:4,row:4} ],
+    ghost:     [ {col:4,row:7},{col:5,row:7},{col:6,row:7} ],
+    smallDecor:[ {col:6,row:2},{col:2,row:3} ]
+  },
+  plague: {
+    bonepile:  [ {col:0,row:2},{col:1,row:2} ],
+    planks:    [ {col:2,row:2} ],
+    barrel:    [ {col:3,row:2},{col:4,row:2},{col:5,row:2} ],
+    pipe:      [ {col:6,row:2} ],
+    cauldron:  [ {col:0,row:3},{col:1,row:3},{col:2,row:3} ],
+    sac:       [ {col:3,row:3},{col:4,row:3} ],
+    fungus:    [ {col:5,row:3},{col:6,row:3} ],
+    chain:     [ {col:0,row:5},{col:1,row:5} ],
+    cage:      [ {col:2,row:5} ],
+    plant:     [ {col:0,row:6},{col:1,row:6},{col:2,row:6},{col:3,row:6} ],
+    smallDecor:[ {col:4,row:6},{col:5,row:6},{col:6,row:6},{col:7,row:6} ]
+  }
 }
 
 // Tile-type name -> env role (callers translate their T_* constant to a name so
 // sprites.js stays standalone — it must NOT reference engine globals at load).
 const envHazardAssignments = { lava: 'hazard', ice: 'hazard', water: 'water' }
 
-// Sparse decor density per theme (chance, 0..1, that an eligible walkable floor
-// tile gets a smallDecor sprite). Conservative first pass. _default covers any
-// theme not listed. Selection is deterministic per tile (no per-frame random).
-const envDecorAssignments = {
-  _default: 0.05,
-  neutral: 0.06, forest: 0.10, fungal: 0.10, goblin: 0.07,
-  void: 0.05, frost: 0.06, infernal: 0.05, cursed: 0.06, plague: 0.06
+// Object/decor density per theme: chance (0..1) a walkable floor tile gets a
+// SMALL prop, and the much rarer LARGE prop chance. Conservative first pass —
+// keep these low (sparse). Large is ~disabled (0) for most themes this pass.
+// _default covers any theme not listed. Deterministic per tile (no flicker).
+const ENV_OBJECT_DENSITY = {
+  _default: { small: 0.02, large: 0 },
+  neutral:  { small: 0.02,  large: 0 },
+  forest:   { small: 0.03,  large: 0.004 },
+  goblin:   { small: 0.025, large: 0 },
+  fungal:   { small: 0.03,  large: 0.004 },
+  void:     { small: 0.02,  large: 0 },
+  frost:    { small: 0.02,  large: 0 },
+  infernal: { small: 0.018, large: 0 },
+  cursed:   { small: 0.02,  large: 0 },
+  plague:   { small: 0.025, large: 0 }
+}
+
+// Which ENV_OBJECT_ROLES feed each sparse pass. `small` = 1-tile ground props
+// (flowers/rocks/bones/mushrooms/crystals); `large` = bigger structures
+// (trees/pillars/ruins) used only when ENV_OBJECT_DENSITY.large > 0. Edit freely.
+const ENV_OBJECT_RULES = {
+  neutral:  { small: ['smallDecor','plant','bush'],           large: ['tree','rock','ruin','campProp'] },
+  forest:   { small: ['plant','mushroom','smallDecor','stump'], large: ['tree','bush','rock','ruin','log'] },
+  goblin:   { small: ['skull','bone','barrel','rock'],        large: ['tent','cage','gate','totem','campfire'] },
+  fungal:   { small: ['mushroom','smallDecor','crystal','root'], large: ['bigShroom','stump','pod','fleshpod'] },
+  void:     { small: ['crystal','smallDecor','rock'],         large: ['obelisk','eye','coral'] },
+  frost:    { small: ['snowdrift','smallDecor','crystal','bone'], large: ['pillar','iceChunk','ruin','brazier'] },
+  infernal: { small: ['skull','bone','rock','smallDecor'],    large: ['pillar','brazier','altar','spike','cage'] },
+  cursed:   { small: ['bone','grave','rubble','smallDecor'],  large: ['skullpile','coffin','statue','column','deadtree','brazier'] },
+  plague:   { small: ['plant','smallDecor','bonepile','fungus'], large: ['cauldron','sac','barrel','cage'] }
 }
 
 // World biome id (biomes.js BIOMES / BOSS_BIOMES) -> env theme. (env_goblin has no
@@ -992,15 +1210,18 @@ const Sprites = {
     return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`
   },
 
-  // FULL portal entity treatment: ground shadow + soft radial aura + time-based
-  // bob + subtle pulse/scale shimmer + the cropped, glowing 3-frame art. Frame
-  // animation is blended with the continuous bob/glow so it never reads as a harsh
-  // slideshow. `seed` (e.g. tile coords) gives each portal a stable phase so a field
-  // of portals doesn't pulse in lockstep — no per-portal state object needed.
-  // Call from inside drawUpright(anchor, ...) with cx,cy = 0,0 so the whole effect
-  // stays screen-upright and coherent under screen rotation (like loot bags).
-  // Returns true if it drew the art; false (sheet unloaded) so the caller keeps its
-  // pulsing-rect fallback.
+  // FULL portal entity treatment: the portal reads as a round glowing VORTEX, not a
+  // square sheet tile. Layers (all driven by PORTAL_VIS, no per-portal hacks):
+  //   1) ground shadow (anchor)        2) soft themed radial aura
+  //   3) the sheet art CLIPPED to a circle + slowly spun (square edges vanish)
+  //   4) bright additive energy core   5) glowing rim ring (defines the circle)
+  //   6) optional orbiting sparks
+  // Frame animation is blended with continuous bob / pulse / spin / glow so it feels
+  // alive instead of a slideshow. `seed` (e.g. tile coords) gives each portal a
+  // stable phase so a field of portals doesn't pulse in lockstep. Call from inside
+  // drawUpright(anchor, ...) with cx,cy = 0,0 so glow/shadow/art stay screen-upright
+  // and coherent under screen rotation (like loot bags). Returns true if it drew the
+  // art; false (sheet unloaded) so the caller keeps its (now circular) fallback.
   drawPortalEntity(themeOrSpec, cx, cy, size, context, seed) {
     if (!this.enabled) return false
     const spec = this.portalSpec(themeOrSpec)
@@ -1017,8 +1238,10 @@ const Sprites = {
     const pulse = Math.sin(t / V.pulseSpeed + ph)   // -1..1
     const glow = this.portalGlow(spec.sheet)
     const yc = cy + bob
+    // Radius of the circular portal body (breathes with the pulse).
+    const coreR = size * 0.5 * (V.coreScale != null ? V.coreScale : 0.94) * (1 + V.pulseAmt * pulse)
 
-    // Ground shadow — flat ellipse pinned under the portal (does not bob with it).
+    // 1) Ground shadow — flat ellipse pinned under the portal (does not bob with it).
     c.save()
     c.globalAlpha = V.shadowAlpha
     c.fillStyle = '#000'
@@ -1027,10 +1250,10 @@ const Sprites = {
     c.fill()
     c.restore()
 
-    // Soft radial aura behind the art (pulsing presence).
+    // 2) Soft radial aura behind the body (pulsing themed presence).
     const gr = size * 0.5 * V.glowSize * (1 + 0.08 * pulse)
     const ga = V.glowAlpha * (0.78 + 0.22 * pulse)
-    const grad = c.createRadialGradient(cx, yc, 0, cx, yc, gr)
+    let grad = c.createRadialGradient(cx, yc, 0, cx, yc, gr)
     grad.addColorStop(0, this._rgba(glow, ga))
     grad.addColorStop(0.55, this._rgba(glow, ga * 0.35))
     grad.addColorStop(1, this._rgba(glow, 0))
@@ -1039,15 +1262,64 @@ const Sprites = {
     c.beginPath(); c.arc(cx, yc, gr, 0, Math.PI * 2); c.fill()
     c.restore()
 
-    // The cropped 3-frame art, scaled by the pulse, with an edge glow.
+    // 3) Portal art CLIPPED to a circle (square tile edges vanish) and slowly spun
+    //    about its own center for a living swirl (a local rotation — independent of
+    //    screen rotation, so it stays coherent under Q/E). Cropped tighter and drawn
+    //    a touch larger than the disc so the useful swirl fills the circle.
     const r = portalVariantRect(spec.variant)
     const fi = Math.floor(t / (1000 / V.fps)) % r.frames
-    const scl = 1 + V.pulseAmt * pulse
+    const artInset = (V.artCropInset != null) ? V.artCropInset : V.cropInset
+    const artSize = coreR * 2 * (V.artScale != null ? V.artScale : 1.2)
     c.save()
-    c.shadowBlur = V.glowBlur + (pulse + 1) * 4
+    c.beginPath(); c.arc(cx, yc, coreR, 0, Math.PI * 2); c.clip()
+    if (V.spinSpeed) {
+      c.translate(cx, yc); c.rotate((t / V.spinSpeed + ph) % (Math.PI * 2)); c.translate(-cx, -yc)
+    }
+    c.shadowBlur = V.glowBlur
     c.shadowColor = glow
-    const drew = this._drawSheetTile(spec.sheet, r.col + fi, r.row, cx, yc, size * scl, c, V.cropInset)
+    const drew = this._drawSheetTile(spec.sheet, r.col + fi, r.row, cx, yc, artSize, c, artInset)
     c.restore()
+
+    // 4) Inner energy core — bright additive bloom so the disc reads as a glowing
+    //    core (esp. for void/arcane purples).
+    c.save()
+    c.globalCompositeOperation = 'lighter'
+    const cr = coreR * (V.coreBloom != null ? V.coreBloom : 0.9)
+    const ca = (V.coreAlpha != null ? V.coreAlpha : 0.5) * (0.7 + 0.3 * pulse)
+    grad = c.createRadialGradient(cx, yc, 0, cx, yc, cr)
+    grad.addColorStop(0, this._rgba(glow, ca))
+    grad.addColorStop(0.5, this._rgba(glow, ca * 0.4))
+    grad.addColorStop(1, this._rgba(glow, 0))
+    c.fillStyle = grad
+    c.beginPath(); c.arc(cx, yc, cr, 0, Math.PI * 2); c.fill()
+    c.restore()
+
+    // 5) Rim ring — a thin glowing edge that defines the circular boundary.
+    if (V.rimAlpha) {
+      c.save()
+      c.globalAlpha = V.rimAlpha * (0.7 + 0.3 * pulse)
+      c.strokeStyle = this._rgba(glow, 1)
+      c.lineWidth = Math.max(1.5, size * 0.04)
+      c.shadowBlur = V.glowBlur
+      c.shadowColor = glow
+      c.beginPath(); c.arc(cx, yc, coreR, 0, Math.PI * 2); c.stroke()
+      c.restore()
+    }
+
+    // 6) Optional themed sparks orbiting the core (cheap, fully time-based).
+    if (V.particles) {
+      const n = V.particles | 0
+      c.save()
+      c.globalCompositeOperation = 'lighter'
+      for (let i = 0; i < n; i++) {
+        const a = (t / 900) + ph + i * (Math.PI * 2 / n)
+        const rad = coreR * (0.78 + 0.14 * Math.sin(t / 500 + i))
+        const pr = Math.max(1, size * 0.035) * (0.7 + 0.3 * Math.sin(t / 300 + i))
+        c.fillStyle = this._rgba(glow, 0.8)
+        c.beginPath(); c.arc(cx + Math.cos(a) * rad, yc + Math.sin(a) * rad, pr, 0, Math.PI * 2); c.fill()
+      }
+      c.restore()
+    }
     return drew
   },
 
@@ -1161,10 +1433,10 @@ const Sprites = {
   // Resolve a world biome id / dungeon key -> env theme (data-driven maps above).
   envThemeForBiome(biomeId) { return biomeEnvThemeMap[biomeId | 0] || 'neutral' },
   envThemeForDungeon(key)   { return dungeonEnvThemeMap[key] || 'neutral' },
-  // Sparse-decor chance for a theme (0..1).
+  // Sparse small-object chance for a theme (0..1). Back-compat helper.
   envDecorChance(theme) {
-    const v = envDecorAssignments[theme]
-    return (v != null ? v : envDecorAssignments._default) || 0
+    const d = ENV_OBJECT_DENSITY[theme] || ENV_OBJECT_DENSITY._default
+    return (d && d.small) || 0
   },
 
   // Stable hash for deterministic per-tile variant/decor selection (no per-frame
@@ -1176,31 +1448,173 @@ const Sprites = {
     return h
   },
 
-  // Resolve a theme+role to its candidate cell list (override beats base).
+  // Resolve a theme+TERRAIN role to its candidate cell list.
+  _envTerrainCells(theme, role) {
+    const t = ENV_TERRAIN_ROLES[theme]
+    return (t && t[role]) || null
+  },
+  // Resolve a theme+OBJECT role to its candidate cell list.
+  _envObjectCells(theme, role) {
+    const o = ENV_OBJECT_ROLES[theme]
+    return (o && o[role]) || null
+  },
+  // Back-compat: terrain first, then object (used by env_debug.html).
   _envCells(theme, role) {
-    const ov = ENV_ROLE_OVERRIDES[theme]
-    return (ov && ov[role]) || ENV_ROLE_ASSIGNMENTS[role] || null
+    return this._envTerrainCells(theme, role) || this._envObjectCells(theme, role) || null
   },
 
-  // Draw exactly ONE environment cell for (theme, role), CENTERED at (x,y), fit to
-  // a `size` box. `seed` (e.g. an envHash of tile coords) deterministically picks a
+  // --- Env cell source-rect math (boundary-based, NOT a single fractional cell) ---
+  // The env sheets are 1254x1254 on an 8x8 grid → 156.75px cells. Multiplying a
+  // fractional cellW by col accumulates drift across the sheet. Instead snap each
+  // cell to integer pixel BOUNDARIES so adjacent cells tile seamlessly:
+  //   x0 = round(col*W/cols), x1 = round((col+1)*W/cols), etc. Returns null until
+  // the image is decoded. `full:true` marks an untrimmed (whole-cell) rect.
+  envCellRect(sheetKey, col, row) {
+    const def = SPRITE_SHEETS[sheetKey]
+    if (!def) return null
+    const rec = this.sheet(sheetKey)
+    if (!rec || !rec.loaded || !rec.img.complete) return null
+    const nw = rec.img.naturalWidth, nh = rec.img.naturalHeight
+    if (!nw || !nh) return null
+    const cols = def.cols || 8, rows = def.rows || 8
+    const x0 = Math.round(col * nw / cols), x1 = Math.round((col + 1) * nw / cols)
+    const y0 = Math.round(row * nh / rows), y1 = Math.round((row + 1) * nh / rows)
+    return { sx: x0, sy: y0, sw: Math.max(1, x1 - x0), sh: Math.max(1, y1 - y0), full: true }
+  },
+
+  // Alpha-trimmed visible bounds INSIDE an env cell. Many cells carry transparent
+  // padding around the actual art, which (when drawn whole) makes terrain look
+  // small/off-centre. We scan the cell's alpha channel ONCE (cached per sheet/col/
+  // row) and return the tight rect of pixels with alpha > threshold. On any failure
+  // — image not ready, no DOM, or a tainted canvas (e.g. opened via file://, where
+  // getImageData throws SecurityError) — we fall back to the full boundary rect.
+  _envTrimCache: {},
+  envCellTrimRect(sheetKey, col, row, threshold) {
+    const key = sheetKey + ':' + col + ':' + row
+    const cached = this._envTrimCache[key]
+    if (cached) return cached
+    const base = this.envCellRect(sheetKey, col, row)
+    if (!base) return null            // not loaded yet — don't cache, retry next frame
+    const thr = threshold == null ? 12 : threshold
+    let result = base
+    try {
+      const rec = this.sheet(sheetKey)
+      const sw = base.sw, sh = base.sh
+      let cv = this._envScanCanvas
+      if (!cv) cv = this._envScanCanvas = document.createElement('canvas')
+      cv.width = sw; cv.height = sh
+      const sc = cv.getContext('2d')
+      sc.clearRect(0, 0, sw, sh)
+      sc.drawImage(rec.img, base.sx, base.sy, sw, sh, 0, 0, sw, sh)
+      const data = sc.getImageData(0, 0, sw, sh).data   // throws if tainted → catch
+      let minX = sw, minY = sh, maxX = -1, maxY = -1
+      for (let y = 0; y < sh; y++) {
+        for (let x = 0; x < sw; x++) {
+          if (data[(y * sw + x) * 4 + 3] > thr) {
+            if (x < minX) minX = x
+            if (x > maxX) maxX = x
+            if (y < minY) minY = y
+            if (y > maxY) maxY = y
+          }
+        }
+      }
+      if (maxX >= minX && maxY >= minY) {
+        result = { sx: base.sx + minX, sy: base.sy + minY, sw: maxX - minX + 1, sh: maxY - minY + 1, full: false }
+      }
+    } catch (err) { result = base }   // tainted/unavailable → full cell rect
+    this._envTrimCache[key] = result
+    return result
+  },
+
+  // TERRAIN draw mode = COVER/FILL the tile. Uses the alpha-trimmed crop so the
+  // visible art (not the transparent padding) is stretched to fill the size-px tile
+  // square centered at (x,y). `opts.bleed` (default 0) oversizes the dest to hide
+  // seams; callers already pass TILE+1. Returns false → caller keeps its flat fill.
+  drawEnvTerrainCell(sheetKey, col, row, x, y, size, context, opts) {
+    const rec = this.sheet(sheetKey)
+    if (!rec || !rec.loaded || !rec.img.complete) return false
+    const c = context || (typeof ctx !== 'undefined' ? ctx : null)
+    if (!c) return false
+    const r = this.envCellTrimRect(sheetKey, col, row, opts && opts.threshold)
+    if (!r) return false
+    const bleed = (opts && opts.bleed != null) ? opts.bleed : 0
+    const dw = size + bleed, dh = size + bleed
+    try {
+      c.drawImage(rec.img, r.sx, r.sy, r.sw, r.sh, x - dw / 2, y - dh / 2, dw, dh)
+    } catch (err) { return false }
+    return true
+  },
+
+  // OBJECT draw mode = CONTAIN + anchor BOTTOM-CENTER. Uses the alpha-trimmed crop,
+  // PRESERVES aspect ratio (larger dim maps to size*scale, so a prop may be taller/
+  // wider than one tile) and plants the art's bottom-center on the tile's bottom
+  // edge (x,y is the tile CENTER). Never forces the prop to fill the terrain square.
+  drawEnvObjectCell(sheetKey, col, row, x, y, size, context, opts) {
+    const rec = this.sheet(sheetKey)
+    if (!rec || !rec.loaded || !rec.img.complete) return false
+    const c = context || (typeof ctx !== 'undefined' ? ctx : null)
+    if (!c) return false
+    const r = this.envCellTrimRect(sheetKey, col, row, opts && opts.threshold)
+    if (!r) return false
+    const scale = (opts && opts.scale != null) ? opts.scale : 1
+    const k = (size * scale) / Math.max(r.sw, r.sh)
+    const dw = r.sw * k, dh = r.sh * k
+    const dx = x - dw / 2
+    const dy = (y + size / 2) - dh   // bottom of the art rests on the tile's bottom edge
+    try {
+      c.drawImage(rec.img, r.sx, r.sy, r.sw, r.sh, dx, dy, dw, dh)
+    } catch (err) { return false }
+    return true
+  },
+
+  // Draw exactly ONE TERRAIN cell for (theme, role), CENTERED at (x,y), fit to a
+  // `size` box. `seed` (e.g. an envHash of tile coords) deterministically picks a
   // variant from the role's cell list. Returns false if the theme/role is unmapped
   // or the sheet isn't loaded → caller keeps its existing flat-color fill. Samples
-  // a single 8x8 cell only (no neighbour bleed, no animation). `opts` reserved.
+  // a single 8x8 cell only (no neighbour bleed, no animation). `opts.inset` trims a
+  // fraction off each source edge if a sheet has baked-in padding.
   drawEnvTile(theme, role, x, y, size, context, seed, opts) {
-    if (!this.enabled) return false
+    if (!this.enabled || !ENV_SPRITES_ENABLED) return false
     const sheet = ENV_SHEET_BY_THEME[theme]
     if (!sheet) return false
-    const cells = this._envCells(theme, role)
+    const cells = this._envTerrainCells(theme, role)
     if (!cells || !cells.length) return false
     const cell = cells[(seed >>> 0) % cells.length]
-    return this._drawSheetTile(sheet, cell.col, cell.row, x, y, size, context)
+    // Terrain = cover/fill (alpha-trimmed art stretched to fill the tile square).
+    return this.drawEnvTerrainCell(sheet, cell.col, cell.row, x, y, size, context, opts)
   },
 
-  // Convenience: draw a sparse smallDecor prop for a theme (visual only).
-  drawEnvDecor(theme, seed, x, y, size, context) {
-    return this.drawEnvTile(theme, 'smallDecor', x, y, size, context, seed)
-  }
+  // Draw at most ONE sparse OBJECT/decor prop ON TOP of an already-painted floor
+  // tile at (cx,cy). Placement is deterministic per tile (envHash of tx,ty) using
+  // the theme's ENV_OBJECT_DENSITY + ENV_OBJECT_RULES — no Math.random, no flicker.
+  // Visual only; never affects collision. Returns true if it drew. Callers MUST
+  // only invoke this on walkable floor (never walls/hazards/water/portals/nexus).
+  drawEnvObject(theme, tx, ty, cx, cy, size, context) {
+    if (!this.enabled || !ENV_SPRITES_ENABLED) return false
+    const sheet = ENV_SHEET_BY_THEME[theme]
+    if (!sheet) return false
+    const rules = ENV_OBJECT_RULES[theme]
+    if (!rules) return false
+    const dens = ENV_OBJECT_DENSITY[theme] || ENV_OBJECT_DENSITY._default
+    const roll = this.envHash(tx, ty, 9) % 10000
+    const largeP = (dens.large || 0) * 10000, smallP = (dens.small || 0) * 10000
+    let roleList = null, scale = 0.82
+    if (largeP > 0 && rules.large && rules.large.length && roll < largeP) {
+      roleList = rules.large; scale = 1.0
+    } else if (smallP > 0 && rules.small && rules.small.length && roll < largeP + smallP) {
+      roleList = rules.small; scale = 0.82
+    }
+    if (!roleList) return false
+    const role = roleList[this.envHash(tx, ty, 11) % roleList.length]
+    const cells = this._envObjectCells(theme, role)
+    if (!cells || !cells.length) return false
+    const cell = cells[this.envHash(tx, ty, 12) % cells.length]
+    // Object = contain + bottom-center anchor (preserves aspect; never fills tile).
+    return this.drawEnvObjectCell(sheet, cell.col, cell.row, cx, cy, size, context, { scale })
+  },
+
+  // Back-compat shim (old decor caller). Real placement now lives in drawEnvObject.
+  drawEnvDecor() { return false }
 }
 
 // Global angle offset (radians) applied to projectile sprites if the source art's
@@ -1244,11 +1658,13 @@ if (typeof window !== 'undefined') {
   window.projectileWeaponAssignments = projectileWeaponAssignments
   window.projectileBossAssignments = projectileBossAssignments
   // Environment tile/decor system (biome + dungeon terrain sheets).
+  window.ENV_SPRITES_ENABLED = ENV_SPRITES_ENABLED   // global master switch (currently false)
   window.ENV_SHEET_BY_THEME = ENV_SHEET_BY_THEME
-  window.ENV_ROLE_ASSIGNMENTS = ENV_ROLE_ASSIGNMENTS
-  window.ENV_ROLE_OVERRIDES = ENV_ROLE_OVERRIDES
+  window.ENV_TERRAIN_ROLES = ENV_TERRAIN_ROLES
+  window.ENV_OBJECT_ROLES = ENV_OBJECT_ROLES
+  window.ENV_OBJECT_DENSITY = ENV_OBJECT_DENSITY
+  window.ENV_OBJECT_RULES = ENV_OBJECT_RULES
   window.envHazardAssignments = envHazardAssignments
-  window.envDecorAssignments = envDecorAssignments
   window.biomeEnvThemeMap = biomeEnvThemeMap
   window.dungeonEnvThemeMap = dungeonEnvThemeMap
   window.PORTAL_THEME_SHEET = PORTAL_THEME_SHEET

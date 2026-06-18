@@ -337,23 +337,22 @@ const DungeonZone = (() => {
         // fallback when a sheet is unmapped/unloaded. Collision/generation/loot
         // unaffected. Portal tiles are handled by the entity pass below.
         let drewEnv = false
-        if (typeof Sprites !== 'undefined' && Sprites.drawEnvTile && t !== T_PORTAL_DUNGEON) {
+        if (typeof ENV_SPRITES_ENABLED !== 'undefined' && ENV_SPRITES_ENABLED &&
+            typeof Sprites !== 'undefined' && Sprites.drawEnvTile && !map.disableEnvSprites &&
+            t !== T_PORTAL_DUNGEON) {
           let role = null
           if (t === T_FLOOR) {
             const hv = Sprites.envHash(tx, ty, 1)
-            role = (hv % 17 === 0) ? 'path' : (hv % 7 === 0) ? 'floorAlt' : 'floor'
+            role = (hv % 23 === 0) ? 'path' : (hv % 6 === 0) ? 'floorAlt' : 'floor'
           } else if (t === T_WALL) {
             role = (Sprites.envHash(tx, ty, 2) % 9 === 0) ? 'wallAlt' : 'wall'
           } else if (t === T_LAVA || t === T_ICE) { role = 'hazard' }
           else if (t === T_WATER) { role = 'water' }
           if (role) {
-            drewEnv = Sprites.drawEnvTile(envTheme, role, px + TILE/2, py + TILE/2, TILE, ctx, Sprites.envHash(tx, ty, 3))
+            // +1px terrain oversize reduces hard black gaps between transparent edges.
+            drewEnv = Sprites.drawEnvTile(envTheme, role, px + TILE/2, py + TILE/2, TILE + 1, ctx, Sprites.envHash(tx, ty, 3))
             if (drewEnv && t === T_FLOOR) {
-              const dch = Sprites.envDecorChance(envTheme)
-              if (dch > 0) {
-                const dh = Sprites.envHash(tx, ty, 9)
-                if ((dh % 1000) < dch * 1000) Sprites.drawEnvDecor(envTheme, dh, px + TILE/2, py + TILE/2, TILE, ctx)
-              }
+              Sprites.drawEnvObject(envTheme, tx, ty, px + TILE/2, py + TILE/2, TILE, ctx)
             }
           }
         }
@@ -378,7 +377,8 @@ const DungeonZone = (() => {
       if (!drew) {
         const pulse = 0.6 + Math.sin(Date.now()/500) * 0.4
         ctx.fillStyle = `rgba(100,220,120,${pulse})`
-        ctx.fillRect(p.px+4, p.py+4, TILE-8, TILE-8)
+        // Circular fallback (no art): a pulsing glowing disc, not a square tile.
+        ctx.beginPath(); ctx.arc(p.px + TILE/2, p.py + TILE/2, TILE/2 - 3, 0, Math.PI*2); ctx.fill()
       }
       // "EXIT" label BELOW the portal, upright + world-anchored (counter-rotates
       // with screen rotation like other rotated world labels).
