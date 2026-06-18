@@ -34,13 +34,25 @@ function screenRotationRad() {
   return (typeof Settings !== 'undefined' && Settings.screenRotation)
     ? Settings.screenRotation * Math.PI / 180 : 0
 }
+// --- WORLD ZOOM ---
+// In-game camera zoom (world px → screen px multiplier) applied about screen
+// center alongside the rotation. Default DEFAULT_ZOOM makes the character fill
+// the view without needing browser zoom. Player-tunable via Options → Settings.zoom
+// and persisted there. HUD is drawn OUTSIDE the world transform so it is unscaled.
+const DEFAULT_ZOOM = 1.85
+function worldZoom() {
+  const z = (typeof Settings !== 'undefined' && Settings.zoom) ? Settings.zoom : DEFAULT_ZOOM
+  return (z > 0.2 && z < 8) ? z : DEFAULT_ZOOM
+}
 let _worldXf = false
 function beginWorldTransform() {
   const a = screenRotationRad()
-  if (!a) { _worldXf = false; return }
+  const z = worldZoom()
+  if (!a && z === 1) { _worldXf = false; return }
   ctx.save()
   ctx.translate(canvas.width / 2, canvas.height / 2)
-  ctx.rotate(a)
+  if (z !== 1) ctx.scale(z, z)
+  if (a) ctx.rotate(a)
   ctx.translate(-canvas.width / 2, -canvas.height / 2)
   _worldXf = true
 }
@@ -56,10 +68,12 @@ function worldToScreen(wx, wy) {
     const rx = dx * c - dy * s, ry = dx * s + dy * c
     dx = rx; dy = ry
   }
-  return [dx + canvas.width/2, dy + canvas.height/2]
+  const z = worldZoom()
+  return [dx * z + canvas.width/2, dy * z + canvas.height/2]
 }
 function screenToWorld(sx, sy) {
-  let dx = sx - canvas.width/2, dy = sy - canvas.height/2
+  const z = worldZoom()
+  let dx = (sx - canvas.width/2) / z, dy = (sy - canvas.height/2) / z
   const a = screenRotationRad()
   if (a) {
     const c = Math.cos(-a), s = Math.sin(-a)
@@ -293,14 +307,18 @@ function renderTileMap(tileMap, labels) {
   // When the view is rotated, the visible region is the rotated viewport, whose
   // corners reach up to half the screen diagonal from center. Pad the tile draw
   // span out to that radius so rotated corners are filled (no black wedges).
+  // World zoom shrinks the visible world extent (smaller span = fewer tiles when
+  // zoomed in). Divide the screen half-extents by zoom to cover exactly what's
+  // visible plus a small pad.
+  const z = worldZoom()
   const reach = screenRotationRad()
-    ? Math.sqrt(canvas.width*canvas.width + canvas.height*canvas.height) / 2 : 0
+    ? Math.sqrt(canvas.width*canvas.width + canvas.height*canvas.height) / 2 / z : 0
   // Tile render radius (Options, in tiles → world px): cap how far out tiles are
   // drawn so a huge/zoomed-out view doesn't paint thousands of tiles. Visual
   // only — collision/gameplay/minimap read the full map and are unaffected.
   const maxR = ((typeof Settings !== 'undefined' && Settings.tileRenderRadius) || 60) * TILE
-  const spanX = Math.min(canvas.width/2 + reach, maxR)
-  const spanY = Math.min(canvas.height/2 + reach, maxR)
+  const spanX = Math.min(canvas.width/2/z + reach, maxR)
+  const spanY = Math.min(canvas.height/2/z + reach, maxR)
   const startX = Math.max(0, ((cam.x - spanX) / TILE) | 0)
   const endX   = Math.min(tileMap.w, (((cam.x + spanX) / TILE) | 0) + 2)
   const startY = Math.max(0, ((cam.y - spanY) / TILE) | 0)
@@ -367,6 +385,29 @@ function renderTileMap(tileMap, labels) {
           if (drewEnv && isFloor) {
             Sprites.drawEnvObject(theme, tx, ty, px + TILE/2, py + TILE/2, TILE, ctx)
           }
+        }
+      }
+      // --- Simple 32x32 terrain tile layer (ACTIVE env renderer) ---------------
+      // Draws one whole-tile PNG per map cell (floor/path/wall/hazard/water) over the
+      // flat fill. Unmapped/unloaded tiles return false → the flat color stays. No
+      // object/decor pass. Theme = per-tile world biome, else the map's envTheme.
+      if (!drewEnv && typeof SIMPLE_ENV_TILES_ENABLED !== 'undefined' && SIMPLE_ENV_TILES_ENABLED &&
+          typeof Sprites !== 'undefined' && Sprites.drawSimpleTile && !tileMap.disableEnvSprites &&
+          !isPortal && t !== T_STATION && t !== T_SPAWN) {
+        const biomeId = tileMap.biome ? tileMap.biome[ty * tileMap.w + tx] : 0
+        const theme = tileMap.biome ? Sprites.simpleThemeForBiome(biomeId)
+                                    : (tileMap.envTheme || 'neutral')
+        let role = null
+        const isFloor = (t === T_FLOOR || t === T_GRASS)
+        if (isFloor) {
+          const hv = Sprites.envHash(tx, ty, 1)
+          role = (hv % 29 === 0) ? 'specialFloor' : (hv % 23 === 0) ? 'path' : (hv % 7 === 0) ? 'floorAlt' : 'floor'
+        } else if (t === T_WALL) {
+          role = (Sprites.envHash(tx, ty, 2) % 9 === 0) ? 'wallAlt' : 'wall'
+        } else if (t === T_LAVA || t === T_ICE) { role = 'hazard' }
+        else if (t === T_WATER) { role = 'water' }
+        if (role) {
+          drewEnv = Sprites.drawSimpleTile(theme, role, px + TILE/2, py + TILE/2, TILE + 1, ctx, Sprites.envHash(tx, ty, 3))
         }
       }
       if (t === T_LAVA && !drewEnv) {
@@ -460,17 +501,23 @@ function renderBullets() {
   const S = (typeof Sprites !== 'undefined') ? Sprites : null
   eBullets.each(b => {
     const sx = b.x+offX, sy = b.y+offY
-    if (S && S.drawBossProjectile(b.kind, sx, sy, Math.atan2(b.vy, b.vx), PROJ_SPRITE_SIZE_E)) return
-    ctx.shadowBlur = 10; ctx.shadowColor = '#ff6b35'; ctx.fillStyle = '#ff6b35'
+    // Dark rim outline so shots read against busy biome tiles. The shadow halo
+    // hugs the sprite silhouette (sprite path) / circle edge (fallback path).
+    ctx.shadowColor = 'rgba(0,0,0,0.85)'; ctx.shadowBlur = 4
+    if (S && S.drawBossProjectile(b.kind, sx, sy, Math.atan2(b.vy, b.vx), PROJ_SPRITE_SIZE_E)) { ctx.shadowBlur = 0; return }
+    ctx.fillStyle = '#ff6b35'
     ctx.beginPath(); ctx.arc(sx, sy, BULLET_RADIUS, 0, Math.PI*2); ctx.fill()
     ctx.shadowBlur = 0
+    ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(0,0,0,0.9)'; ctx.stroke()
   })
   pBullets.each(b => {
     const sx = b.x+offX, sy = b.y+offY
-    if (S && S.drawWeaponProjectile(b.kind, sx, sy, Math.atan2(b.vy, b.vx), PROJ_SPRITE_SIZE_P)) return
-    ctx.shadowBlur = 10; ctx.shadowColor = '#48cae4'; ctx.fillStyle = '#48cae4'
+    ctx.shadowColor = 'rgba(0,0,0,0.85)'; ctx.shadowBlur = 4
+    if (S && S.drawWeaponProjectile(b.kind, sx, sy, Math.atan2(b.vy, b.vx), PROJ_SPRITE_SIZE_P)) { ctx.shadowBlur = 0; return }
+    ctx.fillStyle = '#48cae4'
     ctx.beginPath(); ctx.arc(sx, sy, BULLET_RADIUS-1, 0, Math.PI*2); ctx.fill()
     ctx.shadowBlur = 0
+    ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(0,0,0,0.9)'; ctx.stroke()
   })
 }
 

@@ -356,6 +356,24 @@ const DungeonZone = (() => {
             }
           }
         }
+        // --- Simple 32x32 terrain tile layer (ACTIVE env renderer) -------------
+        // One whole-tile PNG per dungeon cell (floor/path/wall/hazard) over the flat
+        // fill; unmapped/unloaded -> flat color stays. Theme from the dungeon key.
+        if (!drewEnv && typeof SIMPLE_ENV_TILES_ENABLED !== 'undefined' && SIMPLE_ENV_TILES_ENABLED &&
+            typeof Sprites !== 'undefined' && Sprites.drawSimpleTile && !map.disableEnvSprites &&
+            t !== T_PORTAL_DUNGEON) {
+          let role = null
+          if (t === T_FLOOR) {
+            const hv = Sprites.envHash(tx, ty, 1)
+            role = (hv % 29 === 0) ? 'specialFloor' : (hv % 23 === 0) ? 'path' : (hv % 7 === 0) ? 'floorAlt' : 'floor'
+          } else if (t === T_WALL) {
+            role = (Sprites.envHash(tx, ty, 2) % 9 === 0) ? 'wallAlt' : 'wall'
+          } else if (t === T_LAVA || t === T_ICE) { role = 'hazard' }
+          else if (t === T_WATER) { role = 'water' }
+          if (role) {
+            drewEnv = Sprites.drawSimpleTile(envTheme, role, px + TILE/2, py + TILE/2, TILE + 1, ctx, Sprites.envHash(tx, ty, 3))
+          }
+        }
         if (t === T_WALL && !drewEnv) {
           ctx.fillStyle = 'rgba(255,255,255,0.04)'
           ctx.fillRect(px, py, TILE, 3)

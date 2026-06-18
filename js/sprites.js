@@ -20,6 +20,17 @@
 // on it so no env underpaint/oversize/decor touches the basic tiles.
 const ENV_SPRITES_ENABLED = false
 
+// --- Simple 32x32 terrain tile master switch --------------------------------
+// The ACTIVE environment renderer. Replaces the abandoned large env atlas above:
+// instead of slicing a packed 1254x1254 sheet (which never tiled the grid cleanly),
+// each terrain visual is its OWN exact 32x32 PNG (assets/sprites/tile_*.png) drawn
+// directly into one map tile — no slicing/grid math. Registered in SIMPLE_TILE_IMAGES;
+// biome/dungeon roles mapped in SIMPLE_TILE_THEMES (aliased BIOME_TILE_MAP /
+// DUNGEON_TILE_MAP). renderTileMap / renderDungeonTiles call Sprites.drawSimpleTile;
+// any unmapped/unloaded tile returns false → the existing flat colored tile shows.
+// Keep ENV_SPRITES_ENABLED false (old atlas dormant) while this stays true.
+const SIMPLE_ENV_TILES_ENABLED = true
+
 // --- Sheets -----------------------------------------------------------------
 // Register each sprite sheet once. `tile` is the grid cell size in source px;
 // registry entries may address cells by col/row (preferred) or raw x/y.
@@ -991,6 +1002,151 @@ const dungeonEnvThemeMap = {
   starfall_pyramid:    'void'
 }
 
+// === SIMPLE 32x32 TERRAIN TILE SYSTEM (ACTIVE env renderer) =================
+// Each terrain visual is one exact 32x32 PNG drawn directly into one map tile —
+// NO slicing, NO grid math. This is the active environment renderer (the large
+// env_* atlas above stays disabled). VISUAL-ONLY: nothing here changes generation,
+// collision, hazards, portals, mobs, loot, or stations — callers keep their flat
+// colored tile fill as the fallback when a tile is unmapped or its PNG isn't loaded.
+
+// Image key -> file path. Each file is already a full tile (loaded via the same
+// standalone-image loader as `src` registry entries). Filenames use the exact
+// on-disk casing (note the mixed-case plague poison files).
+const SIMPLE_TILE_IMAGES = {
+  // neutral / home
+  tile_neutral_1: 'assets/sprites/tile_neutral_1.png',
+  tile_neutral_2: 'assets/sprites/tile_neutral_2.png',
+  tile_neutral_3: 'assets/sprites/tile_neutral_3.png',
+  tile_neutral_4: 'assets/sprites/tile_neutral_4.png',
+  tile_neutral_5: 'assets/sprites/tile_neutral_5.png',
+  tile_neutral_6: 'assets/sprites/tile_neutral_6.png',
+  tile_neutral_7: 'assets/sprites/tile_neutral_7.png',
+  tile_neutral_8: 'assets/sprites/tile_neutral_8.png',
+  // forest
+  tile_forest_1: 'assets/sprites/tile_forest_1.png',
+  tile_forest_2: 'assets/sprites/tile_forest_2.png',
+  tile_forest_3: 'assets/sprites/tile_forest_3.png',
+  // goblin
+  tile_goblin_1: 'assets/sprites/tile_goblin_1.png',
+  tile_goblin_2: 'assets/sprites/tile_goblin_2.png',
+  tile_goblin_3: 'assets/sprites/tile_goblin_3.png',
+  tile_goblin_4: 'assets/sprites/tile_goblin_4.png',
+  tile_goblin_5: 'assets/sprites/tile_goblin_5.png',
+  tile_goblin_6: 'assets/sprites/tile_goblin_6.png',
+  tile_goblin_7: 'assets/sprites/tile_goblin_7.png',
+  // frost / ice / ice-stone
+  tile_frost_1: 'assets/sprites/tile_frost_1.png',
+  tile_frost_2: 'assets/sprites/tile_frost_2.png',
+  tile_ice_1: 'assets/sprites/tile_ice_1.png',
+  tile_ice_2: 'assets/sprites/tile_ice_2.png',
+  tile_ice_3: 'assets/sprites/tile_ice_3.png',
+  tile_ice_stone_1: 'assets/sprites/tile_ice_stone_1.png',
+  tile_ice_stone_2: 'assets/sprites/tile_ice_stone_2.png',
+  tile_ice_stone_3: 'assets/sprites/tile_ice_stone_3.png',
+  // fungal
+  tile_fungal_1: 'assets/sprites/tile_fungal_1.png',
+  tile_fungal_2: 'assets/sprites/tile_fungal_2.png',
+  tile_fungal_3: 'assets/sprites/tile_fungal_3.png',
+  // cursed
+  tile_cursed_1: 'assets/sprites/tile_cursed_1.png',
+  tile_cursed_2: 'assets/sprites/tile_cursed_2.png',
+  tile_cursed_3: 'assets/sprites/tile_cursed_3.png',
+  tile_cursed_4: 'assets/sprites/tile_cursed_4.png',
+  // infernal / lava
+  tile_infernal_1: 'assets/sprites/tile_infernal_1.png',
+  tile_infernal_2: 'assets/sprites/tile_infernal_2.png',
+  tile_infernal_3: 'assets/sprites/tile_infernal_3.png',
+  tile_infernal_4: 'assets/sprites/tile_infernal_4.png',
+  tile_infernal_5: 'assets/sprites/tile_infernal_5.png',
+  tile_infernal_6: 'assets/sprites/tile_infernal_6.png',
+  tile_lava_1: 'assets/sprites/tile_lava_1.png',
+  // plague / poison
+  tile_plague_1: 'assets/sprites/tile_plague_1.png',
+  tile_plague_2: 'assets/sprites/tile_plague_2.png',
+  tile_plague_3: 'assets/sprites/tile_plague_3.png',
+  tile_plague_4: 'assets/sprites/tile_plague_4.png',
+  tile_plague_5: 'assets/sprites/tile_plague_5.png',
+  tile_plague_poison_1: 'assets/sprites/tile_plague_poison_1.png',
+  tile_plague_poison_2: 'assets/sprites/tile_plague_Poison_2.png', // NOTE: capital P on disk
+  tile_plague_poison_4: 'assets/sprites/tile_plague_poison_4.png',
+  // void / dark matter
+  tile_void_1: 'assets/sprites/tile_void_1.png',
+  tile_void_2: 'assets/sprites/tile_void_2.png',
+  tile_void_3: 'assets/sprites/tile_void_3.png',
+  tile_void_4: 'assets/sprites/tile_void_4.png',
+  tile_void_5: 'assets/sprites/tile_void_5.png'
+}
+
+// theme -> { role -> [image key, ...] }. Roles: floor / floorAlt / path / wall /
+// wallAlt / hazard / water / specialFloor. A deterministic per-tile variant is
+// picked from the list. UNMAPPED role = flat colored fallback (but drawSimpleTile
+// first tries SIMPLE_ROLE_FALLBACK so e.g. an unmapped 'floorAlt' shows plain floor
+// rather than a bare colored square). Conservative first-pass mappings: mostly
+// simple floor, rare floorAlt/path/special, hazards only on actual hazard tiles.
+const SIMPLE_TILE_THEMES = {
+  neutral: {
+    floor: ['tile_neutral_1', 'tile_neutral_2', 'tile_neutral_3', 'tile_neutral_4', 'tile_neutral_5'],
+    path:  ['tile_neutral_6', 'tile_neutral_7', 'tile_neutral_8']
+    // no neutral wall tile -> walls keep their colored fallback
+  },
+  forest: {
+    floor:    ['tile_forest_1', 'tile_forest_2'],
+    floorAlt: ['tile_forest_3'],
+    path:     ['tile_neutral_6']  // dirt path
+    // forest wall -> colored fallback
+  },
+  goblin: {
+    floor:        ['tile_goblin_1', 'tile_goblin_2', 'tile_goblin_3'],
+    path:         ['tile_goblin_4'],
+    specialFloor: ['tile_goblin_5', 'tile_goblin_6', 'tile_goblin_7']
+    // goblin wall -> colored fallback
+  },
+  frost: {
+    floor:        ['tile_frost_1', 'tile_frost_2'],
+    specialFloor: ['tile_ice_1', 'tile_ice_2', 'tile_ice_3'],
+    wall:         ['tile_ice_stone_1', 'tile_ice_stone_2', 'tile_ice_stone_3']
+  },
+  fungal: {
+    floor:        ['tile_fungal_1', 'tile_fungal_2'],
+    specialFloor: ['tile_fungal_3']
+  },
+  cursed: {
+    floor:        ['tile_cursed_1', 'tile_cursed_2'],
+    path:         ['tile_cursed_3'],
+    specialFloor: ['tile_cursed_3'],
+    wall:         ['tile_cursed_4']
+  },
+  infernal: {
+    floor:        ['tile_infernal_1', 'tile_infernal_2', 'tile_infernal_4'],
+    specialFloor: ['tile_infernal_3', 'tile_infernal_5', 'tile_infernal_6'],
+    hazard:       ['tile_lava_1']
+  },
+  plague: {
+    floor:  ['tile_plague_1', 'tile_plague_2', 'tile_plague_3', 'tile_plague_4', 'tile_plague_5'],
+    hazard: ['tile_plague_poison_1', 'tile_plague_poison_2', 'tile_plague_poison_4'],
+    water:  ['tile_plague_poison_1', 'tile_plague_poison_2', 'tile_plague_poison_4']
+  },
+  void: {
+    floor:        ['tile_void_1', 'tile_void_2'],
+    specialFloor: ['tile_void_3', 'tile_void_4'],
+    hazard:       ['tile_void_5']
+  }
+}
+
+// If a requested role isn't mapped for a theme, fall back to this role before
+// giving up (keeps the tilework readable instead of dropping to a colored square).
+const SIMPLE_ROLE_FALLBACK = {
+  floorAlt: 'floor', path: 'floor', specialFloor: 'floor',
+  wallAlt: 'wall', water: 'hazard'
+}
+
+// World biome themes and dungeon themes both resolve through the EXISTING theme maps
+// (biomeEnvThemeMap / dungeonEnvThemeMap, via Sprites.envThemeForBiome/forDungeon)
+// then look up roles here. These aliases satisfy the BIOME_TILE_MAP / DUNGEON_TILE_MAP
+// naming and keep a single source of truth for role->tile lists.
+const BIOME_TILE_MAP = SIMPLE_TILE_THEMES
+const DUNGEON_TILE_MAP = SIMPLE_TILE_THEMES
+
 // --- Loader + draw helpers --------------------------------------------------
 const Sprites = {
   _imgs: {},          // sheetName -> { img, loaded }  (tile sheets)
@@ -1327,19 +1483,20 @@ const Sprites = {
   // Bosses (bossSpriteAssignments) take priority; creature art has wide wings/
   // padding so it's drawn a touch larger than the geometric radius. Regular +
   // dungeon mobs then try their 2-frame mob-sheet sprite; unmapped keep geometry.
-  drawForMob(e, sx, sy) {
+  drawForMob(e, sx, sy, vrad) {
     if (!e || !e.key) return false
+    const r0 = (vrad || e.radius || 12)
     // 1) NEW boss-sheet art (2-frame boss atlases) — highest priority, data-driven.
-    if (this.drawBossSheet(e, sx, sy, (e.radius || 12) * 3.0)) return true
+    if (this.drawBossSheet(e, sx, sy, r0 * 3.0)) return true
     // 2) Legacy standalone boss / registry sprite (flying creatures, crystal knight) —
     //    graceful fallback if a boss sheet is missing but a legacy entry exists.
     const id = (typeof bossSpriteAssignments !== 'undefined' && bossSpriteAssignments[e.key]) || mobSpriteAssignments[e.key]
     if (id) {
       const scale = (typeof bossSpriteAssignments !== 'undefined' && bossSpriteAssignments[e.key]) ? 2.8 : 2.2
-      return this.draw(id, sx, sy, (e.radius || 12) * scale)
+      return this.draw(id, sx, sy, r0 * scale)
     }
     // 3) Regular 2-frame mob-sheet sprite; unmapped keys keep geometry.
-    return this.drawMobSheet(e, sx, sy, (e.radius || 12) * 2.6)
+    return this.drawMobSheet(e, sx, sy, r0 * 2.6)
   },
 
   // Normalize an assignment ({sheet,col,row} | {sheet,index}) to {col,row}.
@@ -1584,6 +1741,40 @@ const Sprites = {
     return this.drawEnvTerrainCell(sheet, cell.col, cell.row, x, y, size, context, opts)
   },
 
+  // --- Simple 32x32 terrain tile (ACTIVE env renderer) ---------------------
+  // Draw exactly ONE full-tile PNG for (theme, role), CENTERED at (x,y), stretched
+  // to fill the `size`-px tile square (each file is already one whole 32x32 tile —
+  // no slicing). `seed` (e.g. envHash of tile coords) deterministically picks a
+  // variant from the role's list (no flicker). Returns false → caller keeps its
+  // flat colored fill when the theme/role is unmapped or the PNG isn't loaded.
+  drawSimpleTile(theme, role, x, y, size, context, seed) {
+    if (!this.enabled || !SIMPLE_ENV_TILES_ENABLED) return false
+    const roles = SIMPLE_TILE_THEMES[theme]
+    if (!roles) return false
+    let keys = roles[role]
+    if (!keys || !keys.length) {
+      const fb = SIMPLE_ROLE_FALLBACK[role]
+      keys = fb && roles[fb]
+    }
+    if (!keys || !keys.length) return false
+    const key = keys[(seed >>> 0) % keys.length]
+    const path = SIMPLE_TILE_IMAGES[key]
+    if (!path) return false
+    const rec = this.image(path)
+    if (!rec || !rec.loaded || !rec.img.complete) return false
+    const c = context || (typeof ctx !== 'undefined' ? ctx : null)
+    if (!c) return false
+    try {
+      c.drawImage(rec.img, x - size / 2, y - size / 2, size, size)
+    } catch (err) { return false }
+    return true
+  },
+
+  // Resolve a world biome id / dungeon key -> simple-tile theme (reuses the env
+  // theme maps; the simple-tile themes share the same keys).
+  simpleThemeForBiome(biomeId) { return this.envThemeForBiome(biomeId) },
+  simpleThemeForDungeon(key)   { return this.envThemeForDungeon(key) },
+
   // Draw at most ONE sparse OBJECT/decor prop ON TOP of an already-painted floor
   // tile at (cx,cy). Placement is deterministic per tile (envHash of tx,ty) using
   // the theme's ENV_OBJECT_DENSITY + ENV_OBJECT_RULES — no Math.random, no flicker.
@@ -1667,6 +1858,13 @@ if (typeof window !== 'undefined') {
   window.envHazardAssignments = envHazardAssignments
   window.biomeEnvThemeMap = biomeEnvThemeMap
   window.dungeonEnvThemeMap = dungeonEnvThemeMap
+  // Simple 32x32 terrain tile system (ACTIVE env renderer).
+  window.SIMPLE_ENV_TILES_ENABLED = SIMPLE_ENV_TILES_ENABLED
+  window.SIMPLE_TILE_IMAGES = SIMPLE_TILE_IMAGES
+  window.SIMPLE_TILE_THEMES = SIMPLE_TILE_THEMES
+  window.SIMPLE_ROLE_FALLBACK = SIMPLE_ROLE_FALLBACK
+  window.BIOME_TILE_MAP = BIOME_TILE_MAP
+  window.DUNGEON_TILE_MAP = DUNGEON_TILE_MAP
   window.PORTAL_THEME_SHEET = PORTAL_THEME_SHEET
   window.dungeonPortalTheme = dungeonPortalTheme
   // Explicit portal variant system (read by portal_debug.html + zones).
