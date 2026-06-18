@@ -436,6 +436,20 @@ Object.assign(SPRITE_REGISTRY, {
   monster_boss_20: { src: 'assets/sprites/Monster Creature sprites (pack 1 by batareya)/pixel-0102-3056965716.png', category: 'boss' },
 })
 
+// --- Playable class sprites (whole-image PNGs in assets/sprites/Classes/) -----
+// Real per-class character art, one standalone PNG each (drawn whole, aspect-fit,
+// transparent background preserved). VISUAL-ONLY: in-game player rendering and the
+// character-select / new-character screens use these via Sprites.drawClassSprite;
+// the geometric class shape stays the graceful fallback when a file is missing or
+// not yet loaded. Only the 5 current playable classes are registered here.
+Object.assign(SPRITE_REGISTRY, {
+  class_warrior: { src: 'assets/sprites/Classes/Warrior.png', category: 'character' },
+  class_rogue:   { src: 'assets/sprites/Classes/Rogue.png',   category: 'character' },
+  class_mage:    { src: 'assets/sprites/Classes/Wizard.png',  category: 'character' },
+  class_priest:  { src: 'assets/sprites/Classes/Priest.png',  category: 'character' },
+  class_archer:  { src: 'assets/sprites/Classes/Archer.png',  category: 'character' },
+})
+
 // --- Optional assignment maps ----------------------------------------------
 // Map game-side keys -> sprite IDs. Empty entries simply fall back to geometry.
 // mob keys come from MOB_DEFS (e.key).
@@ -630,18 +644,22 @@ const itemSpriteAssignments = {
 // projectileWeaponAssignments / projectileBossAssignments tables below).
 const projectileSpriteAssignments = {}
 
-// Character CLASS -> sprite cell. No dedicated character sheet ships yet, so these
-// are first-pass placeholders from the existing gear-icon art (retune col/row, or
-// repoint `sheet` if a real character sheet is added later). VISUAL-ONLY: the
-// geometric class shape in ui.js renderPlayer is the graceful fallback, and the
-// sprite is drawn UPRIGHT there so screen rotation never tilts it.
-const characterSpriteAssignments = {
-  warrior: { sheet: 'gear_armor_icons', col: 0, row: 1 }, // armored body placeholder
-  rogue:   { sheet: 'gear_armor_icons', col: 5, row: 1 }, // leather / rogue body placeholder
-  mage:    { sheet: 'gear_armor_icons', col: 7, row: 1 }, // blue robe placeholder
-  priest:  { sheet: 'gear_armor_icons', col: 2, row: 1 }, // gold / holy robe placeholder
-  archer:  { sheet: 'gear_armor_icons', col: 4, row: 1 }, // green / brown ranger body placeholder
+// Character CLASS -> standalone class-sprite registry ID (real PNGs registered
+// above from assets/sprites/Classes/). VISUAL-ONLY: the geometric class shape in
+// ui.js renderPlayer is the graceful fallback, and the sprite is drawn UPRIGHT
+// there so screen rotation never tilts it. Only the 5 current playable classes are
+// wired; add a line here when a future class becomes playable (and register its
+// PNG in SPRITE_REGISTRY above). Same map drives the character-select / new-
+// character screens so class art stays consistent everywhere.
+const classSpriteAssignments = {
+  warrior: 'class_warrior',
+  rogue:   'class_rogue',
+  mage:    'class_mage',
+  priest:  'class_priest',
+  archer:  'class_archer',
 }
+// Back-compat alias (older name referenced elsewhere).
+const characterSpriteAssignments = classSpriteAssignments
 
 // === GEAR ICON SYSTEM (new 8x8 icon sheets) =================================
 // Item icons are chosen EXPLICITLY (never auto-picked) in two tables:
@@ -1635,15 +1653,20 @@ const Sprites = {
     return this.drawItemIcon(it, cx, cy, size, context)
   },
 
-  // Draw the class character sprite centered at (cx,cy), fit to `size`. Returns
-  // false (unmapped/unloaded) so renderPlayer keeps its geometric class shape.
+  // Draw the playable-class sprite (real PNG from assets/sprites/Classes/) centered
+  // at (cx,cy), fit to a `size`-px box (aspect + transparency preserved). Returns
+  // false when the class is unmapped or its image isn't loaded yet, so every caller
+  // (in-game player, character select, new-character screen) keeps its geometric
+  // class shape as the graceful fallback. Never throws (Sprites.draw is try/catch).
   // VISUAL-ONLY — never affects movement/hitbox/stats.
+  drawClassSprite(classKey, cx, cy, size, context) {
+    const id = (typeof classSpriteAssignments !== 'undefined') && classSpriteAssignments[classKey]
+    if (!id) return false
+    return this.draw(id, cx, cy, size, context)
+  },
+  // Back-compat alias for the older helper name.
   drawForCharacter(classKey, cx, cy, size, context) {
-    const a = (typeof characterSpriteAssignments !== 'undefined') && characterSpriteAssignments[classKey]
-    if (!a || !a.sheet) return false
-    const cell = this._iconCell(a)
-    if (!cell) return false
-    return this._drawSheetTile(a.sheet, cell.col, cell.row, cx, cy, size, context)
+    return this.drawClassSprite(classKey, cx, cy, size, context)
   },
 
   // Draw an assignment ({sheet,col,row}|{sheet,index} + optional frames/fps/

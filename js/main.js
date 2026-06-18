@@ -47,6 +47,15 @@ const G = {
       // Persist account glory transfer + character removal (permadeath)
       if (window.saveGame) saveGame()
     }
+  },
+
+  // Return to the character-select roster (MainMenu) from a live zone — e.g. the
+  // Nexus top-left CHARACTERS button. Saves first so progress/state is preserved,
+  // and does NOT delete the active character (the player can re-pick or create a
+  // new one from the roster). Goes through the normal zone state machine.
+  openCharacterSelect() {
+    if (window.saveGame) saveGame()
+    this.enterZone('menu')
   }
 }
 

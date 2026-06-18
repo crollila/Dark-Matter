@@ -144,9 +144,16 @@ const MainMenu = (() => {
       ctx.fillRect(panelX + 10, cy, panelW - 20, 68)
       ctx.strokeRect(panelX + 10, cy, panelW - 20, 68)
 
-      // Class color dot
-      ctx.fillStyle = cls.color
-      ctx.beginPath(); ctx.arc(panelX + 34, cy + 34, 12, 0, Math.PI*2); ctx.fill()
+      // Class sprite (real PNG) — falls back to the class color dot when the
+      // sprite is unmapped/unloaded. Visual only.
+      let drewCardSprite = false
+      if (typeof Sprites !== 'undefined' && Sprites.drawClassSprite) {
+        drewCardSprite = Sprites.drawClassSprite(c.classKey, panelX + 34, cy + 34, 56)
+      }
+      if (!drewCardSprite) {
+        ctx.fillStyle = cls.color
+        ctx.beginPath(); ctx.arc(panelX + 34, cy + 34, 12, 0, Math.PI*2); ctx.fill()
+      }
 
       ctx.textAlign = 'left'
       ctx.fillStyle = '#e0fbfc'
@@ -256,14 +263,23 @@ const ClassSelect = (() => {
       ctx.fillRect(cx, cy, cardW, cardH)
       ctx.strokeRect(cx, cy, cardW, cardH)
 
-      // Class icon — colored circle with initial
-      ctx.fillStyle = cls.color
-      ctx.shadowBlur = isSel ? 20 : 8; ctx.shadowColor = cls.color
-      ctx.beginPath(); ctx.arc(cx + cardW/2, cy + 55, 28, 0, Math.PI*2); ctx.fill()
-      ctx.shadowBlur = 0
-      ctx.fillStyle = '#000'
-      ctx.font = 'bold 22px monospace'
-      ctx.fillText(cls.name[0], cx + cardW/2, cy + 63)
+      // Class icon — real class sprite (PNG), falling back to a colored circle
+      // with the class initial when the sprite is unmapped/unloaded. Visual only.
+      let drewClassSprite = false
+      if (typeof Sprites !== 'undefined' && Sprites.drawClassSprite) {
+        ctx.shadowBlur = isSel ? 20 : 8; ctx.shadowColor = cls.color
+        drewClassSprite = Sprites.drawClassSprite(key, cx + cardW/2, cy + 55, 72)
+        ctx.shadowBlur = 0
+      }
+      if (!drewClassSprite) {
+        ctx.fillStyle = cls.color
+        ctx.shadowBlur = isSel ? 20 : 8; ctx.shadowColor = cls.color
+        ctx.beginPath(); ctx.arc(cx + cardW/2, cy + 55, 28, 0, Math.PI*2); ctx.fill()
+        ctx.shadowBlur = 0
+        ctx.fillStyle = '#000'
+        ctx.font = 'bold 22px monospace'
+        ctx.fillText(cls.name[0], cx + cardW/2, cy + 63)
+      }
 
       ctx.fillStyle = '#e0fbfc'
       ctx.font = 'bold 15px monospace'

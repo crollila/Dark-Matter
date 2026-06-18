@@ -20,8 +20,10 @@ const NexusZone = (() => {
   function onClick(x, y) {
     if (overlayOpen()) return false
     if (charBtn && x >= charBtn.x && x <= charBtn.x + charBtn.w && y >= charBtn.y && y <= charBtn.y + charBtn.h) {
-      if (window.saveGame) saveGame()
-      G.enterZone('menu')
+      // Open the character-select roster (saves + state-preserving). Uses the
+      // shared G helper when present, falling back to the inline path.
+      if (G.openCharacterSelect) G.openCharacterSelect()
+      else { if (window.saveGame) saveGame(); G.enterZone('menu') }
       return true
     }
     return false
