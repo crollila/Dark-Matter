@@ -157,7 +157,7 @@ const Wiki = (() => {
   let _drag = false        // dragging the scrollbar thumb
 
   function isOpen() { return open }
-  function openPanel() { open = true; registry() }
+  function openPanel() { open = true; try { registry() } catch (e) { _warnOnce('registry/open', e) } }
   function close() { open = false; searchFocused = false; _drag = false }
 
   // ---- sorting (DISPLAY ONLY — registry/gameplay data untouched) ----
@@ -190,6 +190,31 @@ const Wiki = (() => {
   }
   function sortedMobs(reg) {
     return reg.mobs.slice().sort((a, b) => a.where.localeCompare(b.where) || a.name.localeCompare(b.name))
+  }
+
+  // ---- FREEZE GUARDS -------------------------------------------------------
+  // The main loop only reschedules requestAnimationFrame at the END of loop(),
+  // so ANY exception thrown out of Wiki.render() permanently stops the game.
+  // These guards make the Wiki impossible to freeze: render is wrapped in
+  // try/catch (falls back to a safe shell), data is built/sorted ONCE per tab
+  // (cached, not every frame), and failures warn at most once (no per-frame spam).
+  let _warned = false
+  function _warnOnce(where, e) {
+    if (_warned) return
+    _warned = true
+    try { console.warn('[Wiki] render guard caught an error in ' + where + ':', e) } catch (_) {}
+  }
+  // Per-tab sorted-entry cache (avoids re-sorting the full list every frame).
+  const _entriesCache = [null, null, null, null]
+  function invalidateCache(t) { if (t == null) { _entriesCache[0] = _entriesCache[1] = _entriesCache[2] = _entriesCache[3] = null } else _entriesCache[t] = null }
+  function entriesFor(reg, t) {
+    if (_entriesCache[t]) return _entriesCache[t]
+    let e
+    try {
+      e = t === 0 ? sortedDungeons(reg) : t === 1 ? sortedBosses(reg) : t === 2 ? sortedGear(reg) : sortedMobs(reg)
+    } catch (err) { _warnOnce('entriesFor[' + t + ']', err); e = [] }
+    _entriesCache[t] = Array.isArray(e) ? e : []
+    return _entriesCache[t]
   }
 
   // ---- layout ----
@@ -319,7 +344,7 @@ const Wiki = (() => {
         const isHover = mouse.x >= cx && mouse.x <= cx + cw && mouse.y >= cy && mouse.y <= cy + cardH
           && mouse.y >= L.gy && mouse.y <= L.gy + L.gh && mouse.x >= L.gx && mouse.x <= L.gx + L.gw
         if (isHover) _hoverEntry = entries[i]
-        drawCard(entries[i], cx, cy, cw, cardH, isSel, isHover)
+        try { drawCard(entries[i], cx, cy, cw, cardH, isSel, isHover) } catch (err) { _warnOnce('drawCard', err) }
         _cards.push({ x: cx, y: cy, w: cw, h: cardH, entry: entries[i] })
       }
     }
@@ -437,9 +462,44 @@ const Wiki = (() => {
     }
   }
 
+  // Public render: computes layout up-front (so the close/tab buttons always work
+  // via onClick even if the body fails), then renders the body INSIDE a try/catch.
+  // A thrown body can no longer kill the game loop — it shows a safe shell instead.
   function render() {
     if (!open) return
     const L = layout(); _L = L
+    try { _renderBody(L) }
+    catch (e) { _warnOnce('render', e); _renderSafeShell(L) }
+  }
+
+  // Minimal always-safe shell: panel chrome + tabs + close + a message. Drawn only
+  // when the real body throws, so the Wiki stays open/closable and the game runs.
+  function _renderSafeShell(L) {
+    try {
+      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.fillStyle = 'rgba(10,12,26,0.97)'; ctx.strokeStyle = '#b15bff66'; ctx.lineWidth = 1
+      ctx.fillRect(L.px, L.py, L.PW, L.PH); ctx.strokeRect(L.px, L.py, L.PW, L.PH)
+      ctx.textAlign = 'left'; ctx.fillStyle = '#e0fbfc'; ctx.font = 'bold 14px monospace'
+      ctx.fillText('WIKI — Compendium', L.px + 20, L.py + 28)
+      ctx.strokeStyle = '#ff6b6b88'; ctx.strokeRect(L.closeBtn.x, L.closeBtn.y, L.closeBtn.w, L.closeBtn.h)
+      ctx.fillStyle = '#ff6b6b'; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center'
+      ctx.fillText('X', L.closeBtn.x + 10, L.closeBtn.y + 14)
+      for (const t of L.tabs) {
+        const active = t.i === tab
+        ctx.fillStyle = active ? 'rgba(177,91,255,0.22)' : 'rgba(255,255,255,0.04)'; ctx.fillRect(t.x, t.y, t.w, t.h)
+        ctx.strokeStyle = active ? '#b15bff' : '#2a2f44'; ctx.lineWidth = 1; ctx.strokeRect(t.x, t.y, t.w, t.h)
+        ctx.fillStyle = active ? '#e0c8ff' : '#9fb3c8'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'
+        ctx.fillText(t.t, t.x + t.w / 2, t.y + 17)
+      }
+      ctx.fillStyle = '#9fb3c8'; ctx.font = '12px monospace'; ctx.textAlign = 'center'
+      ctx.fillText('Content temporarily unavailable for this tab.', L.px + L.PW / 2, L.py + L.PH / 2)
+      ctx.fillStyle = '#6a7290'; ctx.font = '9px monospace'
+      ctx.fillText('esc / click outside to close', L.px + L.PW / 2, L.py + L.PH - 12)
+      ctx.textAlign = 'left'
+    } catch (_) { /* even the shell must never throw out */ }
+  }
+
+  function _renderBody(L) {
     _hoverEntry = null
     const reg = registry()
 
@@ -479,19 +539,20 @@ const Wiki = (() => {
       else { ctx.fillStyle = '#6a7290'; ctx.fillText('Search gear (name / slot / class / source)…', s.x + 8, s.y + 15) }
     }
 
-    // entries + grid config per tab (sorted; data untouched)
-    let entries, cols, cardH, drawCard
-    if (tab === 0)      { entries = sortedDungeons(reg); cols = 3; cardH = 66;  drawCard = cardDungeon }
-    else if (tab === 1) { entries = sortedBosses(reg);   cols = 4; cardH = 112; drawCard = cardBoss }
-    else if (tab === 2) { entries = sortedGear(reg);     cols = 4; cardH = 62;  drawCard = cardGear }
-    else                { entries = sortedMobs(reg);     cols = 4; cardH = 70;  drawCard = cardMob }
+    // entries (CACHED per tab — built/sorted ONCE, not every frame) + grid config
+    const entries = entriesFor(reg, tab)
+    let cols, cardH, drawCard
+    if (tab === 0)      { cols = 3; cardH = 66;  drawCard = cardDungeon }
+    else if (tab === 1) { cols = 4; cardH = 112; drawCard = cardBoss }
+    else if (tab === 2) { cols = 4; cardH = 62;  drawCard = cardGear }
+    else                { cols = 4; cardH = 70;  drawCard = cardMob }
 
     _contentH = renderGrid(L, entries, cardH, cols, drawCard)
     drawScrollbar(L)
 
     // Bottom-left detail panel — hovered entry overrides the pinned selection.
     const selEntry = entries.find(e => e.key === selKey[tab]) || null
-    renderDetail(L, _hoverEntry || selEntry)
+    try { renderDetail(L, _hoverEntry || selEntry) } catch (e) { _warnOnce('renderDetail', e) }
 
     // hint
     ctx.fillStyle = '#6a7290'; ctx.font = '9px monospace'; ctx.textAlign = 'right'
@@ -512,7 +573,8 @@ const Wiki = (() => {
       if (e.code === 'Backspace') search = search.slice(0, -1)
       else if (e.key && e.key.length === 1 && search.length < 40) search += e.key
       else return
-      scroll[2] = 0   // reset scroll when the filter changes
+      invalidateCache(2)   // gear list is filtered by search → rebuild the cache
+      scroll[2] = 0        // reset scroll when the filter changes
       e.stopPropagation(); e.preventDefault()
     }
   }, true)

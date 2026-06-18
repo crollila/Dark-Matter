@@ -711,20 +711,33 @@ function renderPlayer(char, offX, offY) {
   ctx.fillStyle = 'rgba(0,0,0,0.35)'
   ctx.beginPath(); ctx.ellipse(sx, sy + PLAYER_RADIUS - 2, PLAYER_RADIUS * 0.9, PLAYER_RADIUS * 0.35, 0, 0, Math.PI*2); ctx.fill()
 
-  // Glow
-  ctx.shadowBlur = 18; ctx.shadowColor = cls.color
-  ctx.fillStyle = cls.color
-  // Class shapes
-  if (char.classKey === 'warrior') {
-    ctx.fillRect(sx - 9, sy - 10, 18, 20)
-  } else if (char.classKey === 'mage') {
-    ctx.beginPath()
-    ctx.moveTo(sx, sy - 12); ctx.lineTo(sx + 10, sy + 8); ctx.lineTo(sx - 10, sy + 8)
-    ctx.closePath(); ctx.fill()
-  } else {
-    ctx.beginPath(); ctx.arc(sx, sy, PLAYER_RADIUS, 0, Math.PI*2); ctx.fill()
+  // Body — class character sprite first (drawn UPRIGHT via drawUpright so screen
+  // rotation doesn't tilt it, matching mobs/bosses), falling back to the geometric
+  // class shape when the sprite is unmapped/unloaded. Visual only.
+  let drewChar = false
+  if (typeof Sprites !== 'undefined' && Sprites.drawForCharacter && typeof drawUpright === 'function') {
+    drawUpright(sx, sy, () => {
+      ctx.shadowBlur = 14; ctx.shadowColor = cls.color
+      drewChar = Sprites.drawForCharacter(char.classKey, 0, 0, PLAYER_RADIUS * 3)
+      ctx.shadowBlur = 0
+    })
   }
-  ctx.shadowBlur = 0
+  if (!drewChar) {
+    // Glow
+    ctx.shadowBlur = 18; ctx.shadowColor = cls.color
+    ctx.fillStyle = cls.color
+    // Class shapes
+    if (char.classKey === 'warrior') {
+      ctx.fillRect(sx - 9, sy - 10, 18, 20)
+    } else if (char.classKey === 'mage') {
+      ctx.beginPath()
+      ctx.moveTo(sx, sy - 12); ctx.lineTo(sx + 10, sy + 8); ctx.lineTo(sx - 10, sy + 8)
+      ctx.closePath(); ctx.fill()
+    } else {
+      ctx.beginPath(); ctx.arc(sx, sy, PLAYER_RADIUS, 0, Math.PI*2); ctx.fill()
+    }
+    ctx.shadowBlur = 0
+  }
 
   // (Removed the white facing wedge/cone that used to sit on the player's
   // forward edge — the mouse-aim dot below already shows facing.)

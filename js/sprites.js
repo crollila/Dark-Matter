@@ -189,15 +189,15 @@ for (const sheet of PORTAL_SHEET_KEYS) {
 // (first-pass guess: every theme uses variant 0 — verify nicer variants in
 // portal_debug.html, then bump the variant number.)
 const portalVariantAssignments = {
-  forest:   { sheet: 'portal_forest',      variant: 0 }, // forest / grove / nature  -> sheet 05
-  fungal:   { sheet: 'portal_fungal',      variant: 0 }, // fungal / mushroom         -> sheet 09
-  infernal: { sheet: 'portal_infernal',    variant: 0 }, // infernal / ash / fire     -> sheet 06
-  plague:   { sheet: 'portal_plague',      variant: 0 }, // plague / corruption / rot -> sheet 07
-  frost:    { sheet: 'portal_ice',         variant: 0 }, // frost / ice               -> sheet 03
-  void:     { sheet: 'portal_void_dark',   variant: 0 }, // void / dark / singularity -> sheet 04
-  arcane:   { sheet: 'portal_void_arcane', variant: 0 }, // arcane / dark-matter      -> sheet 01
-  astral:   { sheet: 'portal_astral',      variant: 0 }, // astral / celestial        -> sheet 08
-  cursed:   { sheet: 'portal_cursed',      variant: 0 }, // cursed/hollow/fallen/court-> sheet 10
+  forest:   { sheet: 'portal_forest',      variant: 1 }, // forest / grove / nature  -> sheet 05
+  fungal:   { sheet: 'portal_fungal',      variant: 2 }, // fungal / mushroom         -> sheet 09
+  infernal: { sheet: 'portal_infernal',    variant: 3 }, // infernal / ash / fire     -> sheet 06
+  plague:   { sheet: 'portal_plague',      variant: 4 }, // plague / corruption / rot -> sheet 07
+  frost:    { sheet: 'portal_ice',         variant: 5 }, // frost / ice               -> sheet 03
+  void:     { sheet: 'portal_void_dark',   variant: 6 }, // void / dark / singularity -> sheet 04
+  arcane:   { sheet: 'portal_void_arcane', variant: 7 }, // arcane / dark-matter      -> sheet 01
+  astral:   { sheet: 'portal_astral',      variant: 8 }, // astral / celestial        -> sheet 08
+  cursed:   { sheet: 'portal_cursed',      variant: 9 }, // cursed/hollow/fallen/court-> sheet 10
   magic:    { sheet: 'portal_blue_green',  variant: 0 }, // generic fallback          -> sheet 02
 }
 
@@ -213,24 +213,24 @@ for (const th of Object.keys(portalVariantAssignments)) PORTAL_THEME_SHEET[th] =
 // drawPortal/portalSpec accept either form, so you only edit ONE line.
 // (first-pass theme guesses per the task's theme map.)
 const dungeonPortalAssignments = {
-  // OG dungeons
-  goblin_warren:      'forest',    // low-tier natural warren
-  fungal_cavern:      'fungal',
-  void_rift:          'void',
+  // OG dungeons — explicit { sheet, variant } so each portal looks distinct.
+  goblin_warren:      { sheet: 'portal_forest',      variant: 1 },
+  fungal_cavern:      { sheet: 'portal_fungal',      variant: 2 },
+  void_rift:          { sheet: 'portal_void_dark',   variant: 6 },
   // biome dungeons
-  dark_matter_core:   'arcane',    // singularity / dark matter
-  frozen_catacombs:   'frost',
-  infernal_pit:       'infernal',
-  plague_grotto:      'plague',
-  fallen_keep:        'cursed',
-  astral_tomb:        'astral',
-  // world-boss dungeons
-  event_horizon_vault:'arcane',
-  titan_glacier:      'frost',
-  worldeater_forge:   'infernal',
-  plague_hive:        'plague',
-  cursed_throne:      'cursed',
-  starfall_pyramid:   'astral'
+  dark_matter_core:   { sheet: 'portal_void_arcane', variant: 7 },
+  frozen_catacombs:   { sheet: 'portal_ice',         variant: 5 },
+  infernal_pit:       { sheet: 'portal_infernal',    variant: 3 },
+  plague_grotto:      { sheet: 'portal_plague',      variant: 4 },
+  fallen_keep:        { sheet: 'portal_cursed',      variant: 9 },
+  astral_tomb:        { sheet: 'portal_astral',      variant: 8 },
+  // world-boss dungeons — higher variant indices for a unique look per portal
+  event_horizon_vault:{ sheet: 'portal_void_arcane', variant: 10 },
+  titan_glacier:      { sheet: 'portal_ice',         variant: 11 },
+  worldeater_forge:   { sheet: 'portal_infernal',    variant: 12 },
+  plague_hive:        { sheet: 'portal_plague',      variant: 13 },
+  cursed_throne:      { sheet: 'portal_cursed',      variant: 14 },
+  starfall_pyramid:   { sheet: 'portal_astral',      variant: 15 }
 }
 // Back-compat alias (world.js / older code referenced dungeonPortalTheme).
 const dungeonPortalTheme = dungeonPortalAssignments
@@ -607,6 +607,13 @@ const itemSpriteAssignments = {
   archer_bow:    'weapons_5_0',  // gold bow
   mage_staff:    'weapons_6_4',  // blue staff
   priest_wand:   'weapons_7_4',  // fire staff/wand
+  // dungeon-exclusive weapons (frost/etc. identity comes from rarity/shot art)
+  dx_graviton_staff:   'weapons_6_4',  // dark/arcane staff
+  fz_glacial_longbow:  'weapons_5_0',  // bow
+  if_magma_cleaver:    'weapons_2_0',  // fire/gold sword
+  pg_venomfang_daggers:'weapons_1_0',  // dagger/blade
+  fk_oathbreaker_blade:'weapons_0_4',  // void/purple cursed sword
+  at_astral_scepter:   'weapons_7_7',  // crystal/scepter
   // generic armor pieces -> closest slot icon
   iron_helm:      'armor_0_0',  // gray helm
   iron_plate:     'armor_0_1',  // silver chest
@@ -622,6 +629,19 @@ const itemSpriteAssignments = {
 // projectile kind/source -> sprite ID (legacy/back-compat; superseded by the
 // projectileWeaponAssignments / projectileBossAssignments tables below).
 const projectileSpriteAssignments = {}
+
+// Character CLASS -> sprite cell. No dedicated character sheet ships yet, so these
+// are first-pass placeholders from the existing gear-icon art (retune col/row, or
+// repoint `sheet` if a real character sheet is added later). VISUAL-ONLY: the
+// geometric class shape in ui.js renderPlayer is the graceful fallback, and the
+// sprite is drawn UPRIGHT there so screen rotation never tilts it.
+const characterSpriteAssignments = {
+  warrior: { sheet: 'gear_armor_icons', col: 0, row: 1 }, // armored body placeholder
+  rogue:   { sheet: 'gear_armor_icons', col: 5, row: 1 }, // leather / rogue body placeholder
+  mage:    { sheet: 'gear_armor_icons', col: 7, row: 1 }, // blue robe placeholder
+  priest:  { sheet: 'gear_armor_icons', col: 2, row: 1 }, // gold / holy robe placeholder
+  archer:  { sheet: 'gear_armor_icons', col: 4, row: 1 }, // green / brown ranger body placeholder
+}
 
 // === GEAR ICON SYSTEM (new 8x8 icon sheets) =================================
 // Item icons are chosen EXPLICITLY (never auto-picked) in two tables:
@@ -671,8 +691,8 @@ const projectileWeaponAssignments = {
   warrior: { sheet: 'projectiles_weapons', col: 0, row: 0 },
   rogue:   { sheet: 'projectiles_weapons', col: 1, row: 0 },
   archer:  { sheet: 'projectiles_weapons', col: 2, row: 0 },
-  mage:    { sheet: 'projectiles_weapons', col: 3, row: 0 },
-  priest:  { sheet: 'projectiles_weapons', col: 4, row: 0 }
+  mage:    { sheet: 'projectiles_weapons', col: 3, row: 0, frames: 2, fps: 8 },
+  priest:  { sheet: 'projectiles_weapons', col: 4, row: 0, frames: 2, fps: 8 }
 }
 
 // Boss/enemy shots keyed by mob/boss key (e.key). Bullets carry the firer's key
@@ -683,19 +703,19 @@ const projectileBossAssignments = {
   // --- dungeon + world bosses (one cell each) ---
   goblin_warchief:     { sheet: 'projectiles_bosses', col: 0, row: 0 },
   mycelian_king:       { sheet: 'projectiles_bosses', col: 1, row: 0 },
-  void_harbinger:      { sheet: 'projectiles_bosses', col: 2, row: 0 },
-  singularity_tyrant:  { sheet: 'projectiles_bosses', col: 3, row: 0 },
+  void_harbinger:      { sheet: 'projectiles_bosses', col: 2, row: 0, frames: 2, fps: 8 },
+  singularity_tyrant:  { sheet: 'projectiles_bosses', col: 3, row: 0, frames: 2, fps: 8 },
   frost_monarch:       { sheet: 'projectiles_bosses', col: 4, row: 0 },
-  infernal_lord:       { sheet: 'projectiles_bosses', col: 5, row: 0 },
-  plague_mother:       { sheet: 'projectiles_bosses', col: 6, row: 0 },
+  infernal_lord:       { sheet: 'projectiles_bosses', col: 5, row: 0, frames: 2, fps: 8 },
+  plague_mother:       { sheet: 'projectiles_bosses', col: 6, row: 0, frames: 2, fps: 8 },
   fallen_monarch:      { sheet: 'projectiles_bosses', col: 7, row: 0 },
-  astral_pharaoh:      { sheet: 'projectiles_bosses', col: 0, row: 1 },
-  wb_event_horizon:    { sheet: 'projectiles_bosses', col: 1, row: 1 },
+  astral_pharaoh:      { sheet: 'projectiles_bosses', col: 0, row: 1, frames: 2, fps: 8 },
+  wb_event_horizon:    { sheet: 'projectiles_bosses', col: 1, row: 1, frames: 2, fps: 8 },
   wb_frost_titan:      { sheet: 'projectiles_bosses', col: 2, row: 1 },
-  wb_ashen_worldeater: { sheet: 'projectiles_bosses', col: 3, row: 1 },
-  wb_plague_matriarch: { sheet: 'projectiles_bosses', col: 4, row: 1 },
+  wb_ashen_worldeater: { sheet: 'projectiles_bosses', col: 3, row: 1, frames: 2, fps: 10 },
+  wb_plague_matriarch: { sheet: 'projectiles_bosses', col: 4, row: 1, frames: 2, fps: 8 },
   wb_hollow_king:      { sheet: 'projectiles_bosses', col: 5, row: 1 },
-  wb_astral_pharaoh:   { sheet: 'projectiles_bosses', col: 6, row: 1 },
+  wb_astral_pharaoh:   { sheet: 'projectiles_bosses', col: 6, row: 1, frames: 2, fps: 8 },
   // --- regular mobs by biome theme (share a cell; remap individually if wanted) ---
   // forest / goblin / fungal
   forest_sprite:  { sheet: 'projectiles_bosses', col: 0, row: 2 },
@@ -1591,17 +1611,19 @@ const Sprites = {
                 : (typeof window !== 'undefined' ? window.ITEM_BASES : null)
     const base = bases && bases[baseKey]
     if (!slot && base) slot = base.slot
-    // 1) per-item override
+    // 1) per-item override ({sheet,col,row})
     let a = itemIconAssignments[baseKey]
     let cell = a && a.sheet && this._iconCell(a)
     if (cell) return this._drawSheetTile(a.sheet, cell.col, cell.row, cx, cy, size, context)
-    // 2) slot icon from the new gear sheets
+    // 2) explicit per-item legacy registry sprite (itemSpriteAssignments) — checked
+    //    BEFORE the generic slot icon so a named weapon/gear piece shows ITS art
+    //    (e.g. iron_helm -> armor_0_0), while unlisted items still use slot icons.
+    const id = itemSpriteAssignments[baseKey]
+    if (id && this.draw(id, cx, cy, size, context)) return true
+    // 3) generic slot icon from the gear sheets (default for any item of that slot)
     a = slot && itemSlotIconAssignments[slot]
     cell = a && a.sheet && this._iconCell(a)
     if (cell) return this._drawSheetTile(a.sheet, cell.col, cell.row, cx, cy, size, context)
-    // 3) legacy registry sprite (weapons / starter gear keep their existing art)
-    const id = itemSpriteAssignments[baseKey]
-    if (id) return this.draw(id, cx, cy, size, context)
     return false
   },
 
@@ -1611,6 +1633,17 @@ const Sprites = {
   // drawItemIcon so existing callers keep working.
   drawForItem(it, cx, cy, size, context) {
     return this.drawItemIcon(it, cx, cy, size, context)
+  },
+
+  // Draw the class character sprite centered at (cx,cy), fit to `size`. Returns
+  // false (unmapped/unloaded) so renderPlayer keeps its geometric class shape.
+  // VISUAL-ONLY — never affects movement/hitbox/stats.
+  drawForCharacter(classKey, cx, cy, size, context) {
+    const a = (typeof characterSpriteAssignments !== 'undefined') && characterSpriteAssignments[classKey]
+    if (!a || !a.sheet) return false
+    const cell = this._iconCell(a)
+    if (!cell) return false
+    return this._drawSheetTile(a.sheet, cell.col, cell.row, cx, cy, size, context)
   },
 
   // Draw an assignment ({sheet,col,row}|{sheet,index} + optional frames/fps/
