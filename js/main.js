@@ -56,18 +56,20 @@ const G = {
 // thrash; the Options +/- and reset buttons persist explicit changes.
 function updateScreenRotation(dt) {
   if (typeof Settings === 'undefined') return
-  // Z instantly resets rotation to 0° (mirrors the Options reset button).
-  if (keys['KeyZ']) {
-    keys['KeyZ'] = false
+  const HK = window.Hotkeys
+  // Reset-rotation key instantly resets to 0° (mirrors the Options reset button).
+  const resetCode = HK ? HK.code('resetRotation') : 'KeyZ'
+  if (resetCode && keys[resetCode]) {
+    keys[resetCode] = false
     if (Settings.screenRotation) {
       Settings.screenRotation = 0
       if (window.Options && Options.save) Options.save()
     }
   }
   let d = 0
-  // Q = rotate view left / counter-clockwise; E = rotate view right / clockwise.
-  if (keys['KeyQ']) d += 1
-  if (keys['KeyE']) d -= 1
+  // Rotate-left key = counter-clockwise; rotate-right key = clockwise (rebindable).
+  if (HK ? HK.down('rotateLeft')  : keys['KeyQ']) d += 1
+  if (HK ? HK.down('rotateRight') : keys['KeyE']) d -= 1
   if (!d) return
   const SPD = 100 // degrees / second
   Settings.screenRotation = (((Settings.screenRotation || 0) + d * SPD * dt) % 360 + 360) % 360
@@ -144,6 +146,7 @@ canvas.addEventListener('click', e => {
   if (e.button !== 0) return
   if (G.zone === 'menu')        MainMenu.onClick()
   if (G.zone === 'classSelect') ClassSelect.onClick()
+  if (G.zone === 'nexus' && window.NexusZone && NexusZone.onClick) NexusZone.onClick(e.clientX, e.clientY)
 })
 
 window.addEventListener('keydown', e => {
