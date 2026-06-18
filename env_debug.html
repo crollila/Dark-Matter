@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Epsteins Island — Environment Sprite Inspector</title>
+  <style>
+    body { background:#15171c; color:#e6e6e6; font-family:monospace; margin:0; padding:18px; }
+    h1 { font-size:16px; margin:0 0 4px; }
+    p  { font-size:12px; color:#9aa; margin:0 0 12px; max-width:960px; }
+    .note{font-size:11px;color:#c9a36a;margin:0 0 12px;}
+    label{font-size:11px;color:#9aa;margin-right:10px;}
+    select,input[type=number]{background:#101216;color:#e6e6e6;border:1px solid #2c3038;border-radius:3px;padding:2px 4px;font-family:monospace;}
+    input[type=number]{width:52px;}
+    code{color:#9fe0b0;}
+    .row { display:flex; gap:18px; align-items:flex-start; flex-wrap:wrap; }
+    .stage { position:relative; line-height:0;
+             background:#0c0d10 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="8" height="8" fill="%231a1a1a"/><rect x="8" y="8" width="8" height="8" fill="%231a1a1a"/></svg>');
+             border:1px solid #2c3038; border-radius:6px; }
+    .stage canvas { display:block; image-rendering:pixelated; }
+    #overlay { position:absolute; left:0; top:0; cursor:crosshair; }
+    .panel { width:340px; flex:0 0 auto; background:#1f2229; border:1px solid #2c3038;
+             border-radius:6px; padding:12px; font-size:12px; }
+    .panel h2 { font-size:13px; margin:0 0 8px; color:#cdd; }
+    .kv { display:flex; justify-content:space-between; padding:2px 0; border-bottom:1px dashed #2c3038; }
+    .kv span:first-child { color:#8a8f99; }
+    .preview { display:block; margin:10px auto; background:#0c0d10;
+               border:1px solid #2c3038; border-radius:6px; image-rendering:pixelated; }
+    pre { background:#101216; border:1px solid #2c3038; border-radius:4px; padding:8px;
+          font-size:11px; color:#9fe0b0; white-space:pre-wrap; word-break:break-all; margin:8px 0 0; }
+    button { font-family:monospace; font-size:11px; background:#2d3f6a; color:#fff; border:0;
+             border-radius:4px; padding:5px 9px; margin:8px 6px 0 0; cursor:pointer; }
+    button:hover { background:#395092; }
+    .hint{font-size:11px;color:#8a8f99;margin-top:8px;}
+    h3 { font-size:12px; color:#cdd; margin:18px 0 8px; }
+    .thumbs { display:flex; flex-wrap:wrap; gap:8px; }
+    .thumb { width:92px; background:#1f2229; border:1px solid #2c3038; border-radius:6px;
+             padding:6px; text-align:center; }
+    .thumb canvas { display:block; margin:0 auto 4px; background:#0c0d10; border-radius:4px; image-rendering:pixelated; }
+    .thumb .lab { font-size:10px; color:#9fe0b0; }
+    .thumb .pos { font-size:9px; color:#8a8f99; }
+    .tag { font-size:9px; padding:1px 4px; border-radius:3px; }
+    .tag.terr { background:#1d3a2a; color:#9fe0b0; }
+    .tag.obj  { background:#3a2a1d; color:#e0c39f; }
+  </style>
+</head>
+<body>
+  <h1>Environment Sprite Inspector</h1>
+  <p>Inspect every <b>env_*</b> sheet as a grid (default <b>8×8</b>). The overlay grid and the
+     drawn image share the <b>exact same scale</b>, so cell boxes line up with the art. Click a
+     cell for its <b>col,row</b>, a copy-ready <code>{ col, row }</code>, and ready-made
+     <code>ENV_TERRAIN_ROLES</code> / <code>ENV_OBJECT_ROLES</code> lines for <code>js/sprites.js</code>.
+     <b>Terrain</b> roles (green) are real ground/wall/liquid tiles; <b>object</b> roles (orange) are
+     props drawn on top. The <b>alpha-trim bounds</b> overlay (green box = trimmed, red = full cell:
+     opaque or a tainted/<code>file://</code> canvas) shows the exact visible art the game crops; the
+     big preview renders that crop in the chosen mode (terrain = cover/fill the tile, object =
+     contain + bottom-center). This explains why an untrimmed cell looked small/off-centre. Use
+     <i>cols/rows</i> if a sheet isn't 8×8 and <i>alpha thr</i> to tune the transparency cutoff.
+     This page never changes gameplay.</p>
+  <div class="note" id="note"></div>
+
+  <div style="margin-bottom:12px">
+    <label>env sheet <select id="sheetSelect"></select></label>
+    <label>cols <input id="colsInput" type="number" min="1" max="32" value="8"></label>
+    <label>rows <input id="rowsInput" type="number" min="1" max="32" value="8"></label>
+    <label>alpha thr <input id="thrInput" type="number" min="0" max="64" step="1" value="12"></label>
+    <label><input id="gridToggle" type="checkbox" checked> show raw cell grid</label>
+    <label><input id="trimToggle" type="checkbox" checked> show alpha-trim bounds</label>
+    <label><input id="labelToggle" type="checkbox" checked> cell labels</label>
+    <br>
+    <label>preview as
+      <select id="modeSelect">
+        <option value="terrain">terrain tile (cover/fill)</option>
+        <option value="object">object sprite (contain/bottom-center)</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="row">
+    <div class="stage" id="stage">
+      <canvas id="base"></canvas>
+      <canvas id="overlay"></canvas>
+    </div>
+    <div class="panel">
+      <h2 id="selTitle">No cell selected</h2>
+      <div class="kv"><span>sheet key</span><span id="vSheet">—</span></div>
+      <div class="kv"><span>theme</span><span id="vTheme">—</span></div>
+      <div class="kv"><span>natural W×H</span><span id="vNat">—</span></div>
+      <div class="kv"><span>cols × rows</span><span id="vGrid">—</span></div>
+      <div class="kv"><span>cellW × cellH</span><span id="vCell">—</span></div>
+      <div class="kv"><span>col , row</span><span id="vColRow">—</span></div>
+      <div class="kv"><span>index (row-major)</span><span id="vIndex">—</span></div>
+      <div class="kv"><span>boundary rect x,y,w,h</span><span id="vBound">—</span></div>
+      <div class="kv"><span>trim rect x,y,w,h</span><span id="vTrim">—</span></div>
+      <canvas id="preview" class="preview" width="128" height="128"></canvas>
+      <pre id="snippet">// click a cell…</pre>
+      <button id="copyCell">Copy { col, row }</button>
+      <button id="copyTerrain">Copy terrain line</button>
+      <button id="copyObject">Copy object line</button>
+      <div class="hint" id="hint"></div>
+    </div>
+  </div>
+
+  <h3 id="terrHead">Terrain role previews</h3>
+  <div class="thumbs" id="terrRoles"></div>
+  <h3 id="objHead">Object role previews</h3>
+  <div class="thumbs" id="objRoles"></div>
+
+  <script src="js/sprites.js"></script>
+  <script>
+    const TERRAIN_ROLES = ['floor','floorAlt','path','wall','wallAlt','specialFloor','hazard','water'];
+
+    const SHEET_KEYS = Object.keys((typeof SPRITE_SHEETS !== 'undefined' && SPRITE_SHEETS) || {})
+      .filter(k => k.startsWith('env_'));
+
+    // sheet key -> theme (reverse of ENV_SHEET_BY_THEME).
+    const THEME_FOR_SHEET = {};
+    if (typeof ENV_SHEET_BY_THEME !== 'undefined') {
+      for (const th in ENV_SHEET_BY_THEME) THEME_FOR_SHEET[ENV_SHEET_BY_THEME[th]] = th;
+    }
+    function themeOf(sheet) { return THEME_FOR_SHEET[sheet] || sheet.replace(/^env_/, ''); }
+
+    // Object roles actually defined for a theme (drives the object preview row).
+    function objectRolesFor(theme) {
+      const o = (typeof ENV_OBJECT_ROLES !== 'undefined' && ENV_OBJECT_ROLES[theme]) || {};
+      return Object.keys(o);
+    }
+    function terrainCells(theme, role) {
+      const t = (typeof ENV_TERRAIN_ROLES !== 'undefined' && ENV_TERRAIN_ROLES[theme]) || {};
+      return t[role] || [];
+    }
+    function objectCells(theme, role) {
+      const o = (typeof ENV_OBJECT_ROLES !== 'undefined' && ENV_OBJECT_ROLES[theme]) || {};
+      return o[role] || [];
+    }
+
+    const DISPLAY_W = 640;
+    const base = document.getElementById('base');
+    const overlay = document.getElementById('overlay');
+    const bctx = base.getContext('2d');
+    const octx = overlay.getContext('2d');
+    const sheetSelect = document.getElementById('sheetSelect');
+    const labelToggle = document.getElementById('labelToggle');
+    const gridToggle = document.getElementById('gridToggle');
+    const trimToggle = document.getElementById('trimToggle');
+    const thrInput = document.getElementById('thrInput');
+    const modeSelect = document.getElementById('modeSelect');
+    const colsInput = document.getElementById('colsInput');
+    const rowsInput = document.getElementById('rowsInput');
+    const previewCanvas = document.getElementById('preview');
+    const pctx = previewCanvas.getContext('2d');
+
+    let sheetKey = SHEET_KEYS[0] || 'env_neutral';
+    let selCol = 0, selRow = 0;
+    // Display cell size is an INTEGER so the grid and image share one exact scale
+    // (canvas size = cell*cols), eliminating sub-pixel drift / misalignment.
+    let cols = 8, rows = 8, cellDisp = 80;
+
+    for (const key of SHEET_KEYS) {
+      const opt = document.createElement('option');
+      const path = (SPRITE_SHEETS[key] && SPRITE_SHEETS[key].path) || key;
+      opt.value = key; opt.textContent = `${key} (${themeOf(key)}) — ${path}`;
+      sheetSelect.appendChild(opt);
+    }
+    sheetSelect.value = sheetKey;
+    // Seed cols/rows from the sheet's registered grid.
+    function seedGridInputs() {
+      const def = SPRITE_SHEETS[sheetKey] || {};
+      colsInput.value = def.cols || 8;
+      rowsInput.value = def.rows || 8;
+    }
+
+    function rec() { return (typeof Sprites !== 'undefined' && Sprites.sheet) ? Sprites.sheet(sheetKey) : null; }
+
+    function layoutSizes() {
+      cols = Math.max(1, parseInt(colsInput.value, 10) || 8);
+      rows = Math.max(1, parseInt(rowsInput.value, 10) || 8);
+      const r = rec();
+      const nat  = (r && r.img && r.img.naturalWidth)  ? r.img.naturalWidth  : 1254;
+      const natH = (r && r.img && r.img.naturalHeight) ? r.img.naturalHeight : 1254;
+      cellDisp = Math.max(1, Math.round(DISPLAY_W / cols));
+      base.width = overlay.width = cellDisp * cols;
+      // Keep aspect: derive the display row height from the source aspect so the
+      // image isn't stretched; the grid uses the SAME per-row height (no drift).
+      const cellDispH = Math.max(1, Math.round((natH / rows) * (cellDisp * cols / nat)));
+      base.height = overlay.height = cellDispH * rows;
+      base._cellH = cellDispH;
+      const cw = (nat / cols), ch = (natH / rows);
+      document.getElementById('vNat').textContent = `${nat} × ${natH}`;
+      document.getElementById('vGrid').textContent = `${cols} × ${rows}`;
+      document.getElementById('vCell').textContent = `${cw.toFixed(2)} × ${ch.toFixed(2)}px`;
+      document.getElementById('note').textContent = (r && r.loaded)
+        ? `${(SPRITE_SHEETS[sheetKey]||{}).path} — ${nat}×${natH}px → ${cols}×${rows} grid, source cell ${cw.toFixed(2)}×${ch.toFixed(2)}px (display ${cellDisp}×${cellDispH}px).`
+        : `Loading ${(SPRITE_SHEETS[sheetKey]||{}).path} … (if it never appears, the PNG is missing).`;
+    }
+
+    function drawSheet() {
+      const r = rec();
+      bctx.clearRect(0, 0, base.width, base.height);
+      if (r && r.loaded && r.img.complete) {
+        try { bctx.drawImage(r.img, 0, 0, base.width, base.height); } catch (e) {}
+      }
+    }
+
+    function thr() { return Math.max(0, parseInt(thrInput.value, 10) || 0); }
+
+    function drawGrid() {
+      const cellH = base._cellH || cellDisp;
+      octx.clearRect(0, 0, overlay.width, overlay.height);
+      octx.font = '10px monospace'; octx.textBaseline = 'top';
+      // RAW 8x8 cell boundary grid (toggle).
+      if (gridToggle.checked) {
+        for (let row = 0; row < rows; row++) {
+          for (let col = 0; col < cols; col++) {
+            const x = col * cellDisp, y = row * cellH;
+            const on = (col === selCol && row === selRow);
+            octx.lineWidth = on ? 3 : 1;
+            octx.strokeStyle = on ? '#ffcc33' : 'rgba(120,200,255,0.35)';
+            octx.strokeRect(x + octx.lineWidth/2, y + octx.lineWidth/2, cellDisp - octx.lineWidth, cellH - octx.lineWidth);
+            if (labelToggle.checked) {
+              octx.fillStyle = on ? 'rgba(255,204,51,0.9)' : 'rgba(0,0,0,0.55)';
+              octx.fillRect(x + 2, y + 2, 30, 13);
+              octx.fillStyle = on ? '#15171c' : '#9fe0b0';
+              octx.fillText(col + ',' + row, x + 4, y + 3);
+            }
+          }
+        }
+      }
+      // ALPHA-TRIM visible bounds of the SELECTED cell (toggle), mapped source→display.
+      if (trimToggle.checked && typeof Sprites !== 'undefined' && Sprites.envCellTrimRect) {
+        const r = Sprites.envCellTrimRect(sheetKey, selCol, selRow, thr());
+        const rc = rec();
+        if (r && rc && rc.img && rc.img.naturalWidth) {
+          const sX = overlay.width / rc.img.naturalWidth, sY = overlay.height / rc.img.naturalHeight;
+          octx.lineWidth = 2;
+          octx.strokeStyle = r.full ? 'rgba(255,120,120,0.95)' : 'rgba(120,255,160,0.95)';
+          octx.strokeRect(r.sx * sX, r.sy * sY, r.sw * sX, r.sh * sY);
+        }
+      }
+    }
+
+    function terrainLine(col, row) {
+      const theme = themeOf(sheetKey);
+      return `// ENV_TERRAIN_ROLES['${theme}'].someRole:\n{ col: ${col}, row: ${row} },`;
+    }
+    function objectLine(col, row) {
+      const theme = themeOf(sheetKey);
+      return `// ENV_OBJECT_ROLES['${theme}'].someRole:\n{ col: ${col}, row: ${row} },`;
+    }
+    function snippetFor(col, row) {
+      const theme = themeOf(sheetKey);
+      const cell = `{ col: ${col}, row: ${row} }`;
+      return [
+        `// ${sheetKey} (theme '${theme}') cell:`,
+        cell,
+        '',
+        '// TERRAIN tile (real ground/wall/liquid):',
+        `ENV_TERRAIN_ROLES['${theme}'].someRole: [ ${cell} ],`,
+        '',
+        '// OBJECT/decor (drawn ON TOP of a floor tile):',
+        `ENV_OBJECT_ROLES['${theme}'].someRole: [ ${cell} ],`
+      ].join('\n');
+    }
+
+    function showInfo(col, row) {
+      selCol = col; selRow = row;
+      const theme = themeOf(sheetKey);
+      document.getElementById('selTitle').textContent = `${sheetKey} — cell ${col},${row}`;
+      document.getElementById('vSheet').textContent = sheetKey;
+      document.getElementById('vTheme').textContent = theme;
+      document.getElementById('vColRow').textContent = `${col} , ${row}`;
+      document.getElementById('vIndex').textContent = (row * cols + col);
+      // Source boundary rect + alpha-trim rect (exact px the game crops).
+      const bound = (typeof Sprites !== 'undefined' && Sprites.envCellRect) ? Sprites.envCellRect(sheetKey, col, row) : null;
+      const trim  = (typeof Sprites !== 'undefined' && Sprites.envCellTrimRect) ? Sprites.envCellTrimRect(sheetKey, col, row, thr()) : null;
+      document.getElementById('vBound').textContent = bound ? `${bound.sx}, ${bound.sy}, ${bound.sw}, ${bound.sh}` : '— (loading)';
+      document.getElementById('vTrim').textContent  = trim ? `${trim.sx}, ${trim.sy}, ${trim.sw}, ${trim.sh}${trim.full ? ' (full — opaque/tainted)' : ''}` : '— (loading)';
+      document.getElementById('snippet').textContent = snippetFor(col, row);
+      drawGrid();
+    }
+
+    // ---- role preview cards ----
+    const terrCanvases = [], objCanvases = [];
+    function buildRoles() {
+      const theme = themeOf(sheetKey);
+      document.getElementById('terrHead').textContent = `Terrain role previews — theme '${theme}'`;
+      document.getElementById('objHead').textContent = `Object role previews — theme '${theme}'`;
+      const terrHost = document.getElementById('terrRoles'); terrHost.innerHTML = ''; terrCanvases.length = 0;
+      for (const role of TERRAIN_ROLES) {
+        const cells = terrainCells(theme, role);
+        const card = document.createElement('div'); card.className = 'thumb';
+        const cv = document.createElement('canvas'); cv.width = cv.height = 78;
+        const lab = document.createElement('div'); lab.className = 'lab';
+        lab.innerHTML = `<span class="tag terr">T</span> ${role}`;
+        const pos = document.createElement('div'); pos.className = 'pos';
+        pos.textContent = cells.length ? cells.map(c => `${c.col},${c.row}`).join(' / ') : '(unmapped)';
+        card.appendChild(cv); card.appendChild(lab); card.appendChild(pos);
+        terrHost.appendChild(card);
+        terrCanvases.push({ role, ctx: cv.getContext('2d') });
+      }
+      const objHost = document.getElementById('objRoles'); objHost.innerHTML = ''; objCanvases.length = 0;
+      for (const role of objectRolesFor(theme)) {
+        const cells = objectCells(theme, role);
+        const card = document.createElement('div'); card.className = 'thumb';
+        const cv = document.createElement('canvas'); cv.width = cv.height = 78;
+        const lab = document.createElement('div'); lab.className = 'lab';
+        lab.innerHTML = `<span class="tag obj">O</span> ${role}`;
+        const pos = document.createElement('div'); pos.className = 'pos';
+        pos.textContent = cells.length ? cells.map(c => `${c.col},${c.row}`).join(' / ') : '(none)';
+        card.appendChild(cv); card.appendChild(lab); card.appendChild(pos);
+        objHost.appendChild(card);
+        objCanvases.push({ role, cell: cells[0] || null, ctx: cv.getContext('2d') });
+      }
+    }
+
+    function frame() {
+      const mode = modeSelect.value;
+      const t0 = thr();
+      const W = previewCanvas.width, H = previewCanvas.height;
+      const TS = 96, cx = W/2, cy = H/2;   // simulated map tile box
+      pctx.clearRect(0, 0, W, H);
+      // Draw the target map-tile square so it's obvious how the crop fits the grid.
+      pctx.strokeStyle = 'rgba(120,200,255,0.5)'; pctx.lineWidth = 1;
+      pctx.strokeRect(cx - TS/2 + 0.5, cy - TS/2 + 0.5, TS, TS);
+      if (typeof Sprites !== 'undefined') {
+        if (mode === 'object' && Sprites.drawEnvObjectCell) {
+          // Exactly the game's object draw: contain + bottom-center anchor.
+          Sprites.drawEnvObjectCell(sheetKey, selCol, selRow, cx, cy, TS, pctx, { scale: 1, threshold: t0 });
+        } else if (Sprites.drawEnvTerrainCell) {
+          // Exactly the game's terrain draw: alpha-trimmed art stretched to fill tile.
+          Sprites.drawEnvTerrainCell(sheetKey, selCol, selRow, cx, cy, TS, pctx, { threshold: t0 });
+        }
+      }
+      const theme = themeOf(sheetKey);
+      for (const t of terrCanvases) {
+        t.ctx.clearRect(0, 0, 78, 78);
+        if (typeof Sprites !== 'undefined' && Sprites.drawEnvTile) {
+          Sprites.drawEnvTile(theme, t.role, 39, 39, 70, t.ctx, 0, { threshold: t0 });
+        }
+      }
+      for (const o of objCanvases) {
+        o.ctx.clearRect(0, 0, 78, 78);
+        if (o.cell && typeof Sprites !== 'undefined' && Sprites.drawEnvObjectCell) {
+          Sprites.drawEnvObjectCell(ENV_SHEET_BY_THEME[theme], o.cell.col, o.cell.row, 39, 39, 64, o.ctx,
+            { scale: 1, threshold: t0 });
+        }
+      }
+      drawSheet();
+      requestAnimationFrame(frame);
+    }
+
+    function selectSheet(key) {
+      sheetKey = key; selCol = 0; selRow = 0;
+      seedGridInputs();
+      rec();
+      let tries = 0;
+      const wait = () => {
+        const r = rec();
+        layoutSizes(); drawSheet(); drawGrid();
+        if ((!r || !r.loaded) && tries++ < 120) return setTimeout(wait, 50);
+      };
+      wait();
+      buildRoles();
+      showInfo(0, 0);
+    }
+
+    overlay.addEventListener('click', (ev) => {
+      const rect = overlay.getBoundingClientRect();
+      const cellH = base._cellH || cellDisp;
+      const col = Math.max(0, Math.min(cols - 1, Math.floor((ev.clientX - rect.left) / cellDisp)));
+      const row = Math.max(0, Math.min(rows - 1, Math.floor((ev.clientY - rect.top) / cellH)));
+      showInfo(col, row);
+    });
+
+    function copy(text, msg) {
+      if (navigator.clipboard) navigator.clipboard.writeText(text)
+        .then(() => document.getElementById('hint').textContent = msg)
+        .catch(() => document.getElementById('hint').textContent = 'Copy failed — select the snippet text manually.');
+    }
+    document.getElementById('copyCell').addEventListener('click', () => copy(`{ col: ${selCol}, row: ${selRow} }`, `Copied { col: ${selCol}, row: ${selRow} }`));
+    document.getElementById('copyTerrain').addEventListener('click', () => copy(terrainLine(selCol, selRow), 'Terrain line copied.'));
+    document.getElementById('copyObject').addEventListener('click', () => copy(objectLine(selCol, selRow), 'Object line copied.'));
+
+    sheetSelect.addEventListener('change', () => selectSheet(sheetSelect.value));
+    labelToggle.addEventListener('change', drawGrid);
+    gridToggle.addEventListener('change', drawGrid);
+    trimToggle.addEventListener('change', drawGrid);
+    modeSelect.addEventListener('change', () => {});   // frame() reads it live
+    thrInput.addEventListener('change', () => { showInfo(selCol, selRow); });
+    colsInput.addEventListener('change', () => { layoutSizes(); drawSheet(); drawGrid(); });
+    rowsInput.addEventListener('change', () => { layoutSizes(); drawSheet(); drawGrid(); });
+
+    selectSheet(sheetKey);
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>
