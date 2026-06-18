@@ -55,10 +55,10 @@ const DungeonZone = (() => {
     let vx = 0, vy = 0
     const spd = char.spd
     if (!chatOpen) {
-      if (keys['KeyW'] || keys['ArrowUp'])    vy = -spd
-      if (keys['KeyS'] || keys['ArrowDown'])  vy =  spd
-      if (keys['KeyA'] || keys['ArrowLeft'])  vx = -spd
-      if (keys['KeyD'] || keys['ArrowRight']) vx =  spd
+      if (Hotkeys.down('moveUp')    || keys['ArrowUp'])    vy = -spd
+      if (Hotkeys.down('moveDown')  || keys['ArrowDown'])  vy =  spd
+      if (Hotkeys.down('moveLeft')  || keys['ArrowLeft'])  vx = -spd
+      if (Hotkeys.down('moveRight') || keys['ArrowRight']) vx =  spd
       if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707 }
       ;[vx, vy] = inputToWorld(vx, vy)   // screen-relative movement (rotation-aware)
     }
@@ -324,8 +324,8 @@ const DungeonZone = (() => {
         const px = tx * TILE + offX, py = ty * TILE + offY
         const alt = (tx + ty) % 2 === 0
         let color
-        if (t === T_WALL) color = alt ? tc.wall || '#1a1a2a' : (tc.accent || '#1e1e2e')
-        else if (t === T_FLOOR) color = alt ? tc.floor || '#2a2a3a' : '#252535'
+        // Walls render as FLOOR (visually suppressed); collision still blocks them.
+        if (t === T_WALL || t === T_FLOOR) color = alt ? tc.floor || '#2a2a3a' : '#252535'
         // Portal tiles paint a floor base (no bright square backing); the entity
         // treatment is deferred to a 2nd pass so its aura isn't clipped by neighbours.
         else if (t === T_PORTAL_DUNGEON) { color = alt ? (tc.floor || '#2a2a3a') : '#252535'; portalDraws.push({ tx, ty, px, py }) }
@@ -363,21 +363,17 @@ const DungeonZone = (() => {
             typeof Sprites !== 'undefined' && Sprites.drawSimpleTile && !map.disableEnvSprites &&
             t !== T_PORTAL_DUNGEON) {
           let role = null
-          if (t === T_FLOOR) {
+          // Walls render as FLOOR now (visually suppressed); collision still blocks.
+          if (t === T_FLOOR || t === T_WALL) {
             const hv = Sprites.envHash(tx, ty, 1)
             role = (hv % 29 === 0) ? 'specialFloor' : (hv % 23 === 0) ? 'path' : (hv % 7 === 0) ? 'floorAlt' : 'floor'
-          } else if (t === T_WALL) {
-            role = (Sprites.envHash(tx, ty, 2) % 9 === 0) ? 'wallAlt' : 'wall'
-          } else if (t === T_LAVA || t === T_ICE) { role = 'hazard' }
+          } else if (t === T_LAVA || t === T_ICE || t === T_POISON) { role = 'hazard' }
           else if (t === T_WATER) { role = 'water' }
           if (role) {
             drewEnv = Sprites.drawSimpleTile(envTheme, role, px + TILE/2, py + TILE/2, TILE + 1, ctx, Sprites.envHash(tx, ty, 3))
           }
         }
-        if (t === T_WALL && !drewEnv) {
-          ctx.fillStyle = 'rgba(255,255,255,0.04)'
-          ctx.fillRect(px, py, TILE, 3)
-        }
+        // (Wall stripe overlay removed — walls are now visually suppressed.)
       }
     }
 

@@ -630,3 +630,62 @@ Move completed items out of this list after patches.
 - Add safe-zone-only or pause behavior for inventory/station panels if desired.
 - Add scroll for vault stash beyond first 30 slots if needed.
 - Restore `assets/sprites/mobs_astral.png` (currently absent; astral mobs star_scarab/mirage_stalker/sunseer fall back to geometry until it's re-added — mapping in sprites.js `mobSheetAssignments` is intact and will auto-activate). Other 9 mob sheets verified 1254×1254 / 8×8 after background cleanup.
+
+---
+
+## Patch — Sprite folder integration + hazard/wall update
+
+Asset moves + behavior:
+- **32×32 terrain tiles now live in `assets/sprites/tiles/`** (`SIMPLE_TILE_IMAGES` paths updated). Simple env tiles stay ACTIVE (`SIMPLE_ENV_TILES_ENABLED=true`); old atlas stays disabled (`ENV_SPRITES_ENABLED=false`).
+- **Boss PNGs now live in subfolders**: `assets/sprites/Bosses/` (themed dungeon-boss art), `assets/sprites/Dungon Bosses/` (generic RotMG bosses, unused for now), `assets/sprites/Event Gods/` (world/event bosses).
+- **`bossFileAssignments` (sprites.js)**: boss `e.key` → standalone PNG path. `drawForMob` checks it FIRST (`drawBossFilePath`, aspect-fit), then falls back to boss sheets → legacy art → geometry (missing file = graceful fallback, no crash). Dungeon bosses → `Bosses/`; world bosses (`wb_*`) → `Event Gods/`. `wb_frost_titan` intentionally unmapped → keeps icy `crystal_knight`. No boss AI/stats/loot changes.
+- **Walls are visually suppressed**: in both `engine.js renderTileMap` and `dungeon.js renderDungeonTiles`, `T_WALL` now renders as floor (biome-tinted) — base fill + simple-tile role both treat walls as floor, wall-stripe overlay removed. Collision/map logic unchanged (walls still block).
+- **Hazards now CLUSTER into pools** (`biomes.js assignBiomes`): per-tile scatter replaced by a per-cluster random-walk patch generator used by ALL hazards (lava, ice, poison) so they "group up" the same way.
+- **`T_POISON` (=13)** new hazard tile. `fen` biome (id 14, plague theme) gets `hazard:T_POISON`. Renders the plague-theme poison tiles; `frost` theme gained a `hazard` role = ice tiles so `T_ICE` patches show ice art.
+- **Poison damages without slow**: world.js DoT (70/s, bypasses armor) next to lava; `tileSpeedFactor` does NOT include poison → full move speed.
+- **Ice is slippery without slow**: ice was never in `tileSpeedFactor` (no slow); slippery momentum slide preserved. No change needed beyond clustering + ice-tile rendering.
+
+---
+
+## Asset inventory (subfolders under `assets/sprites/`)
+
+Filenames-only audit. Individual PNGs unless noted. "Integrated" = wired in code now; "Pending" = needs a future system.
+
+| Folder | ~Count | What it is | Status |
+|---|---|---|---|
+| `tiles/` | 50 | 32×32 terrain tiles | **Integrated** (`SIMPLE_TILE_IMAGES`) |
+| `Bosses/` | 38 | Themed dungeon-boss art (goblin/ice/fungal/infernal/void/voidharb/poison/undead/pharoh) + ability/power-up frames | **Integrated** (base `_boss_1` files → `bossFileAssignments`); ability/power-up frames pending an animation/phase system |
+| `Dungon Bosses/` | 93 | Generic RotMG bosses (Oryx, etc.) | Pending — no theme match to current 9 dungeon bosses; reserve for future dungeons |
+| `Event Gods/` | 18 | RotMG event bosses (Cube God, Lich, Sphinx…) | **Integrated** (5 of 6 world bosses → `bossFileAssignments`) |
+| `Rings/` | 42 | RotMG ring art | Pending — no clean baseKey↔file map; hook = `itemIconAssignments` per baseKey |
+| `Abilities/` | 117 | Ability/skill art | Pending — abilities aren't class-specific items yet; hook = `itemIconAssignments` / ability slot |
+| `Armors/` | 39 | Robe/leather/plate art | Pending — generic ITEM_BASES, no 1:1; hook = `itemIconAssignments` |
+| `Potions/` | 16 | Stat potions (Atk/Def/Dex/Life/Mana/Spd/Vit/Wis + Greater) | Pending — no potion items/inventory system exists |
+| `Status Effects/` | 26 | RotMG status icons (Slowed/Sick/Berserk/Curse/Stunned…) | Pending — see "Status system" below |
+| `Gravestones/` | 11 | Tiered graves: `1-8..8-8 Grave` (level brackets), `Level 20 Grave` (cap), `Small Grave`, `Grave` | Pending — death screen draws NO grave today; see "Gravestone" below |
+| `Portals/` | 31 | RotMG dungeon portal art | Pending — current portals use `portal_sheet_*` atlases; could add per-dungeon `Portals/` overrides via `dungeonPortalAssignments` |
+| `Misc/` | 8 | UI bits (Character-Slot, Battle Pass, Realmeye, Towers, Apple of maxing) | Pending — UI/meta features |
+| `Environment/` | 12 | Bushes / trees / cloud (decor props) | Pending — feeds the DORMANT env object/decor pass (`ENV_OBJECT_ROLES`); not the active simple-tile renderer |
+| `MotMG Items/` | 21 | Aspirant class weapons+armor, Magus/Sniper rings, tokens | Pending — closest to a clean win: Aspirant weapons could map to the 5 class starter weapons via `itemIconAssignments`, but verify art first |
+| `NPC's/` | 2 | Guilliam, The Enchanter | Pending — no NPC system |
+| `Classes/` | 19 | Class portraits (Warrior/Wizard/Archer/Priest/Rogue + others) | Pending — could skin class-select cards (ui.js `ClassSelect`) and player body later |
+| `Skins/` | 5 | Directional skin sheets (Exalted Huntress, Tidal Kensei) | Pending — no skin system |
+| `Animated Gifs/` | 23 | Ability/effect GIFs (activations, transitions, lightning) | Pending — no GIF/effect playback; canvas can't loop GIFs without a frame-strip conversion |
+
+### Integrated now (this audit)
+- Nothing new wired from the audit folders beyond Patch A's tiles + boss files. No clean 1:1 item-icon mapping exists (RotMG filenames ≠ generic `ITEM_BASES` keys), so item icons keep their current `gear_*_icons` + geometric fallback. No item stats/loot/save changes.
+
+### Status system (future hook)
+- `Status Effects/` icons map to a future debuff/buff system. Hook point: a per-character `statusEffects[]` + a small HUD strip near the vitals bar (ui.js `renderHUD`); tick logic in `player.js updateCharacter`. Icons by name (Slowed/Sick/Bleeding/etc.). DO NOT build the system yet.
+
+### Gravestone (future hook)
+- No grave is drawn on death today (`ui.js renderDead` has none). Future: on death, pick a grave by the character's level — `Small Grave` (low), `1-8 Grave`…`8-8 Grave` (level brackets, 1-8 = bracket index), `Level 20 Grave` (cap). Hook = `renderDead` + a stored death record. DO NOT build yet.
+
+### Recommended next implementation order
+1. Verify boss PNGs render (manual) and retune any bad theme matches in `bossFileAssignments`.
+2. Aspirant (`MotMG Items/`) → class starter weapon icons via `itemIconAssignments` (smallest clean item-icon win once art is verified).
+3. Class portraits (`Classes/`) → `ClassSelect` cards.
+4. `Environment/` props → re-enable + populate the dormant env object/decor pass.
+5. Status-effect system (data + HUD strip) using `Status Effects/`.
+6. Gravestone-on-death using `Gravestones/`.
+7. Per-dungeon portal overrides from `Portals/`; potions/NPC/skin/GIF systems last.

@@ -23,7 +23,7 @@ const ENV_SPRITES_ENABLED = false
 // --- Simple 32x32 terrain tile master switch --------------------------------
 // The ACTIVE environment renderer. Replaces the abandoned large env atlas above:
 // instead of slicing a packed 1254x1254 sheet (which never tiled the grid cleanly),
-// each terrain visual is its OWN exact 32x32 PNG (assets/sprites/tile_*.png) drawn
+// each terrain visual is its OWN exact 32x32 PNG (assets/sprites/tiles/tile_*.png) drawn
 // directly into one map tile — no slicing/grid math. Registered in SIMPLE_TILE_IMAGES;
 // biome/dungeon roles mapped in SIMPLE_TILE_THEMES (aliased BIOME_TILE_MAP /
 // DUNGEON_TILE_MAP). renderTileMap / renderDungeonTiles call Sprites.drawSimpleTile;
@@ -525,6 +525,32 @@ const bossSpriteAssignments = {
   wb_astral_pharaoh:  'flying_boss_20',  // large single-eye (astral)
 }
 
+// boss `e.key` -> NEW standalone boss PNG path (the subfoldered art the user added).
+// Checked FIRST in drawForMob (highest priority); a missing/unloaded file returns
+// false and falls through to the boss sheets / legacy art / geometry (never crashes).
+// Dungeon bosses use the themed `Bosses/` files; world bosses use `Event Gods/`.
+// Mapping is by theme/name (closest match). UNMAPPED bosses (e.g. wb_frost_titan ->
+// keeps the icy crystal_knight) intentionally fall back to existing art.
+const bossFileAssignments = {
+  // --- dungeon bosses -> assets/sprites/Bosses/ (themed) ---
+  goblin_warchief:    'assets/sprites/Bosses/Goblin_boss_1.png',
+  mycelian_king:      'assets/sprites/Bosses/fungal_boss_1.png',
+  frost_monarch:      'assets/sprites/Bosses/ice_boss_1.png',
+  infernal_lord:      'assets/sprites/Bosses/infernal_boss_1.png',
+  void_harbinger:     'assets/sprites/Bosses/voidharb_boss_1.png',
+  singularity_tyrant: 'assets/sprites/Bosses/void_boss_1.png',
+  plague_mother:      'assets/sprites/Bosses/poison_boss_1.png',
+  fallen_monarch:     'assets/sprites/Bosses/undead_boss_1.png',
+  astral_pharaoh:     'assets/sprites/Bosses/Pharoh_boss_1.png',
+  // --- world / event bosses -> assets/sprites/Event Gods/ (closest god match) ---
+  wb_event_horizon:   'assets/sprites/Event Gods/Cube God.png',     // void/cosmic
+  wb_ashen_worldeater:'assets/sprites/Event Gods/red demon.png',    // fire/ash
+  wb_plague_matriarch:'assets/sprites/Event Gods/Worm Father.png',  // infestation/plague
+  wb_hollow_king:     'assets/sprites/Event Gods/Lich.png',         // undead king
+  wb_astral_pharaoh:  'assets/sprites/Event Gods/Grand Sphinz.png', // sphinx/desert
+  // wb_frost_titan: (unmapped) -> falls back to the icy crystal_knight art.
+}
+
 // boss `e.key` (MOB_DEFS / WORLD_BOSSES) -> { sheet, pair } on the boss atlases.
 // EXPLICIT + data-driven (never auto-picked). Each sheet holds SIX boss blocks laid
 // out 3 across x 2 down on a 9x6 frame grid; `pair` (0..5) picks the BLOCK and
@@ -1014,67 +1040,67 @@ const dungeonEnvThemeMap = {
 // on-disk casing (note the mixed-case plague poison files).
 const SIMPLE_TILE_IMAGES = {
   // neutral / home
-  tile_neutral_1: 'assets/sprites/tile_neutral_1.png',
-  tile_neutral_2: 'assets/sprites/tile_neutral_2.png',
-  tile_neutral_3: 'assets/sprites/tile_neutral_3.png',
-  tile_neutral_4: 'assets/sprites/tile_neutral_4.png',
-  tile_neutral_5: 'assets/sprites/tile_neutral_5.png',
-  tile_neutral_6: 'assets/sprites/tile_neutral_6.png',
-  tile_neutral_7: 'assets/sprites/tile_neutral_7.png',
-  tile_neutral_8: 'assets/sprites/tile_neutral_8.png',
+  tile_neutral_1: 'assets/sprites/tiles/tile_neutral_1.png',
+  tile_neutral_2: 'assets/sprites/tiles/tile_neutral_2.png',
+  tile_neutral_3: 'assets/sprites/tiles/tile_neutral_3.png',
+  tile_neutral_4: 'assets/sprites/tiles/tile_neutral_4.png',
+  tile_neutral_5: 'assets/sprites/tiles/tile_neutral_5.png',
+  tile_neutral_6: 'assets/sprites/tiles/tile_neutral_6.png',
+  tile_neutral_7: 'assets/sprites/tiles/tile_neutral_7.png',
+  tile_neutral_8: 'assets/sprites/tiles/tile_neutral_8.png',
   // forest
-  tile_forest_1: 'assets/sprites/tile_forest_1.png',
-  tile_forest_2: 'assets/sprites/tile_forest_2.png',
-  tile_forest_3: 'assets/sprites/tile_forest_3.png',
+  tile_forest_1: 'assets/sprites/tiles/tile_forest_1.png',
+  tile_forest_2: 'assets/sprites/tiles/tile_forest_2.png',
+  tile_forest_3: 'assets/sprites/tiles/tile_forest_3.png',
   // goblin
-  tile_goblin_1: 'assets/sprites/tile_goblin_1.png',
-  tile_goblin_2: 'assets/sprites/tile_goblin_2.png',
-  tile_goblin_3: 'assets/sprites/tile_goblin_3.png',
-  tile_goblin_4: 'assets/sprites/tile_goblin_4.png',
-  tile_goblin_5: 'assets/sprites/tile_goblin_5.png',
-  tile_goblin_6: 'assets/sprites/tile_goblin_6.png',
-  tile_goblin_7: 'assets/sprites/tile_goblin_7.png',
+  tile_goblin_1: 'assets/sprites/tiles/tile_goblin_1.png',
+  tile_goblin_2: 'assets/sprites/tiles/tile_goblin_2.png',
+  tile_goblin_3: 'assets/sprites/tiles/tile_goblin_3.png',
+  tile_goblin_4: 'assets/sprites/tiles/tile_goblin_4.png',
+  tile_goblin_5: 'assets/sprites/tiles/tile_goblin_5.png',
+  tile_goblin_6: 'assets/sprites/tiles/tile_goblin_6.png',
+  tile_goblin_7: 'assets/sprites/tiles/tile_goblin_7.png',
   // frost / ice / ice-stone
-  tile_frost_1: 'assets/sprites/tile_frost_1.png',
-  tile_frost_2: 'assets/sprites/tile_frost_2.png',
-  tile_ice_1: 'assets/sprites/tile_ice_1.png',
-  tile_ice_2: 'assets/sprites/tile_ice_2.png',
-  tile_ice_3: 'assets/sprites/tile_ice_3.png',
-  tile_ice_stone_1: 'assets/sprites/tile_ice_stone_1.png',
-  tile_ice_stone_2: 'assets/sprites/tile_ice_stone_2.png',
-  tile_ice_stone_3: 'assets/sprites/tile_ice_stone_3.png',
+  tile_frost_1: 'assets/sprites/tiles/tile_frost_1.png',
+  tile_frost_2: 'assets/sprites/tiles/tile_frost_2.png',
+  tile_ice_1: 'assets/sprites/tiles/tile_ice_1.png',
+  tile_ice_2: 'assets/sprites/tiles/tile_ice_2.png',
+  tile_ice_3: 'assets/sprites/tiles/tile_ice_3.png',
+  tile_ice_stone_1: 'assets/sprites/tiles/tile_ice_stone_1.png',
+  tile_ice_stone_2: 'assets/sprites/tiles/tile_ice_stone_2.png',
+  tile_ice_stone_3: 'assets/sprites/tiles/tile_ice_stone_3.png',
   // fungal
-  tile_fungal_1: 'assets/sprites/tile_fungal_1.png',
-  tile_fungal_2: 'assets/sprites/tile_fungal_2.png',
-  tile_fungal_3: 'assets/sprites/tile_fungal_3.png',
+  tile_fungal_1: 'assets/sprites/tiles/tile_fungal_1.png',
+  tile_fungal_2: 'assets/sprites/tiles/tile_fungal_2.png',
+  tile_fungal_3: 'assets/sprites/tiles/tile_fungal_3.png',
   // cursed
-  tile_cursed_1: 'assets/sprites/tile_cursed_1.png',
-  tile_cursed_2: 'assets/sprites/tile_cursed_2.png',
-  tile_cursed_3: 'assets/sprites/tile_cursed_3.png',
-  tile_cursed_4: 'assets/sprites/tile_cursed_4.png',
+  tile_cursed_1: 'assets/sprites/tiles/tile_cursed_1.png',
+  tile_cursed_2: 'assets/sprites/tiles/tile_cursed_2.png',
+  tile_cursed_3: 'assets/sprites/tiles/tile_cursed_3.png',
+  tile_cursed_4: 'assets/sprites/tiles/tile_cursed_4.png',
   // infernal / lava
-  tile_infernal_1: 'assets/sprites/tile_infernal_1.png',
-  tile_infernal_2: 'assets/sprites/tile_infernal_2.png',
-  tile_infernal_3: 'assets/sprites/tile_infernal_3.png',
-  tile_infernal_4: 'assets/sprites/tile_infernal_4.png',
-  tile_infernal_5: 'assets/sprites/tile_infernal_5.png',
-  tile_infernal_6: 'assets/sprites/tile_infernal_6.png',
-  tile_lava_1: 'assets/sprites/tile_lava_1.png',
+  tile_infernal_1: 'assets/sprites/tiles/tile_infernal_1.png',
+  tile_infernal_2: 'assets/sprites/tiles/tile_infernal_2.png',
+  tile_infernal_3: 'assets/sprites/tiles/tile_infernal_3.png',
+  tile_infernal_4: 'assets/sprites/tiles/tile_infernal_4.png',
+  tile_infernal_5: 'assets/sprites/tiles/tile_infernal_5.png',
+  tile_infernal_6: 'assets/sprites/tiles/tile_infernal_6.png',
+  tile_lava_1: 'assets/sprites/tiles/tile_lava_1.png',
   // plague / poison
-  tile_plague_1: 'assets/sprites/tile_plague_1.png',
-  tile_plague_2: 'assets/sprites/tile_plague_2.png',
-  tile_plague_3: 'assets/sprites/tile_plague_3.png',
-  tile_plague_4: 'assets/sprites/tile_plague_4.png',
-  tile_plague_5: 'assets/sprites/tile_plague_5.png',
-  tile_plague_poison_1: 'assets/sprites/tile_plague_poison_1.png',
-  tile_plague_poison_2: 'assets/sprites/tile_plague_Poison_2.png', // NOTE: capital P on disk
-  tile_plague_poison_4: 'assets/sprites/tile_plague_poison_4.png',
+  tile_plague_1: 'assets/sprites/tiles/tile_plague_1.png',
+  tile_plague_2: 'assets/sprites/tiles/tile_plague_2.png',
+  tile_plague_3: 'assets/sprites/tiles/tile_plague_3.png',
+  tile_plague_4: 'assets/sprites/tiles/tile_plague_4.png',
+  tile_plague_5: 'assets/sprites/tiles/tile_plague_5.png',
+  tile_plague_poison_1: 'assets/sprites/tiles/tile_plague_poison_1.png',
+  tile_plague_poison_2: 'assets/sprites/tiles/tile_plague_Poison_2.png', // NOTE: capital P on disk
+  tile_plague_poison_4: 'assets/sprites/tiles/tile_plague_poison_4.png',
   // void / dark matter
-  tile_void_1: 'assets/sprites/tile_void_1.png',
-  tile_void_2: 'assets/sprites/tile_void_2.png',
-  tile_void_3: 'assets/sprites/tile_void_3.png',
-  tile_void_4: 'assets/sprites/tile_void_4.png',
-  tile_void_5: 'assets/sprites/tile_void_5.png'
+  tile_void_1: 'assets/sprites/tiles/tile_void_1.png',
+  tile_void_2: 'assets/sprites/tiles/tile_void_2.png',
+  tile_void_3: 'assets/sprites/tiles/tile_void_3.png',
+  tile_void_4: 'assets/sprites/tiles/tile_void_4.png',
+  tile_void_5: 'assets/sprites/tiles/tile_void_5.png'
 }
 
 // theme -> { role -> [image key, ...] }. Roles: floor / floorAlt / path / wall /
@@ -1104,6 +1130,7 @@ const SIMPLE_TILE_THEMES = {
   frost: {
     floor:        ['tile_frost_1', 'tile_frost_2'],
     specialFloor: ['tile_ice_1', 'tile_ice_2', 'tile_ice_3'],
+    hazard:       ['tile_ice_1', 'tile_ice_2', 'tile_ice_3'],  // T_ICE patches render the ice tiles
     wall:         ['tile_ice_stone_1', 'tile_ice_stone_2', 'tile_ice_stone_3']
   },
   fungal: {
@@ -1483,10 +1510,30 @@ const Sprites = {
   // Bosses (bossSpriteAssignments) take priority; creature art has wide wings/
   // padding so it's drawn a touch larger than the geometric radius. Regular +
   // dungeon mobs then try their 2-frame mob-sheet sprite; unmapped keep geometry.
+  // Draw a standalone boss PNG (by file path) centered at (cx,cy), aspect-fit into
+  // a `size` box. Returns false if the file is missing/undecoded so callers fall
+  // back to the boss sheets / legacy art / geometry (never crashes the loop).
+  drawBossFilePath(path, cx, cy, size, context) {
+    if (!this.enabled || !path) return false
+    const rec = this.image(path)
+    if (!rec || !rec.loaded || !rec.img || !rec.img.complete) return false
+    const iw = rec.img.naturalWidth, ih = rec.img.naturalHeight
+    if (!iw || !ih) return false
+    const c = context || (typeof ctx !== 'undefined' ? ctx : null)
+    if (!c) return false
+    const scale = size / Math.max(iw, ih)
+    const dw = iw * scale, dh = ih * scale
+    try { c.drawImage(rec.img, cx - dw / 2, cy - dh / 2, dw, dh) } catch (err) { return false }
+    return true
+  },
+
   drawForMob(e, sx, sy, vrad) {
     if (!e || !e.key) return false
     const r0 = (vrad || e.radius || 12)
-    // 1) NEW boss-sheet art (2-frame boss atlases) — highest priority, data-driven.
+    // 0) NEW per-boss PNG (subfoldered art) — highest priority, file-based, data-driven.
+    const bfile = (typeof bossFileAssignments !== 'undefined') && bossFileAssignments[e.key]
+    if (bfile && this.drawBossFilePath(bfile, sx, sy, r0 * 2.8)) return true
+    // 1) boss-sheet art (2-frame boss atlases) — data-driven fallback.
     if (this.drawBossSheet(e, sx, sy, r0 * 3.0)) return true
     // 2) Legacy standalone boss / registry sprite (flying creatures, crystal knight) —
     //    graceful fallback if a boss sheet is missing but a legacy entry exists.
@@ -1841,6 +1888,7 @@ if (typeof window !== 'undefined') {
   window.mobSheetAssignments = mobSheetAssignments
   window.bossSpriteAssignments = bossSpriteAssignments
   window.bossSheetAssignments = bossSheetAssignments
+  window.bossFileAssignments = bossFileAssignments
   window.itemSpriteAssignments = itemSpriteAssignments
   window.projectileSpriteAssignments = projectileSpriteAssignments
   // Gear icon + projectile sprite systems (new 8x8 sheets).

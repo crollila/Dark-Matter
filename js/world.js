@@ -166,10 +166,10 @@ const WorldZone = (() => {
     let vx = 0, vy = 0
     const spd = char.spd
     if (!chatOpen) {
-      if (keys['KeyW'] || keys['ArrowUp'])    vy = -spd
-      if (keys['KeyS'] || keys['ArrowDown'])  vy =  spd
-      if (keys['KeyA'] || keys['ArrowLeft'])  vx = -spd
-      if (keys['KeyD'] || keys['ArrowRight']) vx =  spd
+      if (Hotkeys.down('moveUp')    || keys['ArrowUp'])    vy = -spd
+      if (Hotkeys.down('moveDown')  || keys['ArrowDown'])  vy =  spd
+      if (Hotkeys.down('moveLeft')  || keys['ArrowLeft'])  vx = -spd
+      if (Hotkeys.down('moveRight') || keys['ArrowRight']) vx =  spd
       if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707 }
       // Screen-relative: W always moves toward the top of the screen, etc.,
       // regardless of the current screen rotation.
@@ -190,6 +190,13 @@ const WorldZone = (() => {
     if (curTile === T_LAVA && !char.godmode) {
       char.hp -= 90 * dt
       if (Math.random() < dt * 3) spawnFloatText(char.x, char.y - 22, 'lava', '#ff6b35')
+      if (char.hp <= 0) { char.hp = 0; onCharacterDeath(char, account); G.enterZone('dead'); return }
+    }
+    // Plague poison: damage over time (raw DoT, bypasses armor). Does NOT slow —
+    // tileSpeedFactor intentionally leaves poison at full speed (unlike lava).
+    if (curTile === T_POISON && !char.godmode) {
+      char.hp -= 70 * dt
+      if (Math.random() < dt * 3) spawnFloatText(char.x, char.y - 22, 'poison', '#9be84a')
       if (char.hp <= 0) { char.hp = 0; onCharacterDeath(char, account); G.enterZone('dead'); return }
     }
     // Track which biome the player is in (for the subtle name label).

@@ -119,8 +119,9 @@ const T_PORTAL_DUNGEON = 7
 const T_STATION = 8  // interactable NPC spot
 const T_SPAWN   = 9
 const T_PORTAL_VAULT = 10  // purple portal in nexus → vault room
-const T_ICE  = 11  // snow biome — slippery floor (no block, momentum slide)
+const T_ICE  = 11  // snow biome — slippery floor (no block, NO slow, momentum slide)
 const T_LAVA = 12  // hell biome — damages + slows (no block)
+const T_POISON = 13  // plague biome — damage over time, does NOT slow (no block)
 
 // Default portal sprite theme by tile type (sprites.js). Used when a zone does
 // not provide a per-tile resolver (tileMap.portalThemeAt). World portals read as
@@ -146,6 +147,7 @@ const TILE_COLORS = {
   [T_PORTAL_VAULT]: '#3a1a6a',
   [T_ICE]:   '#9fd4e8',
   [T_LAVA]:  '#7a1c0c',
+  [T_POISON]: '#3a5a18',
 }
 const TILE_COLORS_ALT = {
   [T_FLOOR]: '#353525',
@@ -339,6 +341,10 @@ function renderTileMap(tileMap, labels) {
       const isPortal = (t === T_PORTAL_WORLD || t === T_PORTAL_RAID || t === T_PORTAL_DUNGEON || t === T_PORTAL_VAULT)
       let color = TILE_COLORS[t] || '#111'
       if (alt && TILE_COLORS_ALT[t]) color = TILE_COLORS_ALT[t]
+      // Walls are VISUALLY SUPPRESSED — paint them as floor (collision still blocks).
+      if (t === T_WALL) {
+        color = (alt && TILE_COLORS_ALT[T_FLOOR]) ? TILE_COLORS_ALT[T_FLOOR] : TILE_COLORS[T_FLOOR]
+      }
       // Portals are world entities, not bright tiles — paint the ground beneath them
       // as the surrounding terrain (grass on the world, floor elsewhere) so no
       // saturated square backing shows behind the portal art.
@@ -347,7 +353,8 @@ function renderTileMap(tileMap, labels) {
         color = (alt && TILE_COLORS_ALT[base]) ? TILE_COLORS_ALT[base] : TILE_COLORS[base]
       }
       // Biome floor tint (world map only) — gives each region its own palette.
-      if ((t === T_FLOOR || t === T_GRASS || isPortal) && tileMap.biome &&
+      // Walls included so suppressed walls blend into the surrounding biome floor.
+      if ((t === T_FLOOR || t === T_GRASS || t === T_WALL || isPortal) && tileMap.biome &&
           typeof BIOME_BY_ID !== 'undefined') {
         const b = tileMap.biome[ty * tileMap.w + tx]
         const bd = b && BIOME_BY_ID[b]
@@ -398,13 +405,12 @@ function renderTileMap(tileMap, labels) {
         const theme = tileMap.biome ? Sprites.simpleThemeForBiome(biomeId)
                                     : (tileMap.envTheme || 'neutral')
         let role = null
-        const isFloor = (t === T_FLOOR || t === T_GRASS)
+        // Walls render as FLOOR now (visually suppressed); collision still blocks them.
+        const isFloor = (t === T_FLOOR || t === T_GRASS || t === T_WALL)
         if (isFloor) {
           const hv = Sprites.envHash(tx, ty, 1)
           role = (hv % 29 === 0) ? 'specialFloor' : (hv % 23 === 0) ? 'path' : (hv % 7 === 0) ? 'floorAlt' : 'floor'
-        } else if (t === T_WALL) {
-          role = (Sprites.envHash(tx, ty, 2) % 9 === 0) ? 'wallAlt' : 'wall'
-        } else if (t === T_LAVA || t === T_ICE) { role = 'hazard' }
+        } else if (t === T_LAVA || t === T_ICE || t === T_POISON) { role = 'hazard' }
         else if (t === T_WATER) { role = 'water' }
         if (role) {
           drewEnv = Sprites.drawSimpleTile(theme, role, px + TILE/2, py + TILE/2, TILE + 1, ctx, Sprites.envHash(tx, ty, 3))
@@ -415,15 +421,16 @@ function renderTileMap(tileMap, labels) {
         ctx.fillStyle = `rgba(255,110,40,${pulse})`
         ctx.fillRect(px+3, py+3, TILE-6, TILE-6)
       }
+      if (t === T_POISON && !drewEnv) {
+        const pulse = 0.3 + Math.sin(Date.now()/360 + tx*0.6 + ty*0.4) * 0.18
+        ctx.fillStyle = `rgba(120,210,60,${pulse})`
+        ctx.fillRect(px+3, py+3, TILE-6, TILE-6)
+      }
       if (t === T_ICE && !drewEnv) {
         ctx.fillStyle = 'rgba(255,255,255,0.18)'
         ctx.fillRect(px+2, py+2, TILE-4, 4)
       }
-
-      if (t === T_WALL && !drewEnv) {
-        ctx.fillStyle = '#333'
-        ctx.fillRect(px, py, TILE, 3)
-      }
+      // (Wall stripe overlay removed — walls are now visually suppressed.)
       // Portal tiles: defer to a second pass (after all base tiles) so the soft
       // aura isn't clipped by neighbouring tiles painted later in this loop.
       if (isPortal) {

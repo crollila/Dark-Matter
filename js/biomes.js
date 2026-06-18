@@ -57,6 +57,7 @@ const BIOMES = {
     id: 14, name: 'Quiet Fen',
     floor: '#162420', floorAlt: '#1b2c27', accent: '#8fe0c0', mini: [78, 128, 110],
     mobs: ['spore_crawler', 'venom_cap', 'mycelium_horror'], dungeon: 'plague_grotto',
+    hazard: T_POISON, hazardChance: 0.16,
   },
 
   // 2★ (mid-south)
@@ -193,15 +194,30 @@ function assignBiomes(m, rng) {
       m.biome[y * W + x] = best
     }
 
-  // Scatter hazard floor tiles inside hazardous biomes (ice / lava).
-  for (let y = 1; y < H - 1; y++)
-    for (let x = 1; x < W - 1; x++) {
-      const b = m.biome[y * W + x]
-      if (!b) continue
-      const def = BIOME_BY_ID[b]
-      if (def.hazard && m.get(x, y) === T_FLOOR && rng() < def.hazardChance)
-        m.set(x, y, def.hazard)
+  // Hazard PATCHES (ice / lava / poison) — grouped pools, not single scattered
+  // tiles. One patch budget per hazard biome cluster; each patch is a short
+  // random-walk blob over that biome's own floor tiles, so hazards "group up"
+  // consistently for every hazard type (lava, ice, poison all use this).
+  for (const c of clusters) {
+    const def = BIOME_BY_ID[c.id]
+    if (!def || !def.hazard) continue
+    const area = Math.PI * c.r * c.r
+    const patches = Math.max(1, Math.round(area * (def.hazardChance || 0.15) / 22))
+    for (let p = 0; p < patches; p++) {
+      const a = rng() * Math.PI * 2, rr = Math.sqrt(rng()) * c.r
+      let hx = Math.round(c.x + Math.cos(a) * rr)
+      let hy = Math.round(c.y + Math.sin(a) * rr)
+      const steps = 4 + (rng() * 10 | 0)   // patch size (organic blob)
+      for (let s = 0; s < steps; s++) {
+        if (hx > 0 && hy > 0 && hx < W - 1 && hy < H - 1 &&
+            m.biome[hy * W + hx] === c.id && m.get(hx, hy) === T_FLOOR)
+          m.set(hx, hy, def.hazard)
+        const d = rng() * 4 | 0
+        hx += d === 0 ? 1 : d === 1 ? -1 : 0
+        hy += d === 2 ? 1 : d === 3 ? -1 : 0
+      }
     }
+  }
 
   // Tile-coord biome lookup used by spawn/leash/UI.
   m.biomeAt = (tx, ty) =>
