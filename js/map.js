@@ -82,6 +82,10 @@ function buildNexus() {
   m.worldPortalPos = { tx: 19, ty: 5 }
   m.raidPortalPos  = { tx: 19, ty: 1 }
 
+  // Nexus stays clean/default gray — never paint env sprite terrain/decor here
+  // (renderTileMap skips the whole env layer when this is set).
+  m.disableEnvSprites = true
+
   return m
 }
 
@@ -108,6 +112,8 @@ function buildVault() {
     { x: 5, y: 3 }, { x: 8, y: 3 }, { x: 11, y: 3 }, { x: 14, y: 3 }, { x: 17, y: 3 },
   ]
   m.spawnPos = { x: 11 * TILE + TILE / 2, y: 11 * TILE + TILE / 2 }
+  // Vault room is a structural/safe map — keep it simple gray like the Nexus.
+  m.disableEnvSprites = true
   return m
 }
 
