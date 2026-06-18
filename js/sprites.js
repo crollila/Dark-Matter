@@ -551,6 +551,18 @@ const bossFileAssignments = {
   // wb_frost_titan: (unmapped) -> falls back to the icy crystal_knight art.
 }
 
+// boss `e.key` -> POWERUP-phase PNG (themed charge art in assets/sprites/Bosses/).
+// Drawn by renderMob over the boss WHILE it is charging (e.wbCharging). Missing/
+// unloaded file => only the pulsing telegraph ring shows (graceful fallback).
+const bossPowerupAssignments = {
+  wb_event_horizon:   'assets/sprites/Bosses/void_boss_powerup_1.png',
+  wb_frost_titan:     'assets/sprites/Bosses/ice_boss_power_up_1.png',
+  wb_ashen_worldeater:'assets/sprites/Bosses/infernal_boss_power_up_1.png',
+  wb_plague_matriarch:'assets/sprites/Bosses/plague_mother_powerup_1.png',
+  wb_hollow_king:     'assets/sprites/Bosses/void_boss_powerup_2.png',
+  wb_astral_pharaoh:  'assets/sprites/Bosses/Pharoh_boss_powerup_1.png',
+}
+
 // boss `e.key` (MOB_DEFS / WORLD_BOSSES) -> { sheet, pair } on the boss atlases.
 // EXPLICIT + data-driven (never auto-picked). Each sheet holds SIX boss blocks laid
 // out 3 across x 2 down on a 9x6 frame grid; `pair` (0..5) picks the BLOCK and
@@ -1527,6 +1539,14 @@ const Sprites = {
     return true
   },
 
+  // Draw a world boss's POWERUP-phase art (by e.key) centered at (cx,cy). Returns
+  // false (unmapped/unloaded) so renderMob keeps just the telegraph ring.
+  drawBossPowerup(e, cx, cy, size, context) {
+    const p = (typeof bossPowerupAssignments !== 'undefined') && e && bossPowerupAssignments[e.key]
+    if (!p) return false
+    return this.drawBossFilePath(p, cx, cy, size, context)
+  },
+
   drawForMob(e, sx, sy, vrad) {
     if (!e || !e.key) return false
     const r0 = (vrad || e.radius || 12)
@@ -1889,6 +1909,7 @@ if (typeof window !== 'undefined') {
   window.bossSpriteAssignments = bossSpriteAssignments
   window.bossSheetAssignments = bossSheetAssignments
   window.bossFileAssignments = bossFileAssignments
+  window.bossPowerupAssignments = bossPowerupAssignments
   window.itemSpriteAssignments = itemSpriteAssignments
   window.projectileSpriteAssignments = projectileSpriteAssignments
   // Gear icon + projectile sprite systems (new 8x8 sheets).

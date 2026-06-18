@@ -50,6 +50,24 @@ const WorldZone = (() => {
   }
 
   function init(char) {
+    // SESSION REALM PERSISTENCE (Part B): while a world boss is alive, leaving to
+    // Nexus/character screen and returning RE-ENTERS THE SAME REALM instead of
+    // regenerating, so the boss + its tracker/location survive the round-trip.
+    // Closure state (map/mobs/worldBoss/mobKillCount/bossDamage/…) persists across
+    // a Nexus visit (init isn't called for Nexus), so we just rebind the transient
+    // bits and drop the player back at home. No duplicate boss is spawned. The realm
+    // regenerates normally once the boss dies (worldBoss cleared in onWorldBossKill).
+    if (worldBoss && worldBoss.alive && map) {
+      portalPrompt = null
+      eLatchW = false
+      window.activeLootZone = { addBag: (b) => lootBags.push(b), getBags: () => lootBags }
+      pBullets.reset(); eBullets.reset()
+      particles.length = 0; floatTexts.length = 0
+      bossProximate = false
+      char.x = map.spawnPos.x; char.y = map.spawnPos.y
+      cam.x = char.x; cam.y = char.y
+      return
+    }
     map = buildWorld()
     mobs = []
     pendingPortals = []
@@ -615,10 +633,13 @@ const WorldZone = (() => {
       const txt = `[${Hotkeys.name('interact')}] Enter ${portalPrompt.name}${portalPrompt.stars ? '  ' + starString(portalPrompt.stars) : ''}`
       ctx.font = 'bold 14px monospace'
       const tw = ctx.measureText(txt).width
+      // Prompt lane sits ABOVE the scaled bottom HP/MP vitals module (its scaled
+      // top is ~h-116) so the control hint never draws under the HUD bar.
+      const boxY = canvas.height - 156
       ctx.fillStyle = 'rgba(0,0,0,0.7)'
-      ctx.fillRect(canvas.width/2 - tw/2 - 12, canvas.height - 120, tw + 24, 30)
+      ctx.fillRect(canvas.width/2 - tw/2 - 12, boxY, tw + 24, 30)
       ctx.fillStyle = '#cc88ff'; ctx.textAlign = 'center'
-      ctx.fillText(txt, canvas.width/2, canvas.height - 100)
+      ctx.fillText(txt, canvas.width/2, boxY + 20)
       ctx.textAlign = 'left'
     }
 

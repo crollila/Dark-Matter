@@ -147,9 +147,11 @@ const Wiki = (() => {
   let open = false
   let tab = 0
   const scroll = [0, 0, 0, 0]
+  const selKey = [null, null, null, null]   // sticky selected entry key per tab
   let _L = null
   let _contentH = 0
-  let _hoverItem = null
+  let _cards = []          // current-frame card hit rects: {x,y,w,h,entry}
+  let _hoverEntry = null   // entry hovered this frame (overrides the sticky selection)
   let search = ''          // Gear-tab search query
   let searchFocused = false
   let _drag = false        // dragging the scrollbar thumb
@@ -158,22 +160,58 @@ const Wiki = (() => {
   function openPanel() { open = true; registry() }
   function close() { open = false; searchFocused = false; _drag = false }
 
+  // ---- sorting (DISPLAY ONLY — registry/gameplay data untouched) ----
+  function rarityRankFor(g) {
+    if (WBM()[g.key]) return 5                 // mythic world-boss gear
+    const b = BASES()[g.key] || {}
+    if (b.unique || b.dungeon) return 4        // dungeon-exclusive / special (epic-ish)
+    if (b.tier) return b.tier                  // class gear tier 1-4
+    return 1                                   // random/common
+  }
+  function sortedDungeons(reg) {
+    return reg.dungeons.slice().sort((a, b) => (a.stars - b.stars) || a.name.localeCompare(b.name))
+  }
+  function sortedBosses(reg) {
+    return reg.bosses.slice().sort((a, b) =>
+      ((a.isWorld ? 1 : 0) - (b.isWorld ? 1 : 0)) || a.found.localeCompare(b.found) || a.name.localeCompare(b.name))
+  }
+  function sortedGear(reg) {
+    let list = reg.gear.slice()
+    const q = search.trim().toLowerCase()
+    if (q) {
+      const terms = q.split(/\s+/)
+      list = list.filter(g => {
+        const hay = [g.name, g.key, g.slot, g.classes, g.cat, (g.sources || []).join(' '), g.unique ? 'unique' : '']
+          .join(' ').toLowerCase()
+        return terms.every(t => hay.indexOf(t) >= 0)
+      })
+    }
+    return list.sort((a, b) => (rarityRankFor(b) - rarityRankFor(a)) || a.slot.localeCompare(b.slot) || a.name.localeCompare(b.name))
+  }
+  function sortedMobs(reg) {
+    return reg.mobs.slice().sort((a, b) => a.where.localeCompare(b.where) || a.name.localeCompare(b.name))
+  }
+
   // ---- layout ----
   function layout() {
-    const PW = Math.min(780, canvas.width - 40)
-    const PH = Math.min(600, canvas.height - 40)
+    const PW = Math.min(880, canvas.width - 36)
+    const PH = Math.min(660, canvas.height - 36)
     const px = ((canvas.width - PW) / 2) | 0
     const py = ((canvas.height - PH) / 2) | 0
     const closeBtn = { x: px + PW - 30, y: py + 10, w: 20, h: 20 }
     const tabW = ((PW - 40) / TABS.length) | 0
     const tabs = TABS.map((t, i) => ({ t, i, x: px + 20 + i * tabW, y: py + 40, w: tabW - 6, h: 26 }))
-    let lx = px + 20, ly = py + 80, lw = PW - 40, lh = PH - 100
-    // Gear tab gets a search box above the list (shrinks the list area).
+    let gx = px + 16, gy = py + 78, gw = PW - 32
+    // Gear tab gets a search box above the grid.
     let searchBox = null
-    if (tab === 2) { searchBox = { x: lx, y: ly, w: lw, h: 22 }; ly += 30; lh -= 30 }
-    // Visible scrollbar gutter on the right edge of the list (all tabs).
-    const sb = { x: lx + lw - 6, y: ly, w: 6, h: lh }
-    return { PW, PH, px, py, closeBtn, tabs, lx, ly, lw, lh, searchBox, sb }
+    if (tab === 2) { searchBox = { x: gx, y: gy, w: gw, h: 22 }; gy += 30 }
+    // Persistent detail panel pinned BOTTOM-LEFT; the card grid sits above it.
+    const detailH = 196
+    const detailW = Math.min(440, (gw * 0.62) | 0)
+    const detail = { x: gx, y: py + PH - 16 - detailH, w: detailW, h: detailH }
+    const gh = (detail.y - 10) - gy
+    const sb = { x: gx + gw - 7, y: gy, w: 7, h: gh }
+    return { PW, PH, px, py, closeBtn, tabs, gx, gy, gw, gh, sb, searchBox, detail }
   }
   function hit(r, x, y) { return r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h }
 
@@ -183,44 +221,54 @@ const Wiki = (() => {
     const L = _L
     if (hit(L.closeBtn, x, y)) { close(); return true }
     for (const t of L.tabs) if (hit(t, x, y)) { tab = t.i; searchFocused = false; return true }
-    // Scrollbar: click/drag the track to scroll.
     if (hit(L.sb, x, y)) { _drag = true; scrollToY(y); searchFocused = false; return true }
-    // Gear search box focus toggle.
     if (L.searchBox && hit(L.searchBox, x, y)) { searchFocused = true; return true }
     searchFocused = false
+    // Card click inside the grid → pin it in the detail panel.
+    if (x >= L.gx && x <= L.gx + L.gw && y >= L.gy && y <= L.gy + L.gh) {
+      for (const c of _cards) if (hit(c, x, y)) { selKey[tab] = c.entry.key; return true }
+      return true
+    }
     if (x < L.px || x > L.px + L.PW || y < L.py || y > L.py + L.PH) { close(); return true }
     return true   // swallow clicks inside the panel
   }
   function scrollToY(y) {
     if (!_L) return
-    const viewH = _L.lh
-    const max = Math.max(0, _contentH - viewH)
+    const max = Math.max(0, _contentH - _L.gh)
     if (max <= 0) { scroll[tab] = 0; return }
     const t = (y - _L.sb.y) / _L.sb.h
     scroll[tab] = Math.max(0, Math.min(max, t * max))
   }
   function onWheel(dy) {
     if (!open) return
-    const viewH = _L ? _L.lh : 400
+    const viewH = _L ? _L.gh : 400
     const max = Math.max(0, _contentH - viewH)
     scroll[tab] = Math.max(0, Math.min(max, scroll[tab] + dy))
   }
 
   // ---- render helpers ----
-  function rowBg(x, y, w, h, accent) {
-    ctx.fillStyle = 'rgba(255,255,255,0.03)'; ctx.fillRect(x, y, w, h)
+  // Card frame with left accent + hover/selected highlight.
+  function cardFrame(x, y, w, h, accent, isSel, isHover) {
+    ctx.fillStyle = isSel ? 'rgba(177,91,255,0.16)' : isHover ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.03)'
+    ctx.fillRect(x, y, w, h)
+    ctx.strokeStyle = isSel ? '#b15bff' : (accent || '#2a2f44'); ctx.lineWidth = isSel ? 2 : 1
+    ctx.strokeRect(x, y, w, h)
     ctx.fillStyle = accent || '#3a3f5a'; ctx.fillRect(x, y, 3, h)
   }
-  function text(t, x, y, c, bold) {
-    ctx.fillStyle = c || '#d8e6f2'; ctx.font = (bold ? 'bold ' : '') + '11px monospace'; ctx.textAlign = 'left'
+  // Left-aligned text truncated (no ellipsis) to maxW px.
+  function text2(t, x, y, c, bold, maxW) {
+    ctx.font = (bold ? 'bold ' : '') + '11px monospace'; ctx.textAlign = 'left'; ctx.fillStyle = c || '#d8e6f2'
+    if (maxW) { while (t.length > 2 && ctx.measureText(t).width > maxW) t = t.slice(0, -1) }
     ctx.fillText(t, x, y)
   }
-  // join an array of short strings, truncated to fit a pixel width
-  function clamp(str, max) {
-    ctx.font = '10px monospace'
-    if (ctx.measureText(str).width <= max) return str
-    while (str.length > 4 && ctx.measureText(str + '…').width > max) str = str.slice(0, -1)
-    return str + '…'
+  // Dungeon icon = its portal sprite (themed) when available, else a colored diamond.
+  function drawDungeonIcon(key, color, cx, cy, size) {
+    let spec = null
+    if (typeof dungeonPortalSpec === 'function') { try { spec = dungeonPortalSpec(key) } catch (e) { spec = null } }
+    if (spec && window.Sprites && Sprites.drawPortal && Sprites.drawPortal(spec, cx, cy, size)) return
+    ctx.fillStyle = color || '#cc88ff'
+    ctx.beginPath(); ctx.moveTo(cx, cy - size / 2); ctx.lineTo(cx + size / 2, cy)
+    ctx.lineTo(cx, cy + size / 2); ctx.lineTo(cx - size / 2, cy); ctx.closePath(); ctx.fill()
   }
 
   // Draw a small icon (item sprite or mob marker) centered at (cx,cy), size px.
@@ -253,55 +301,69 @@ const Wiki = (() => {
     }
   }
 
-  // ---- per-tab list render. Returns total content height. ----
-  function renderList(L, rows) {
-    let cy = L.ly - scroll[tab]
-    let total = 0
-    const inView = (yTop, yBot) => yBot >= L.ly && yTop <= L.ly + L.lh
+  // ---- card grid render. Returns total content height. ----
+  // Lays entries out in a clipped, scrollable grid; records hit rects in _cards
+  // and sets _hoverEntry. drawCard(entry,x,y,w,h,isSel,isHover) paints one card.
+  function renderGrid(L, entries, cardH, cols, drawCard) {
+    _cards = []
+    const gap = 8
+    const cw = ((L.gw - 7 - (cols - 1) * gap) / cols) | 0   // 7px reserved for scrollbar
     ctx.save()
-    ctx.beginPath(); ctx.rect(L.lx, L.ly, L.lw, L.lh); ctx.clip()
-    for (const row of rows) {
-      const hasChips = row.chips && row.chips.length
-      const h = row.lines.length * 15 + 12 + (hasChips ? 16 : 0)
-      if (cy + h > L.ly && cy < L.ly + L.lh) {
-        rowBg(L.lx, cy, L.lw, h, row.accent)
-        const iconW = row.icon ? 24 : 0
-        if (row.icon) drawIcon(row.icon, L.lx + 6 + 9, cy + 13, 18)
-        const tx = L.lx + 10 + iconW
-        let ty = cy + 16
-        for (const ln of row.lines) { text(clamp(ln.t, L.lw - 24 - iconW), tx, ty, ln.c, ln.b); ty += 15 }
-        if (hasChips) {
-          text('Drops:', tx, ty, '#aab8c8')
-          ctx.font = '11px monospace'; let cx = tx + ctx.measureText('Drops: ').width
-          ctx.font = '10px monospace'
-          for (let i = 0; i < row.chips.length; i++) {
-            const chip = row.chips[i]
-            const label = chip.name + (i < row.chips.length - 1 ? ',' : '')
-            const w = ctx.measureText(label).width
-            const hovered = mouse.x >= cx && mouse.x <= cx + w && mouse.y >= ty - 11 && mouse.y <= ty + 3
-              && inView(cy, cy + h)
-            ctx.fillStyle = hovered ? '#ffe08a' : '#cdd9e6'; ctx.textAlign = 'left'
-            ctx.fillText(label, cx, ty)
-            if (hovered) { const s = sampleFor(chip.key); if (s) _hoverItem = s }
-            cx += w + 6
-          }
-        }
-        if (row.hoverKey && mouse.x >= L.lx && mouse.x <= L.lx + L.lw && mouse.y >= cy && mouse.y <= cy + h
-            && mouse.y >= L.ly && mouse.y <= L.ly + L.lh) {
-          const s = sampleFor(row.hoverKey)
-          if (s) _hoverItem = s
-        }
+    ctx.beginPath(); ctx.rect(L.gx, L.gy, L.gw, L.gh); ctx.clip()
+    for (let i = 0; i < entries.length; i++) {
+      const c = i % cols, r = (i / cols) | 0
+      const cx = L.gx + c * (cw + gap)
+      const cy = L.gy + r * (cardH + gap) - scroll[tab]
+      if (cy + cardH >= L.gy && cy <= L.gy + L.gh) {
+        const isSel = selKey[tab] === entries[i].key
+        const isHover = mouse.x >= cx && mouse.x <= cx + cw && mouse.y >= cy && mouse.y <= cy + cardH
+          && mouse.y >= L.gy && mouse.y <= L.gy + L.gh && mouse.x >= L.gx && mouse.x <= L.gx + L.gw
+        if (isHover) _hoverEntry = entries[i]
+        drawCard(entries[i], cx, cy, cw, cardH, isSel, isHover)
+        _cards.push({ x: cx, y: cy, w: cw, h: cardH, entry: entries[i] })
       }
-      cy += h + 4; total += h + 4
     }
     ctx.restore()
-    return total
+    return Math.ceil(entries.length / cols) * (cardH + gap)
   }
 
-  // Visible scrollbar (all tabs): always draws a track; a proportional thumb
-  // appears when content overflows the view. Track is click/drag-scrollable.
+  // ---- per-tab card drawers ----
+  function cardDungeon(d, x, y, w, h, isSel, isHover) {
+    cardFrame(x, y, w, h, d.color, isSel, isHover)
+    drawDungeonIcon(d.key, d.color, x + 24, y + h / 2, 32)
+    const tx = x + 46
+    text2(d.name, tx, y + 18, d.color, true, w - 52)
+    text2(starStr(d.stars) + '  ' + d.theme, tx, y + 35, '#9fb3c8', false, w - 52)
+    text2('Boss: ' + d.bossName, tx, y + 52, '#aab8c8', false, w - 52)
+  }
+  function cardBoss(b, x, y, w, h, isSel, isHover) {
+    cardFrame(x, y, w, h, b.color, isSel, isHover)
+    text2(b.name, x + 8, y + 16, b.color, true, w - 16)           // name ABOVE the sprite
+    if (b.isWorld) { ctx.fillStyle = '#ffd60a'; ctx.font = '8px monospace'; ctx.textAlign = 'right'; ctx.fillText('WORLD', x + w - 6, y + 14); ctx.textAlign = 'left' }
+    drawIcon({ type: 'mob', key: b.key, color: b.color }, x + w / 2, y + h / 2 + 10, Math.min(w - 26, h - 36))
+  }
+  function cardGear(g, x, y, w, h, isSel, isHover) {
+    const s = sampleFor(g.key); const col = (s && s.color) || '#7a86a8'
+    cardFrame(x, y, w, h, col, isSel, isHover)
+    drawIcon({ type: 'item', key: g.key, label: g.name }, x + 22, y + h / 2, 28)
+    const tx = x + 42
+    text2(g.name + (g.unique ? '  ✦' : ''), tx, y + 20, col, true, w - 48)
+    text2(g.slot + ' • ' + g.classes, tx, y + 37, '#9fb3c8', false, w - 48)
+    text2(g.cat, tx, y + 52, '#7e8aa6', false, w - 48)
+  }
+  function cardMob(m, x, y, w, h, isSel, isHover) {
+    cardFrame(x, y, w, h, m.color, isSel, isHover)
+    drawIcon({ type: 'mob', key: m.key, color: m.color }, x + 24, y + h / 2, 32)
+    const tx = x + 46
+    text2(m.name + (m.isBoss ? '  [BOSS]' : ''), tx, y + 20, m.color, true, w - 52)
+    text2(m.where, tx, y + 37, '#9fb3c8', false, w - 52)
+    text2('HP ' + (m.hp ? m.hp.toLocaleString() : '?'), tx, y + 52, '#aab8c8', false, w - 52)
+  }
+
+  // Visible scrollbar: always draws a track; proportional thumb when content
+  // overflows the grid view. Track is click/drag-scrollable.
   function drawScrollbar(L) {
-    const sb = L.sb, viewH = L.lh
+    const sb = L.sb, viewH = L.gh
     ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(sb.x, sb.y, sb.w, sb.h)
     const max = Math.max(0, _contentH - viewH)
     if (max <= 0) return
@@ -311,67 +373,74 @@ const Wiki = (() => {
     ctx.fillRect(sb.x, thumbY, sb.w, thumbH)
   }
 
-  function rowsForDungeons(reg) {
-    const comp = (typeof account !== 'undefined' && account.dungeonCompletions) || {}
-    return reg.dungeons.map(d => {
-      const lines = [
-        { t: d.name + '  ' + starStr(d.stars), c: d.color, b: true },
-        { t: d.theme + '  •  Boss: ' + d.bossName + (d.worldBoss ? '  •  via ' + d.worldBoss : ''), c: '#9fb3c8' },
-        { t: 'Cleared: ' + (comp[d.key] || 0) + '   Notable: ' + (d.exclusives.length ? d.exclusives.slice(0, 4).join(', ') : '—'), c: '#aab8c8' },
-      ]
-      return { lines, accent: d.color }
-    })
+  // ---- bottom-left DETAIL panel (replaces cursor tooltips) ----
+  function statRangeLabel(k, r) {
+    const lo = r[0], hi = r[1]
+    if (k === 'atkSpd') return 'ATK/S ' + (1 / hi).toFixed(2) + '–' + (1 / lo).toFixed(2)
+    if (k === 'range')  return 'RANGE ' + lo + '–' + hi
+    return k.toUpperCase() + ' ' + lo + '–' + hi
   }
-  function rowsForBosses(reg) {
-    return reg.bosses.map(b => {
-      const lines = [
-        { t: b.name + (b.isWorld ? '  [WORLD BOSS]' : ''), c: b.color, b: true },
-        { t: 'Found: ' + b.found, c: '#9fb3c8' },
-      ]
-      const chips = b.dropItems || []
-      const row = { lines, accent: b.color, icon: { type: 'mob', key: b.key, color: b.color } }
-      // Hoverable drop chips (each shows the item tooltip). If none, show a plain line.
-      if (chips.length) row.chips = chips
-      else lines.push({ t: 'Drops: —', c: '#aab8c8' })
-      return row
-    })
-  }
-  function rowsForGear(reg) {
-    let list = reg.gear
-    const q = search.trim().toLowerCase()
-    if (q) {
-      const terms = q.split(/\s+/)
-      list = list.filter(g => {
-        const hay = [g.name, g.key, g.slot, g.classes, g.cat,
-          (g.sources || []).join(' '), g.unique ? 'unique' : '']
-          .join(' ').toLowerCase()
-        return terms.every(t => hay.indexOf(t) >= 0)
-      })
+  function renderDetail(L, entry) {
+    const d = L.detail
+    ctx.fillStyle = 'rgba(8,10,20,0.96)'; ctx.fillRect(d.x, d.y, d.w, d.h)
+    ctx.strokeStyle = '#3a2f5a'; ctx.lineWidth = 1; ctx.strokeRect(d.x, d.y, d.w, d.h)
+    ctx.fillStyle = '#7a86a8'; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'left'
+    ctx.fillText('DETAILS', d.x + 10, d.y + 14)
+    if (!entry) { ctx.fillStyle = '#5a6480'; ctx.font = '10px monospace'; ctx.fillText('Hover or click an entry for details.', d.x + 10, d.y + 36); return }
+    const innerX = d.x + 10, maxW = d.w - 20
+    let dy = d.y + 32
+    const line = (t, c, bold) => {
+      if (dy > d.y + d.h - 4) return
+      ctx.fillStyle = c || '#cdd9e6'; ctx.font = (bold ? 'bold ' : '') + '10px monospace'; ctx.textAlign = 'left'
+      let s = t; while (s.length > 2 && ctx.measureText(s).width > maxW) s = s.slice(0, -1)
+      ctx.fillText(s, innerX, dy); dy += 14
     }
-    return list.map(g => {
-      const lines = [
-        { t: g.name + (g.unique ? '  ✦' : ''), c: '#e0e6f2', b: true },
-        { t: g.slot + '  •  ' + g.classes + '  •  ' + g.cat, c: '#9fb3c8' },
-        { t: 'From: ' + g.sources.join('  |  '), c: '#aab8c8' },
-      ]
-      return { lines, accent: '#5a6a8a', hoverKey: g.key, icon: { type: 'item', key: g.key, label: g.name } }
-    })
-  }
-  function rowsForMobs(reg) {
-    return reg.mobs.map(m => {
-      const lines = [
-        { t: m.name + (m.isBoss ? '  [BOSS]' : ''), c: m.color, b: true },
-        { t: m.where + '   HP ' + (m.hp ? m.hp.toLocaleString() : '?'), c: '#9fb3c8' },
-        { t: 'Drops: ' + (m.drops.length ? m.drops.join(', ') : 'common gear pool'), c: '#aab8c8' },
-      ]
-      return { lines, accent: m.color, icon: { type: 'mob', key: m.key, color: m.color } }
-    })
+    if (tab === 0) {
+      line(entry.name + '  ' + starStr(entry.stars), entry.color, true)
+      line(entry.theme, '#9fb3c8')
+      line('Boss: ' + entry.bossName + (entry.worldBoss ? '  (via ' + entry.worldBoss + ')' : ''), '#aab8c8')
+      const comp = (typeof account !== 'undefined' && account.dungeonCompletions) || {}
+      line('Cleared: ' + (comp[entry.key] || 0), '#7e8aa6')
+      line('Notable drops:', '#9fb3c8')
+      if (entry.exclusives.length) for (const ex of entry.exclusives.slice(0, 8)) line('• ' + ex, '#cdd9e6')
+      else line('• —', '#7e8aa6')
+    } else if (tab === 1) {
+      drawIcon({ type: 'mob', key: entry.key, color: entry.color }, d.x + d.w - 34, d.y + 36, 44)
+      const m = MOBS()[entry.key] || {}
+      line(entry.name + (entry.isWorld ? '  [WORLD BOSS]' : ''), entry.color, true)
+      line('Found: ' + entry.found, '#9fb3c8')
+      if (m.hp) line('HP ' + m.hp.toLocaleString() + '   DMG ' + (m.dmg || '?'), '#aab8c8')
+      line('Drops:', '#9fb3c8')
+      const drops = entry.dropItems || []
+      if (drops.length) for (const it of drops.slice(0, 7)) line('• ' + it.name, '#cdd9e6')
+      else line('• —', '#7e8aa6')
+    } else if (tab === 2) {
+      const s = sampleFor(entry.key); const col = (s && s.color) || '#cdd9e6'
+      drawIcon({ type: 'item', key: entry.key, label: entry.name }, d.x + d.w - 30, d.y + 34, 36)
+      line(entry.name + (entry.unique ? '  ✦' : ''), col, true)
+      line(entry.slot + '  •  ' + entry.classes + '  •  ' + entry.cat, '#9fb3c8')
+      line('From: ' + (entry.sources || []).join(' | '), '#aab8c8')
+      const b = BASES()[entry.key] || {}, core = b.core || {}
+      const keys = Object.keys(core).filter(k => k !== 'bspd')
+      if (keys.length) { line('Base stat ranges:', '#9fb3c8'); for (const k of keys) line('• ' + statRangeLabel(k, core[k]), '#cdd9e6') }
+      line('Roll% scales each stat lo→hi; rarity adds affixes (1→5).', '#7e8aa6')
+    } else {
+      drawIcon({ type: 'mob', key: entry.key, color: entry.color }, d.x + d.w - 30, d.y + 34, 40)
+      const m = MOBS()[entry.key] || {}
+      line(entry.name + (entry.isBoss ? '  [BOSS]' : ''), entry.color, true)
+      line(entry.where, '#9fb3c8')
+      line('HP ' + (m.hp ? m.hp.toLocaleString() : '?') + '   DMG ' + (m.dmg || '?') + '   XP ' + (m.xp || '?'), '#aab8c8')
+      if (m.ai) line('AI: ' + m.ai, '#7e8aa6')
+      line('Drops:', '#9fb3c8')
+      if (entry.drops && entry.drops.length) for (const dr of entry.drops.slice(0, 6)) line('• ' + dr, '#cdd9e6')
+      else line('• common gear pool', '#7e8aa6')
+    }
   }
 
   function render() {
     if (!open) return
     const L = layout(); _L = L
-    _hoverItem = null
+    _hoverEntry = null
     const reg = registry()
 
     // dim + panel
@@ -410,21 +479,24 @@ const Wiki = (() => {
       else { ctx.fillStyle = '#6a7290'; ctx.fillText('Search gear (name / slot / class / source)…', s.x + 8, s.y + 15) }
     }
 
-    let rows
-    if (tab === 0) rows = rowsForDungeons(reg)
-    else if (tab === 1) rows = rowsForBosses(reg)
-    else if (tab === 2) rows = rowsForGear(reg)
-    else rows = rowsForMobs(reg)
+    // entries + grid config per tab (sorted; data untouched)
+    let entries, cols, cardH, drawCard
+    if (tab === 0)      { entries = sortedDungeons(reg); cols = 3; cardH = 66;  drawCard = cardDungeon }
+    else if (tab === 1) { entries = sortedBosses(reg);   cols = 4; cardH = 112; drawCard = cardBoss }
+    else if (tab === 2) { entries = sortedGear(reg);     cols = 4; cardH = 62;  drawCard = cardGear }
+    else                { entries = sortedMobs(reg);     cols = 4; cardH = 70;  drawCard = cardMob }
 
-    _contentH = renderList(L, rows)
+    _contentH = renderGrid(L, entries, cardH, cols, drawCard)
     drawScrollbar(L)
 
-    // scrollbar hint
-    ctx.fillStyle = '#6a7290'; ctx.font = '9px monospace'; ctx.textAlign = 'right'
-    ctx.fillText('scroll: wheel / drag bar   •   esc / click outside: close', L.px + L.PW - 16, L.py + L.PH - 8)
-    ctx.textAlign = 'left'
+    // Bottom-left detail panel — hovered entry overrides the pinned selection.
+    const selEntry = entries.find(e => e.key === selKey[tab]) || null
+    renderDetail(L, _hoverEntry || selEntry)
 
-    if (_hoverItem && typeof renderItemTooltip === 'function') renderItemTooltip(_hoverItem, mouse.x + 12, mouse.y + 12)
+    // hint
+    ctx.fillStyle = '#6a7290'; ctx.font = '9px monospace'; ctx.textAlign = 'right'
+    ctx.fillText('wheel/drag: scroll  •  click: pin details  •  esc/outside: close', L.px + L.PW - 16, L.py + L.PH - 8)
+    ctx.textAlign = 'left'
   }
 
   // ---- listeners (mirror stations.js) ----

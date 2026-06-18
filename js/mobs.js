@@ -195,6 +195,99 @@ const MOB_AI = {
       }
       e.phase2Timer = 1.6
     }
+  },
+
+  // WORLD BOSS — phased, with a readable POWERUP charge cycle. Used by every wb_*
+  // world boss (Ashen Worldeater included, which previously felt inert). Movement
+  // is an orbit at mid-range (closes in when far), never a teleport. THREE HP phases
+  // scale bullet count/spread; every few attack cycles it CHARGES (slows to a near
+  // stop while renderMob draws a telegraph ring + powerup sprite) then RELEASES a big
+  // pattern via _wbReleaseBig. All shots carry e.key (tagged in updateMob) so
+  // drawBossProjectile picks the boss's themed projectile sprite. Killable but hard.
+  boss_world(e, dt, char, tileMap) {
+    const dx = char.x - e.x, dy = char.y - e.y
+    const d = Math.sqrt(dx * dx + dy * dy) || 1
+    const ang = Math.atan2(dy, dx)
+    const frac = e.maxHp ? e.hp / e.maxHp : 1
+    const ph = frac > 0.66 ? 1 : frac > 0.33 ? 2 : 3   // 1 opener, 2 mid, 3 enrage
+    e.wbPhase = ph
+    const bs = e.bspd, dmg = e.dmg
+    if (e.wbCycle == null) { e.wbCycle = 0; e.wbCharge = 0; e.wbCharging = false }
+    if (e.phase == null) e.phase = 0
+
+    // --- POWERUP CHARGE: slow to a near-stop, telegraph (renderMob), then release.
+    if (e.wbCharging) {
+      e.wbCharge -= dt
+      e.vx = dx / d * e.spd * 0.05; e.vy = dy / d * e.spd * 0.05
+      if (e.wbCharge <= 0) {
+        e.wbCharging = false
+        _wbReleaseBig(e, ang, ph)
+        e.shootTimer = e.atkSpd * 1.1
+      }
+      return
+    }
+
+    // --- MOVEMENT: orbit a mid-range ring; close in when far (no teleport spam).
+    const perpX = -dy / d, perpY = dx / d
+    const ringR = 240, orbit = ph >= 3 ? 0.75 : ph >= 2 ? 0.6 : 0.5
+    e.vx = perpX * e.spd * orbit + dx / d * ((d - ringR) / ringR) * e.spd
+    e.vy = perpY * e.spd * orbit + dy / d * ((d - ringR) / ringR) * e.spd
+
+    // --- ATTACK CYCLE ---
+    e.shootTimer -= dt
+    if (e.shootTimer <= 0) {
+      e.wbCycle++
+      const powerEvery = ph >= 3 ? 3 : 4   // charge more often when enraged
+      if (e.wbCycle % powerEvery === 0) {
+        e.wbCharging = true
+        e.wbCharge = 0.85   // telegraph window (seconds)
+        e.shootTimer = e.atkSpd
+        return
+      }
+      const pat = e.wbCycle % 3
+      if (pat === 0) {
+        // radial fire ring
+        const count = ph === 1 ? 12 : ph === 2 ? 16 : 22
+        for (let i = 0; i < count; i++) { const a = e.phase + i * (Math.PI * 2 / count); spawnBullet(eBullets, e.x, e.y, Math.cos(a) * bs, Math.sin(a) * bs, dmg) }
+        e.phase += 0.2
+      } else if (pat === 1) {
+        // aimed shotgun volley
+        const n = ph === 1 ? 3 : ph === 2 ? 5 : 7
+        for (let i = 0; i < n; i++) { const a = ang + (i - (n - 1) / 2) * 0.15; spawnBullet(eBullets, e.x, e.y, Math.cos(a) * bs * 1.2, Math.sin(a) * bs * 1.2, dmg * 1.2) }
+      } else {
+        // counter-rotating spiral streams
+        const arms = ph === 1 ? 3 : ph === 2 ? 4 : 6
+        for (let i = 0; i < arms; i++) {
+          const a = e.phase + i * (Math.PI * 2 / arms); spawnBullet(eBullets, e.x, e.y, Math.cos(a) * bs, Math.sin(a) * bs, dmg)
+          const a2 = -e.phase * 1.3 + i * (Math.PI * 2 / arms); spawnBullet(eBullets, e.x, e.y, Math.cos(a2) * bs * 0.85, Math.sin(a2) * bs * 0.85, dmg)
+        }
+        e.phase += ph >= 3 ? 0.34 : 0.24
+      }
+      e.shootTimer = e.atkSpd
+    }
+  }
+}
+
+// World-boss POWERUP payload: the big pattern released after the charge telegraph
+// (see MOB_AI.boss_world). Rotating wall with a fair DODGE GAP (aimed away from the
+// player) + an aimed lance volley; enrage adds a dense counter-ring for layered
+// bullet-hell. Visual-only kind tag (e.key) was already set in updateMob.
+function _wbReleaseBig(e, ang, ph) {
+  const bs = e.bspd, dmg = e.dmg
+  const count = ph >= 3 ? 40 : 30
+  const gapCenter = ang + Math.PI, gapHalf = 0.45
+  for (let i = 0; i < count; i++) {
+    const a = e.phase + i * (Math.PI * 2 / count)
+    let da = a - gapCenter
+    da = Math.atan2(Math.sin(da), Math.cos(da))   // normalize to [-π,π]
+    if (Math.abs(da) < gapHalf) continue           // leave a dodge gap
+    spawnBullet(eBullets, e.x, e.y, Math.cos(a) * bs * 1.1, Math.sin(a) * bs * 1.1, dmg * 1.3)
+  }
+  e.phase += 0.3
+  for (let i = -2; i <= 2; i++) { const a = ang + i * 0.1; spawnBullet(eBullets, e.x, e.y, Math.cos(a) * bs * 1.6, Math.sin(a) * bs * 1.6, dmg * 1.5) }
+  if (ph >= 3) {
+    const c2 = 28
+    for (let i = 0; i < c2; i++) { const a = -e.phase + i * (Math.PI * 2 / c2); spawnBullet(eBullets, e.x, e.y, Math.cos(a) * bs * 0.8, Math.sin(a) * bs * 0.8, dmg) }
   }
 }
 
@@ -422,32 +515,32 @@ const MOB_DEFS = {
   // Beefier than dungeon bosses; solo-killable in ~30s–3min and easily passing the
   // 2% loot-contribution gate. See WORLD_BOSSES below for biome/mythic/dungeon links.
   wb_event_horizon: {
-    name: 'Event Horizon Devourer', color: '#a64bff', ai: 'boss_void',
+    name: 'Event Horizon Devourer', color: '#a64bff', ai: 'boss_world',
     hp: 150000, spd: 42, dmg: 440, bspd: 300, atkSpd: 0.80, range: 9999, radius: 32, xp: 1200,
     portalDrop: null, isBoss: true
   },
   wb_frost_titan: {
-    name: 'Frost Titan Ymir', color: '#9fe8ff', ai: 'boss_mycelian',
+    name: 'Frost Titan Ymir', color: '#9fe8ff', ai: 'boss_world',
     hp: 165000, spd: 30, dmg: 460, bspd: 230, atkSpd: 1.00, range: 9999, radius: 34, xp: 1200,
     portalDrop: null, isBoss: true
   },
   wb_ashen_worldeater: {
-    name: 'Ashen Worldeater', color: '#ff5a22', ai: 'boss_goblin',
+    name: 'Ashen Worldeater', color: '#ff5a22', ai: 'boss_world',
     hp: 155000, spd: 58, dmg: 480, bspd: 300, atkSpd: 0.85, range: 9999, radius: 32, xp: 1200,
     portalDrop: null, isBoss: true
   },
   wb_plague_matriarch: {
-    name: 'Plague Matriarch', color: '#9be84a', ai: 'boss_mycelian',
+    name: 'Plague Matriarch', color: '#9be84a', ai: 'boss_world',
     hp: 150000, spd: 34, dmg: 440, bspd: 250, atkSpd: 1.00, range: 9999, radius: 32, xp: 1200,
     portalDrop: null, isBoss: true
   },
   wb_hollow_king: {
-    name: 'The Hollow King', color: '#e6dcae', ai: 'boss_goblin',
+    name: 'The Hollow King', color: '#e6dcae', ai: 'boss_world',
     hp: 158000, spd: 48, dmg: 460, bspd: 280, atkSpd: 0.90, range: 9999, radius: 31, xp: 1200,
     portalDrop: null, isBoss: true
   },
   wb_astral_pharaoh: {
-    name: 'Astral Pharaoh', color: '#ffd166', ai: 'boss_void',
+    name: 'Astral Pharaoh', color: '#ffd166', ai: 'boss_world',
     hp: 160000, spd: 46, dmg: 460, bspd: 290, atkSpd: 0.85, range: 9999, radius: 32, xp: 1200,
     portalDrop: null, isBoss: true
   }
@@ -703,6 +796,24 @@ function renderMob(e, offX, offY) {
     ctx.shadowBlur = 0
     // Crisp dark outline around the geometric body for terrain contrast.
     ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.stroke()
+  }
+
+  // World-boss POWERUP telegraph: while charging, a pulsing charged ring + the
+  // boss's powerup sprite overlay warn the player a big attack is incoming.
+  if (e.wbCharging) {
+    drawUpright(sx, sy, () => {
+      const t = Date.now() / 110
+      const pr = vr + 10 + Math.sin(t) * 5
+      ctx.globalAlpha = 0.55 + Math.sin(t) * 0.3
+      ctx.strokeStyle = e.color || '#ffffff'; ctx.lineWidth = 3
+      ctx.beginPath(); ctx.arc(0, 0, pr, 0, Math.PI * 2); ctx.stroke()
+      ctx.globalAlpha = 1
+      if (typeof Sprites !== 'undefined' && Sprites.drawBossPowerup) {
+        ctx.shadowColor = e.color || '#ffffff'; ctx.shadowBlur = 16
+        Sprites.drawBossPowerup(e, 0, 0, vr * 2.6)
+        ctx.shadowBlur = 0
+      }
+    })
   }
 
   // HP bar (+ boss name) — anchored at the mob but drawn upright via drawUpright

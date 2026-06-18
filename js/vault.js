@@ -26,10 +26,10 @@ const VaultZone = (() => {
     let vx = 0, vy = 0
     const spd = char.spd
     if (!blocked) {
-      if (keys['KeyW'] || keys['ArrowUp'])    vy = -spd
-      if (keys['KeyS'] || keys['ArrowDown'])  vy =  spd
-      if (keys['KeyA'] || keys['ArrowLeft'])  vx = -spd
-      if (keys['KeyD'] || keys['ArrowRight']) vx =  spd
+      if (Hotkeys.down('moveUp')    || keys['ArrowUp'])    vy = -spd
+      if (Hotkeys.down('moveDown')  || keys['ArrowDown'])  vy =  spd
+      if (Hotkeys.down('moveLeft')  || keys['ArrowLeft'])  vx = -spd
+      if (Hotkeys.down('moveRight') || keys['ArrowRight']) vx =  spd
       if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707 }
       ;[vx, vy] = inputToWorld(vx, vy)   // screen-relative movement (rotation-aware)
     }
