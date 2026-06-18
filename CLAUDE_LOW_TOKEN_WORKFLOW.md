@@ -369,9 +369,10 @@ Use for:
 ### `js/wiki.js`
 - In-game WIKI compendium panel (NOT a zone — modal like stations.js). Opened from the Nexus `wiki` station (`Wiki.open()`); `window.Wiki` + `window.LootTable`.
 - Data-driven LOOT TABLE REGISTRY built once from existing globals (DUNGEONS/MOB_DEFS/ITEM_BASES/WORLD_BOSSES/EXCLUSIVES_BY_DUNGEON/WORLD_BOSS_MYTHICS/BIOMES) — no hand-kept tables. `registry()` → `{ dungeons, bosses, gear, mobs }`; cached, robust to missing fields.
-- 4 tabs (Dungeons/Bosses/Gear/Mobs): dungeons show stars/theme/boss/clear-count (`account.dungeonCompletions`)/notable drops; bosses show where-found + a mob icon + hoverable drop chips (each shows the item tooltip; `dropItems:[{key,name}]` from registry); gear shows slot/class/source(s) + item icon + whole-row hover tooltip (cached sample via `rollItem`→`renderItemTooltip`); mobs show biome/dungeon + a mob icon + drops & rates. Row icons via `drawIcon` (items→`Sprites.drawForItem` else colored letter tile; mobs/bosses→assigned mob sprite if any, else geometric colored marker — NEVER a weapon/item sprite). `renderList` reserves a 24px icon gutter and renders hoverable `row.chips`.
+- 4 tabs (Dungeons/Bosses/Gear/Mobs) now render as a SCROLLABLE CARD GRID (`renderGrid` + per-tab `cardDungeon`/`cardBoss`/`cardGear`/`cardMob`) instead of a vertical list. SORTED for display only (data untouched): dungeons by stars→name; gear by rarity/tier(`rarityRankFor`)→slot→name; bosses by world/source→name; mobs by where→name. Card icons: dungeon = its portal sprite (`drawDungeonIcon`→`dungeonPortalSpec`+`Sprites.drawPortal`, else colored diamond); gear = item icon (`Sprites.drawForItem`, else letter tile); boss/mob = mob/boss sprite (`drawIcon`: `drawBossSheet`/`bossSpriteAssignments`/`drawMobSheet`, NEVER a weapon/item sprite; else colored marker). Boss cards put the NAME above a large sprite.
+- BOTTOM-LEFT DETAIL PANEL (`renderDetail`, rect `L.detail`) replaces cursor tooltips: hovering a card (or clicking to PIN via `selKey[tab]`) shows full details there — gear (icon/name/rarity color/slot/class/source/base stat RANGES from `ITEM_BASES.core` via `statRangeLabel`/roll note), dungeon (name/stars/theme/boss/clears/notable), boss (sprite/name/found/HP+DMG from `MOB_DEFS`/drops), mob (sprite/where/HP+DMG+XP/AI/drops). No more giant overlapping `renderItemTooltip` at the cursor inside the wiki. `registry()`/`sampleFor()` data layer UNCHANGED (no gameplay/loot impact).
 - Own Esc/mousedown(capture)/mousemove(capture)/wheel(capture)/window-mouseup listeners; click tabs/close/outside; wheel scrolls. Gated into `overlayOpen` (main.js) + nexus `stationOpen` so gameplay input is suppressed while open.
-- Every tab has a VISIBLE right-edge scrollbar (`drawScrollbar`/`L.sb`): always-drawn track + proportional thumb when content overflows; click/drag the track to scroll (`scrollToY`, `_drag`). Gear tab has a SEARCH box (`L.searchBox`, focus via click) — `rowsForGear` filters by name/key/slot/class/cat/source (AND of space-split terms); typing handled in the keydown listener (Esc clears focus before closing), scroll resets on filter change. Search/scrollbar don't break hover tooltips.
+- Every tab has a VISIBLE right-edge scrollbar (`drawScrollbar`/`L.sb`, viewH=`L.gh`): always-drawn track + proportional thumb when content overflows; click/drag the track to scroll (`scrollToY`, `_drag`). Gear tab has a SEARCH box (`L.searchBox`, focus via click) — `sortedGear` filters by name/key/slot/class/cat/source (AND of space-split terms); typing handled in the keydown listener (Esc clears focus before closing), scroll resets on filter change. Card hover/select drives the detail panel (no cursor tooltips), so search/scrollbar don't cause tooltip flicker.
 
 Use for:
 - wiki panel UI / tabs / scrolling
@@ -689,3 +690,23 @@ Filenames-only audit. Individual PNGs unless noted. "Integrated" = wired in code
 5. Status-effect system (data + HUD strip) using `Status Effects/`.
 6. Gravestone-on-death using `Gravestones/`.
 7. Per-dungeon portal overrides from `Portals/`; potions/NPC/skin/GIF systems last.
+
+---
+
+## Patch — World boss overhaul + HUD prompt lane
+
+- **HUD prompt lane**: the world portal/interact prompt (`world.js` render, the `[Ctrl] Enter <Dungeon>` hint) now draws at `canvas.height - 156` (box) so it sits ABOVE the scaled bottom HP/MP vitals module (scaled top ≈ `h-116`) instead of under it.
+- **World boss SESSION persistence** (`world.js init`): while `worldBoss && worldBoss.alive`, re-entering the world RE-ENTERS THE SAME REALM (closure state survives a Nexus/dungeon round-trip; init only rebinds transient bits + drops the player at home) — so the tracker/indicator keep pointing at the live boss. No duplicate spawn. Regenerates fresh once the boss dies (`worldBoss=null` in `onWorldBossKill`). Not saved across full browser reload.
+- **New `boss_world` AI** (`mobs.js MOB_AI`): all six `wb_*` world bosses now use it (was `boss_goblin`/`boss_mycelian`/`boss_void`). Orbit movement (no teleport) + 3 HP phases (opener/mid/enrage) scaling bullet count/spread; recurring **POWERUP charge** (boss slows, `renderMob` draws a pulsing telegraph ring + powerup sprite) then `_wbReleaseBig` fires a rotating wall with a fair dodge gap + aimed lance (+ dense counter-ring on enrage). Patterns: radial fire ring / aimed shotgun / counter-rotating spirals. **Ashen Worldeater** is fixed (no longer inert) and hard. Shots carry `e.key` so `drawBossProjectile` uses each boss's themed projectile sprite (already mapped). Boss HP/dmg/loot/portal/leash logic unchanged.
+- **Powerup sprites** (`sprites.js`): `bossPowerupAssignments` (wb_key → `assets/sprites/Bosses/*_power_up_*.png`) + `Sprites.drawBossPowerup(e,…)` (delegates to `drawBossFilePath`; missing file ⇒ only the telegraph ring shows).
+
+---
+
+## Patch — Wall collision fix (no invisible walls)
+
+- Wall TILES are visually suppressed (render as floor; see the earlier sprite-folder patch). To remove the resulting INVISIBLE WALLS in the open world, `map.js buildWorld` now converts every generated `T_WALL → T_FLOOR` after cave-gen, gated by `const WORLD_WALLS_AS_FLOOR = true`. The world is fully walkable; no `engine.js`/collision change was needed.
+- **Outer bounds still block**: `makeTileMap.get` returns `T_WALL` past the map edges, and `blocked()` still blocks `T_WALL`/`T_VOID` — so out-of-bounds keeps the player inside the map even though there are no in-world wall tiles.
+- **Dungeons**: unchanged — they fill non-room space with `T_VOID` (visible black, correctly blocking), so they never had invisible walls.
+- **Nexus/Vault**: unchanged — they keep their own `T_WALL` structure/logic (safe rooms; out of this patch's world/dungeon scope).
+- **Hazards/water**: unaffected — `T_WATER`/`T_LAVA`/`T_ICE`/`T_POISON` are walkable and still apply their effects.
+- **Minimap**: needs no change — with no world `T_WALL` tiles, the minimap renders the world as floor/biome (no fake wall coloring).

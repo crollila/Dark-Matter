@@ -124,6 +124,15 @@ function buildVault() {
 const WORLD_W = 400, WORLD_H = 400
 const WORLD_HOME_Y_FRAC = 0.82   // spawn/home band (fraction down from the top)
 
+// Walls in the open world are VISUALLY SUPPRESSED (they render as floor, see
+// engine.js renderTileMap), so they must not block movement or there'd be
+// invisible walls. With this flag the world is generated with NO blocking wall
+// tiles (every T_WALL → T_FLOOR after cave-gen). Out-of-bounds still blocks
+// (makeTileMap.get returns T_WALL past the map edges → blocked()), so the player
+// can't leave the map. Void/water/grass/hazards are unaffected. Dungeons already
+// use T_VOID (visible black) boundaries, and Nexus/Vault keep their own walls.
+const WORLD_WALLS_AS_FLOOR = true
+
 function buildWorld(seed = Date.now()) {
   const m = makeTileMap(WORLD_W, WORLD_H)
   const rng = mulberry32(seed)
@@ -173,6 +182,13 @@ function buildWorld(seed = Date.now()) {
   for (let y = 1; y < WORLD_H-1; y++)
     for (let x = 1; x < WORLD_W-1; x++)
       if (m.get(x,y)===T_FLOOR && !visited[y*WORLD_W+x]) m.set(x,y,T_WALL)
+
+  // WALL COLLISION FIX: walls render as floor, so make the open world fully
+  // walkable — every remaining wall becomes floor (no invisible blockers). The
+  // grass/water/biome/hazard passes below + portals/spawn run on the open layout;
+  // out-of-bounds still blocks so the player can't leave the map.
+  if (WORLD_WALLS_AS_FLOOR)
+    for (let i = 0; i < m.data.length; i++) if (m.data[i] === T_WALL) m.data[i] = T_FLOOR
 
   // Scatter grass + water patches (grass-heavy so the neutral between-biome
   // terrain reads as open fields). Count scales with the larger map area.
