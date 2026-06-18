@@ -11,13 +11,15 @@ const Stations = (() => {
   let mode = null               // 'salvage'|'reforge'|'fusion'|'gamble'|'vault'
   let sel = []                  // selected inventory indices
   let gambleSlot = 'weapon'
+  let lastGamble = null         // most recent gambled item (shown in the result box)
   let msg = null                // { text, color }
   let _L = null
   // ---- vault view state ----
   const STASH_CAP = 60
   let vaultFilter = 'all'       // all|weapon|armor|acc|ability|rarity
-  let vaultPage = 0             // page within the current filtered view
+  let vaultScroll = 0           // top ROW offset of the scrollable stash grid
   let vaultSortKey = 'rarity'   // rarity|slot|rating (cycled by Sort button)
+  let vDrag = null              // active bank drag: { from:'inv'|'stash', idx, item }
   const VAULT_TABS = [
     { key: 'all',     label: 'ALL' },
     { key: 'weapon',  label: 'WEAP' },
@@ -48,8 +50,8 @@ const Stations = (() => {
   function flash(t, c) { msg = { text: t, color: c || '#e0fbfc' } }
 
   function openPanel(m) {
-    open = true; mode = m; sel = []; msg = null
-    vaultFilter = 'all'; vaultPage = 0
+    open = true; mode = m; sel = []; msg = null; lastGamble = null
+    vaultFilter = 'all'; vaultScroll = 0; vDrag = null
     if (window.ensureDust) ensureDust(account)
     if (!Array.isArray(account.stash)) account.stash = []
   }
@@ -85,7 +87,8 @@ const Stations = (() => {
       rcells.push({ i, x: rx + c * (cell + gap), y: gy + r * (cell + gap), w: cell, h: cell })
     }
     const actionBtn = { x: px + PW - 200, y: py + PH - 40, w: 180, h: 28 }
-    const slotBtns = GAMBLE_SLOTS.map((s, i) => ({ s, x: rx, y: gy + i * 34, w: 150, h: 28 }))
+    // Gamble slot picker lives on the LEFT now (one row per equippable slot).
+    const slotBtns = GAMBLE_SLOTS.map((s, i) => ({ s, x: gx, y: gy + i * 30, w: 170, h: 26 }))
     return { PW, PH, px, py, closeBtn, cell, gap, cols, gx, gy, cells, rx, rcells, actionBtn, slotBtns }
   }
 
@@ -140,13 +143,16 @@ const Stations = (() => {
     } else if (mode === 'gamble') {
       const res = gambleItem(account, char, gambleSlot)
       if (res.error) { flash(res.error, '#ff6b6b'); return }
-      if (!addItemToInventory(char, res.item)) { account.glory += GAMBLE_COST; flash('Inventory full', '#ff6b6b'); return }
+      if (!addItemToInventory(char, res.item)) { account.glory += (res.cost || 0); flash('Inventory full', '#ff6b6b'); return }
+      lastGamble = res.item   // show in the result box (hover for tooltip)
       if (window.saveGame) saveGame()
       flash(`Won ${res.item.name} (${RARITY[res.item.rarity].name}) Roll ${res.item.rollPercent}%`, res.item.color)
     }
   }
 
-  function onClick(x, y, char) {
+  // Left mouse-down. In the vault this starts a drag (grid cells) or hits a
+  // control; in other modes it selects cells / presses buttons (old behavior).
+  function onMouseDown(x, y, char) {
     if (window.Options && Options.isOpen()) return false
     if (!open || !_L) return false
     const L = _L
@@ -160,36 +166,19 @@ const Stations = (() => {
     }
 
     if (mode === 'vault') {
-      // filter tabs
-      if (L.vaultTabs) for (const t of L.vaultTabs) if (hit(t, x, y)) { vaultFilter = t.key; vaultPage = 0; return true }
-      // page + sort controls
-      if (L.vaultPrev && hit(L.vaultPrev, x, y)) { vaultPage = Math.max(0, vaultPage - 1); return true }
-      if (L.vaultNext && hit(L.vaultNext, x, y)) { vaultPage++; return true }   // clamped on render
+      if (L.vaultTabs) for (const t of L.vaultTabs) if (hit(t, x, y)) { vaultFilter = t.key; vaultScroll = 0; return true }
       if (L.vaultSort && hit(L.vaultSort, x, y)) { cycleSort(); return true }
-      // left grid = inventory → deposit to first empty stash slot (slot-stable:
-      // existing stash items never shift).
+      if (L.vaultUp && hit(L.vaultUp, x, y)) { vaultScroll = Math.max(0, vaultScroll - 1); return true }
+      if (L.vaultDown && hit(L.vaultDown, x, y)) { vaultScroll++; return true }   // clamped on render
+      // start a drag from a filled inventory or stash cell
       for (const c of L.cells) if (hit(c, x, y)) {
         const it = char.inventory[c.i]
-        if (it) {
-          const si = firstEmptySlot(account.stash, STASH_CAP)
-          if (si < 0) { flash('Stash full', '#ff6b6b'); return true }
-          account.stash[si] = it; char.inventory[c.i] = null
-          if (window.saveGame) saveGame(); flash(`Stashed ${it.name}`, it.color)
-        }
+        if (it) vDrag = { from: 'inv', idx: c.i, item: it, x, y, sx: x, sy: y, moved: false }
         return true
       }
-      // right grid = stash → withdraw to inventory. Cells map to real stash
-      // indices (c._stashIdx) so filtered/paged views withdraw the right item.
       for (const c of L.rcells) if (hit(c, x, y)) {
         const si = c._stashIdx
-        if (si == null || si < 0) return true
-        const it = account.stash[si]
-        if (it) {
-          const ii = firstEmptySlot(char.inventory, INVENTORY_CAP)
-          if (ii < 0) { flash('Inventory full', '#ff6b6b'); return true }
-          char.inventory[ii] = it; account.stash[si] = null
-          if (window.saveGame) saveGame(); flash(`Withdrew ${it.name}`, it.color)
-        }
+        if (si != null && si >= 0 && account.stash[si]) vDrag = { from: 'stash', idx: si, item: account.stash[si], x, y, sx: x, sy: y, moved: false }
         return true
       }
       return true
@@ -202,6 +191,82 @@ const Stations = (() => {
       for (const c of L.gearCells) if (hit(c, x, y)) { toggleSel('g:' + c.gkey); return true }
     }
     for (const c of L.cells) if (hit(c, x, y)) { if (char.inventory[c.i]) toggleSel(c.i); return true }
+    return true
+  }
+
+  function onMouseMove(x, y) {
+    if (vDrag) { vDrag.x = x; vDrag.y = y; if (Math.abs(x - vDrag.sx) > 4 || Math.abs(y - vDrag.sy) > 4) vDrag.moved = true }
+  }
+
+  // Resolve a bank drag-drop. Items can be dropped into ANY stash slot (deposit /
+  // rearrange) or any inventory slot (withdraw); occupied targets swap.
+  function onMouseUp(x, y, char) {
+    const d = vDrag; vDrag = null
+    if (!d || !open || mode !== 'vault' || !_L) return
+    const L = _L
+    if (d.from === 'inv') {
+      for (const c of L.rcells) if (hit(c, x, y)) {
+        let si = c._stashIdx
+        if (si == null) return
+        if (si < 0) { si = firstEmptySlot(account.stash, STASH_CAP); if (si < 0) { flash('Stash full', '#ff6b6b'); return } }
+        const cur = account.stash[si]
+        account.stash[si] = d.item; char.inventory[d.idx] = cur || null
+        if (window.saveGame) saveGame(); flash(`Stashed ${d.item.name}`, d.item.color)
+        return
+      }
+    } else if (d.from === 'stash') {
+      for (const c of L.cells) if (hit(c, x, y)) {
+        const cur = char.inventory[c.i]
+        char.inventory[c.i] = d.item; account.stash[d.idx] = cur || null
+        if (window.saveGame) saveGame(); flash(`Withdrew ${d.item.name}`, d.item.color)
+        return
+      }
+      for (const c of L.rcells) if (hit(c, x, y)) {
+        const si = c._stashIdx
+        if (si == null || si < 0) return
+        const cur = account.stash[si]
+        account.stash[si] = d.item; account.stash[d.idx] = cur || null
+        if (window.saveGame) saveGame()
+        return
+      }
+    }
+  }
+
+  // Right-click = quick deposit (inventory → bank) / withdraw (bank → inventory).
+  function onRightClick(x, y, char) {
+    if (window.Options && Options.isOpen()) return false
+    if (!open || !_L || mode !== 'vault') return false
+    const L = _L
+    for (const c of L.cells) if (hit(c, x, y)) {
+      const it = char.inventory[c.i]
+      if (it) {
+        const si = firstEmptySlot(account.stash, STASH_CAP)
+        if (si < 0) { flash('Stash full', '#ff6b6b'); return true }
+        account.stash[si] = it; char.inventory[c.i] = null
+        if (window.saveGame) saveGame(); flash(`Stashed ${it.name}`, it.color)
+      }
+      return true
+    }
+    for (const c of L.rcells) if (hit(c, x, y)) {
+      const si = c._stashIdx
+      if (si == null || si < 0) return true
+      const it = account.stash[si]
+      if (it) {
+        const ii = firstEmptySlot(char.inventory, INVENTORY_CAP)
+        if (ii < 0) { flash('Inventory full', '#ff6b6b'); return true }
+        char.inventory[ii] = it; account.stash[si] = null
+        if (window.saveGame) saveGame(); flash(`Withdrew ${it.name}`, it.color)
+      }
+      return true
+    }
+    return false
+  }
+
+  function onWheel(x, y, deltaY) {
+    if (!open || mode !== 'vault' || !_L) return false
+    const L = _L
+    if (x < L.rx - 12 || x > L.px + L.PW || y < L.gy - 12) return false
+    vaultScroll = Math.max(0, vaultScroll + (deltaY > 0 ? 1 : -1))
     return true
   }
 
@@ -270,10 +335,38 @@ const Stations = (() => {
     // action button
     if (mode !== 'vault') drawActionButton(L, char)
 
+    // Reforge dust cost — shown near the button ONLY once an item is selected.
+    if (mode === 'reforge' && sel.length === 1) {
+      const t = sel[0]
+      const selItem = (typeof t === 'string' && t.indexOf('g:') === 0)
+        ? (char.gear && char.gear[t.slice(2)]) : char.inventory[t]
+      if (selItem) {
+        const r = selItem.rarity || 'common'
+        const have = (account.dust && account.dust[r]) || 0
+        const enough = have >= REFORGE_COST
+        ctx.fillStyle = enough ? '#7CFC9A' : '#ff8888'; ctx.font = '10px monospace'; ctx.textAlign = 'right'
+        ctx.fillText(`Cost: ${REFORGE_COST} ${(DUST[r] || {}).name || r}  (have ${have})`,
+          L.actionBtn.x + L.actionBtn.w, L.actionBtn.y - 6)
+        ctx.textAlign = 'left'
+      }
+    }
+
     // message
     if (msg) { ctx.fillStyle = msg.color; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'left'; ctx.fillText(msg.text, px + 20, py + PH - 50) }
 
-    if (hoverItem) renderItemTooltip(hoverItem, mouse.x + 12, mouse.y + 12)
+    // Bank drag ghost — the dragged item follows the cursor.
+    if (vDrag && vDrag.item && vDrag.moved) {
+      const it = vDrag.item
+      ctx.fillStyle = hexA(it.color, 0.3); ctx.strokeStyle = it.color || '#888'; ctx.lineWidth = 1
+      ctx.fillRect(mouse.x - 16, mouse.y - 16, 32, 32); ctx.strokeRect(mouse.x - 16, mouse.y - 16, 32, 32)
+      const drew = (typeof Sprites !== 'undefined') && Sprites.drawForItem(it, mouse.x, mouse.y - 2, 26)
+      if (!drew) {
+        ctx.fillStyle = it.color || '#e0fbfc'; ctx.font = 'bold 16px monospace'; ctx.textAlign = 'center'
+        ctx.fillText((it.slot || '?')[0].toUpperCase(), mouse.x, mouse.y + 2); ctx.textAlign = 'left'
+      }
+    } else if (hoverItem) {
+      renderItemTooltip(hoverItem, mouse.x + 12, mouse.y + 12)
+    }
   }
 
   function renderRightInfo(L, char) {
@@ -282,13 +375,13 @@ const Stations = (() => {
     if (mode === 'reforge') {
       let hov = null
       ctx.fillStyle = '#9fb3c8'; ctx.font = '11px monospace'
-      ctx.fillText(`Cost: ${REFORGE_COST} dust of item rarity`, rx, ry)
-      ctx.fillText('Rerolls roll% only. Type/rarity/affixes kept.', rx, ry + 16)
-      // Equipped gear is also reforgeable (in place). Render a small selectable
-      // grid; selection token is 'g:<slotKey>'.
-      ctx.fillStyle = '#9fb3c8'; ctx.font = 'bold 10px monospace'
-      ctx.fillText('EQUIPPED — click to reforge', rx, ry + 38)
-      const cw = 52, ch = 52, gp = 6, cols = 5, gy0 = ry + 48
+      ctx.fillText('Rerolls roll% only. Type / rarity / affixes kept.', rx, ry)
+      // Equipped gear is also reforgeable (in place). It's drawn here on the RIGHT
+      // with a gold-tagged box + header so it's clearly distinct from the cyan
+      // INVENTORY grid on the left. Selection token is 'g:<slotKey>'.
+      const cw = 52, ch = 52, gp = 6, cols = 5, headY = ry + 24, gy0 = headY + 16
+      ctx.fillStyle = '#ffd60a'; ctx.font = 'bold 10px monospace'
+      ctx.fillText('EQUIPPED GEAR — click to reforge in place', rx, headY)
       L.gearCells = []
       let n = 0
       for (const key of REFORGE_GEAR_KEYS) {
@@ -297,6 +390,8 @@ const Stations = (() => {
         const cc = n % cols, rr = (n / cols) | 0
         const cell = { x: rx + cc * (cw + gp), y: gy0 + rr * (ch + gp), w: cw, h: ch, gkey: key }
         const h = drawCell(cell, it, sel.indexOf('g:' + key) >= 0)
+        // Gold top stripe marks these as EQUIPPED (vs plain inventory cells).
+        ctx.fillStyle = '#ffd60a'; ctx.fillRect(cell.x, cell.y, cell.w, 3)
         if (h) hov = h
         L.gearCells.push(cell)
         n++
@@ -320,8 +415,30 @@ const Stations = (() => {
     } else if (mode === 'salvage') {
       ctx.fillStyle = '#9fb3c8'; ctx.font = '11px monospace'
       ctx.fillText('Select items, then Salvage.', rx, ry)
-      ctx.fillText('Returns dust of each rarity.', rx, ry + 18)
-      ctx.fillStyle = '#b18bff'; ctx.fillText(`Selected: ${sel.length}`, rx, ry + 40)
+      ctx.fillStyle = '#b18bff'; ctx.font = 'bold 11px monospace'
+      ctx.fillText(`Selected: ${sel.length}`, rx, ry + 22)
+      // Preview the dust you'll get, broken down by type, BEFORE salvaging.
+      const yields = {}
+      for (const i of sel) {
+        const it = char.inventory[i]; if (!it) continue
+        const r = it.rarity || 'common'
+        yields[r] = (yields[r] || 0) + (RARITY[r] || RARITY.common).tier
+      }
+      ctx.fillStyle = '#9fb3c8'; ctx.font = 'bold 10px monospace'
+      ctx.fillText("YOU'LL GET:", rx, ry + 48)
+      let yy = ry + 66
+      const order = (typeof RARITY_ORDER !== 'undefined') ? RARITY_ORDER : Object.keys(yields)
+      const any = order.some(k => yields[k])
+      if (!any) { ctx.fillStyle = '#6b7b90'; ctx.font = '10px monospace'; ctx.fillText('— nothing selected —', rx, yy) }
+      for (const k of order) {
+        if (!yields[k]) continue
+        const d = (typeof DUST !== 'undefined') ? DUST[k] : null
+        ctx.fillStyle = (d && d.color) || '#ccc'
+        ctx.beginPath(); ctx.arc(rx + 5, yy - 3, 4, 0, Math.PI * 2); ctx.fill()
+        ctx.font = '10px monospace'; ctx.textAlign = 'left'
+        ctx.fillText(`${d ? d.name : k}  +${yields[k]}`, rx + 16, yy)
+        yy += 17
+      }
     }
     return null
   }
@@ -332,22 +449,57 @@ const Stations = (() => {
   }
 
   function renderGamble(L, char) {
-    const rx = L.rx, ry = L.gy
+    const costOf = (typeof gambleCost === 'function') ? gambleCost : (() => GAMBLE_COST)
     ctx.textAlign = 'left'
+    // --- LEFT: choose slot (each row shows its own Glory cost) ---
     ctx.fillStyle = '#9fb3c8'; ctx.font = 'bold 11px monospace'
-    ctx.fillText('CHOOSE SLOT', rx, ry - 6)
+    ctx.fillText('CHOOSE SLOT', L.gx, L.gy - 6)
     for (const b of L.slotBtns) {
       const active = gambleSlot === b.s, hov = hit(b, mouse.x, mouse.y)
       ctx.fillStyle = active ? 'rgba(177,91,255,0.25)' : hov ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.03)'
       ctx.strokeStyle = active ? '#b15bff' : '#334'; ctx.lineWidth = 1
       ctx.fillRect(b.x, b.y, b.w, b.h); ctx.strokeRect(b.x, b.y, b.w, b.h)
-      ctx.fillStyle = active ? '#b15bff' : '#9fb3c8'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left'
-      ctx.fillText(b.s.toUpperCase(), b.x + 10, b.y + 18)
+      ctx.fillStyle = active ? '#d9b8ff' : '#9fb3c8'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left'
+      ctx.fillText(b.s.toUpperCase(), b.x + 10, b.y + 17)
+      ctx.fillStyle = '#ffd60a'; ctx.font = '10px monospace'; ctx.textAlign = 'right'
+      ctx.fillText(costOf(b.s) + 'G', b.x + b.w - 8, b.y + 17)
     }
-    ctx.fillStyle = '#9fb3c8'; ctx.font = '10px monospace'
-    ctx.fillText(`Class-filtered for ${CLASSES[char.classKey].name}.`, L.gx, L.gy + 8)
-    ctx.fillText(`Cost: ${GAMBLE_COST} Glory per roll.`, L.gx, L.gy + 26)
-    return null
+    ctx.textAlign = 'left'
+
+    // --- RIGHT: result box (shows the last item won; hover for full tooltip) ---
+    const rx = L.rx, ry = L.gy
+    ctx.fillStyle = '#9fb3c8'; ctx.font = 'bold 11px monospace'
+    ctx.fillText('RESULT', rx, ry - 6)
+    const box = { x: rx, y: ry + 4, w: 230, h: 158 }
+    ctx.fillStyle = 'rgba(255,255,255,0.03)'
+    ctx.strokeStyle = lastGamble ? (lastGamble.color || '#445') : '#334'; ctx.lineWidth = 1
+    ctx.fillRect(box.x, box.y, box.w, box.h); ctx.strokeRect(box.x, box.y, box.w, box.h)
+    let hov = null
+    if (lastGamble) {
+      const it = lastGamble
+      const drew = (typeof Sprites !== 'undefined') && Sprites.drawForItem(it, box.x + box.w / 2, box.y + 52, 52)
+      if (!drew) {
+        ctx.fillStyle = it.color || '#e0fbfc'; ctx.font = 'bold 32px monospace'; ctx.textAlign = 'center'
+        ctx.fillText((it.slot || '?')[0].toUpperCase(), box.x + box.w / 2, box.y + 64)
+      }
+      ctx.fillStyle = it.color || '#e0fbfc'; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center'
+      ctx.fillText(it.name, box.x + box.w / 2, box.y + 102)
+      ctx.fillStyle = '#9fb3c8'; ctx.font = '10px monospace'
+      ctx.fillText(`${RARITY[it.rarity].name} • Roll ${it.rollPercent != null ? it.rollPercent : it.rating}%`, box.x + box.w / 2, box.y + 120)
+      ctx.fillStyle = '#6b7b90'; ctx.font = '9px monospace'
+      ctx.fillText('hover for details', box.x + box.w / 2, box.y + 142)
+      ctx.textAlign = 'left'
+      if (hit(box, mouse.x, mouse.y)) hov = it
+    } else {
+      ctx.fillStyle = '#6b7b90'; ctx.font = '10px monospace'; ctx.textAlign = 'center'
+      ctx.fillText('Roll to win an item', box.x + box.w / 2, box.y + box.h / 2)
+      ctx.textAlign = 'left'
+    }
+    ctx.fillStyle = '#9fb3c8'; ctx.font = '10px monospace'; ctx.textAlign = 'left'
+    ctx.fillText(`Class-filtered for ${CLASSES[char.classKey].name}.`, rx, box.y + box.h + 20)
+    ctx.fillStyle = '#ffd60a'
+    ctx.fillText(`Cost: ${costOf(gambleSlot)} Glory  (${gambleSlot})`, rx, box.y + box.h + 36)
+    return hov
   }
 
   // ---- vault filter / sort helpers (identity-safe: only move references) ----
@@ -373,7 +525,7 @@ const Stations = (() => {
   function cycleSort() {
     vaultSortKey = vaultSortKey === 'rarity' ? 'slot' : vaultSortKey === 'slot' ? 'rating' : 'rarity'
     sortStash(vaultSortKey)
-    vaultPage = 0
+    vaultScroll = 0
     flash(`Sorted by ${vaultSortKey}`, '#b18bff')
   }
   // User-triggered compacting sort. Reorders references only — never recreates or
@@ -398,15 +550,17 @@ const Stations = (() => {
     let hov = null
     // --- left: inventory (deposit) ---
     ctx.fillStyle = '#9fb3c8'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'left'
-    ctx.fillText(`INVENTORY ${invItemCount(char.inventory)}/${INVENTORY_CAP}  (click → stash)`, L.gx, L.gy - 6)
+    ctx.fillText(`INVENTORY ${invItemCount(char.inventory)}/${INVENTORY_CAP}  (right-click / drag → stash)`, L.gx, L.gy - 6)
     for (const c of L.cells) { const h = drawCell(c, char.inventory[c.i], false); if (h) hov = h }
 
-    // --- right: vault with filter tabs + paged grid + sort ---
+    // --- right: vault with filter tabs + SCROLLABLE grid + sort ---
     const view = buildVaultView()
-    const perPage = L.rcells.length
-    const pages = Math.max(1, Math.ceil(view.length / perPage))
-    if (vaultPage > pages - 1) vaultPage = pages - 1
-    if (vaultPage < 0) vaultPage = 0
+    const vcols = L.cols
+    const visibleRows = (L.rcells.length / vcols) | 0
+    const totalRows = Math.max(1, Math.ceil(view.length / vcols))
+    const maxScroll = Math.max(0, totalRows - visibleRows)
+    if (vaultScroll > maxScroll) vaultScroll = maxScroll
+    if (vaultScroll < 0) vaultScroll = 0
 
     // filter tabs row (just under the title, above the grid)
     L.vaultTabs = []
@@ -427,35 +581,40 @@ const Stations = (() => {
     ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left'
 
     ctx.fillStyle = '#9fb3c8'; ctx.font = 'bold 10px monospace'
-    ctx.fillText(`VAULT ${invItemCount(account.stash)}/${STASH_CAP}  (click → inventory)`, L.rx, L.gy - 6)
+    ctx.fillText(`VAULT ${invItemCount(account.stash)}/${STASH_CAP}  (right-click / drag)`, L.rx, L.gy - 6)
 
-    // stash grid (cells map to real stash indices via _stashIdx)
-    const start = vaultPage * perPage
+    // scrollable stash grid (cells map to real stash indices via _stashIdx)
+    const vstart = vaultScroll * vcols
     for (let i = 0; i < L.rcells.length; i++) {
       const c = L.rcells[i]
-      const si = view[start + i]
+      const si = view[vstart + i]
       c._stashIdx = (si == null) ? -1 : si
       const it = (si == null) ? null : account.stash[si]
       const h = drawCell(c, it, false); if (h) hov = h
     }
 
-    // controls row under the grid: Sort button + page prev/next + label
-    const rowY = L.gy + L.rcells.length / L.cols * (L.cell + L.gap) + 6
-    const sortBtn = { x: L.rx, y: rowY, w: 110, h: 22 }
+    // scrollbar track + thumb on the right edge of the stash grid
+    const gridTop = L.gy
+    const gridH = visibleRows * (L.cell + L.gap) - L.gap
+    const sbX = L.rx + vcols * (L.cell + L.gap) - L.gap + 6
+    const sbW = 8
+    ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(sbX, gridTop, sbW, gridH)
+    const thumbH = Math.max(22, gridH * visibleRows / totalRows)
+    const thumbY = gridTop + (maxScroll > 0 ? (gridH - thumbH) * (vaultScroll / maxScroll) : 0)
+    ctx.fillStyle = '#4cc9f0aa'; ctx.fillRect(sbX, thumbY, sbW, thumbH)
+
+    // controls row under the grid: AUTO SORT + scroll up/down nudge arrows
+    const rowY = gridTop + gridH + 8
+    const sortBtn = { x: L.rx, y: rowY, w: 130, h: 22 }
     ctx.fillStyle = 'rgba(76,201,240,0.18)'; ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 1
     ctx.fillRect(sortBtn.x, sortBtn.y, sortBtn.w, sortBtn.h); ctx.strokeRect(sortBtn.x, sortBtn.y, sortBtn.w, sortBtn.h)
     ctx.fillStyle = '#4cc9f0'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
     ctx.fillText(`AUTO SORT: ${vaultSortKey}`, sortBtn.x + sortBtn.w / 2, sortBtn.y + sortBtn.h / 2)
     L.vaultSort = sortBtn
-
-    // paging controls (right-aligned in the column): ‹  1/2  ›
-    const colRight = L.px + L.PW - 20
-    const next = { x: colRight - 24, y: rowY, w: 24, h: 22 }
-    const prev = { x: next.x - 24 - 44, y: rowY, w: 24, h: 22 }
-    drawArrowBtn(prev, '<'); L.vaultPrev = prev
-    drawArrowBtn(next, '>'); L.vaultNext = next
-    ctx.fillStyle = '#9fb3c8'; ctx.font = '10px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-    ctx.fillText(`${vaultPage + 1}/${pages}`, (prev.x + prev.w + next.x) / 2, rowY + 11)
+    const down = { x: sbX + sbW - 22, y: rowY, w: 22, h: 22 }
+    const up = { x: down.x - 26, y: rowY, w: 22, h: 22 }
+    drawArrowBtn(up, '▲'); L.vaultUp = up
+    drawArrowBtn(down, '▼'); L.vaultDown = down
     ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left'
     return hov
   }
@@ -485,7 +644,7 @@ const Stations = (() => {
 
   function drawActionButton(L, char) {
     const b = L.actionBtn
-    const labels = { salvage: 'SALVAGE SELECTED', reforge: 'REFORGE', fusion: 'FUSE', gamble: `GAMBLE (${GAMBLE_COST}G)` }
+    const labels = { salvage: 'SALVAGE SELECTED', reforge: 'REFORGE', fusion: 'FUSE', gamble: 'GAMBLE' }
     ctx.fillStyle = 'rgba(76,201,240,0.20)'; ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 1
     ctx.fillRect(b.x, b.y, b.w, b.h); ctx.strokeRect(b.x, b.y, b.w, b.h)
     ctx.fillStyle = '#4cc9f0'; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center'
@@ -497,14 +656,29 @@ const Stations = (() => {
     if (open && e.code === 'Escape') { close(); e.stopPropagation(); e.preventDefault() }
   }, true)
 
-  return { isOpen, open: openPanel, close, render, onClick }
+  return { isOpen, open: openPanel, close, render, onMouseDown, onMouseMove, onMouseUp, onRightClick, onWheel }
 })()
 
 canvas.addEventListener('mousedown', e => {
   if (e.button !== 0) return
   if (Stations.isOpen() && typeof G !== 'undefined' && G.char) {
-    if (Stations.onClick(e.clientX, e.clientY, G.char)) e.stopPropagation()
+    if (Stations.onMouseDown(e.clientX, e.clientY, G.char)) e.stopPropagation()
   }
 }, true)
+canvas.addEventListener('mousemove', e => {
+  if (Stations.isOpen()) Stations.onMouseMove(e.clientX, e.clientY)
+}, true)
+window.addEventListener('mouseup', e => {
+  if (e.button !== 0) return
+  if (Stations.isOpen() && typeof G !== 'undefined' && G.char) Stations.onMouseUp(e.clientX, e.clientY, G.char)
+}, true)
+canvas.addEventListener('contextmenu', e => {
+  if (Stations.isOpen() && typeof G !== 'undefined' && G.char) {
+    if (Stations.onRightClick(e.clientX, e.clientY, G.char)) { e.preventDefault(); e.stopPropagation() }
+  }
+}, true)
+canvas.addEventListener('wheel', e => {
+  if (Stations.isOpen() && Stations.onWheel(e.clientX, e.clientY, e.deltaY)) { e.preventDefault(); e.stopPropagation() }
+}, { passive: false, capture: true })
 
 window.Stations = Stations

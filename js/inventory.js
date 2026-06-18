@@ -235,8 +235,9 @@ const Inventory = (() => {
   // ---- layout ----
   function computeLayout() {
     // PW/px clamp so the window stays fully on-screen on small/laptop windows.
-    const PW = Math.min(372, canvas.width - 16)
-    const PH = Math.min(canvas.height - 24, 588)
+    // Enlarged to match the zoomed-in game (still clamps on small windows).
+    const PW = Math.min(468, canvas.width - 16)
+    const PH = Math.min(canvas.height - 24, 712)
     const px = Math.max(8, canvas.width - PW - 16)
     const py = ((canvas.height - PH) / 2) | 0
 
@@ -246,7 +247,7 @@ const Inventory = (() => {
     // Equipment region. Decorative header text was removed, so the slots start
     // just under the STATS/close buttons for more usable space.
     const eqTop = py + 36
-    const ss = 46, vGap = 10
+    const ss = 56, vGap = 12
     const colY = i => eqTop + 8 + i * (ss + vGap)
     const leftX = px + 18
     const rightX = px + PW - 18 - ss
@@ -278,7 +279,7 @@ const Inventory = (() => {
     const availH = (py + PH - footerSpace) - gy
     const maxCellH = ((availH - (rows - 1) * g) / rows) | 0
     const maxCellW = ((PW - 36 - (cols - 1) * g) / cols) | 0
-    const cell = Math.max(30, Math.min(50, maxCellH, maxCellW))
+    const cell = Math.max(34, Math.min(62, maxCellH, maxCellW))
     const gridW = cols * cell + (cols - 1) * g
     const gx = px + ((PW - gridW) / 2) | 0
     const cells = []
@@ -290,7 +291,7 @@ const Inventory = (() => {
     // Stats popup attached to the LEFT of the window. On narrow windows there
     // isn't room beside the window, so it becomes an on-top overlay instead of
     // overlapping the inventory awkwardly.
-    const SW = 220
+    const SW = 274
     const statsFits = (px - SW - 10) >= 8
     const statsPanel = { x: Math.max(8, px - SW - 10), y: py, w: SW, h: PH }
 
@@ -329,6 +330,22 @@ const Inventory = (() => {
   // Buttons and equipped-slot unequip act immediately on mousedown (old feel).
   // Grid items begin a drag candidate; the real action is decided on mouseup so
   // a plain click still equips, while a drag can move/swap/drop.
+  // Right-click equips a grid item / unequips an equipped slot (left-click is now
+  // reserved for dragging items around / into the bank).
+  function onRightClick(x, y, char, alt) {
+    if (window.Options && Options.isOpen()) return false
+    if (!open || !_layout) return false
+    const L = _layout
+    for (const s of L.slots) {
+      if (hit(s, x, y)) { if (char.gear[s.key]) unequip(char, s.key); return true }
+    }
+    const inv = char.inventory || []
+    for (const c of L.cells) {
+      if (hit(c, x, y)) { if (inv[c.i]) equip(char, c.i, alt); return true }
+    }
+    return false
+  }
+
   function onMouseDown(x, y, char, alt) {
     if (window.Options && Options.isOpen()) return false
     if (!open || !_layout) return false
@@ -336,8 +353,10 @@ const Inventory = (() => {
     if (hit(L.closeBtn, x, y)) { open = false; return true }
     if (hit(L.statsBtn, x, y)) { statsOpen = !statsOpen; return true }
     if (hit(L.organizeBtn, x, y)) { organize(char); return true }
+    // Left-click on an equipped slot no longer unequips (use right-click); it
+    // only swallows the click so it doesn't fall through to the close-on-outside.
     for (const s of L.slots) {
-      if (hit(s, x, y)) { if (char.gear[s.key]) unequip(char, s.key); return true }
+      if (hit(s, x, y)) return true
     }
     const inv = char.inventory || []
     for (const c of L.cells) {
@@ -365,7 +384,7 @@ const Inventory = (() => {
     if (!item) return                       // dragged an empty cell → nothing
     const L = _layout
     const a = (alt || d.alt)
-    if (!d.moved) { equip(char, d.fromIdx, a); return }   // plain click → equip
+    if (!d.moved) return                    // plain left-click no longer equips (right-click does)
     // Released over another grid cell → move/swap.
     for (const c of L.cells) {
       if (hit(c, x, y)) { moveItem(char, d.fromIdx, c.i); return }
@@ -394,12 +413,24 @@ const Inventory = (() => {
     const cls = item.classes ? item.classes.join('/') : 'any class'
     const roll = (typeof item.rollPercent === 'number') ? item.rollPercent : item.rating
     lines.push({ t: `${rar}  •  ${item.slot || '?'}  •  ${cls}`, c: UI.textDim, s: 9 })
-    if (typeof roll === 'number') lines.push({ t: `Roll ${roll}%`, c: UI.xp, s: 9 })
 
     const stats = item.stats || {}
     const cStats = (compareTo && compareTo.stats) || null
+    // Weapons: roll% + attacks/sec on one line; range + proj speed on the next.
+    // These are fixed weapon mechanics, kept OUT of the rolled stat list below.
+    if (item.slot === 'weapon') {
+      const aps = stats.atkSpd ? (1 / stats.atkSpd).toFixed(2) + ' atk/s' : ''
+      const rollTxt = (typeof roll === 'number') ? `Roll ${roll}%` : ''
+      if (aps || rollTxt) lines.push({ t: [rollTxt, aps].filter(Boolean).join('   •   '), c: UI.xp, s: 9 })
+      const mech = []
+      if (stats.range != null) mech.push(`Range ${Math.round(stats.range)}`)
+      if (stats.bspd != null) mech.push(`Proj spd ${Math.round(stats.bspd)}`)
+      if (mech.length) lines.push({ t: mech.join('   •   '), c: UI.textDim, s: 9 })
+    } else if (typeof roll === 'number') {
+      lines.push({ t: `Roll ${roll}%`, c: UI.xp, s: 9 })
+    }
     for (const k in stats) {
-      if (k === 'bspd') continue   // fixed weapon projectile speed, not a stat bonus
+      if (k === 'bspd' || k === 'atkSpd' || k === 'range') continue   // weapon mechanics, shown above
       const base = (window.fmtStatLine) ? fmtStatLine(k, stats[k]) : `${k.toUpperCase()} ${fmtVal(stats[k])}`
       let t = base, c = (item.void && window.PCT_KEYS && PCT_KEYS[k]) ? '#b18bff' : '#d8e6f2'
       if (cStats && typeof stats[k] === 'number' && !(window.PCT_KEYS && PCT_KEYS[k])) {
@@ -502,19 +533,20 @@ const Inventory = (() => {
     const dmg = (typeof calcDamage === 'function') ? calcDamage(char) : 0
     const acct = (typeof account !== 'undefined') ? account : { glory: 0 }
     const cap = (typeof LEVEL_CAP !== 'undefined' ? LEVEL_CAP : 20)
+    // Only show the MAIN stat for the current class (str/dex/int) — the other two
+    // are irrelevant to this class's gear.
+    const ms = (CLASSES[char.classKey] && CLASSES[char.classKey].mainStat) || 'str'
+    const msLabel = { str: 'STR', dex: 'DEX', int: 'INT' }[ms] || ms.toUpperCase()
     const rows = [
       ['HP', `${compactNum(char.hp)} / ${compactNum(char.maxHp)}`, UI.hp],
       ['MP', `${compactNum(char.mp)} / ${compactNum(char.maxMp)}`, UI.mp],
       ['Damage', '' + dmg, UI.text],
       ['Armor', '' + (char.armor || 0), UI.text],
       ['Speed', '' + (char.spd || 0), UI.text],
-      ['STR', '' + (char.str || 0), UI.textDim],
-      ['DEX', '' + (char.dex || 0), UI.textDim],
-      ['INT', '' + (char.int || 0), UI.textDim],
+      [msLabel, '' + (char[ms] || 0), UI.text],
       ['HP Regen', (char.hpRegen || 0) + ' /s', UI.textDim],
       ['Level', '' + char.level, UI.text],
       ['XP', char.level >= cap ? 'MAX' : `${char.xp | 0} / ${char.xpNext | 0}`, UI.xp],
-      ['Glory (life)', '' + (char.glory | 0), UI.glory],
       ['Account Glory', '' + ((acct.glory) | 0), UI.glory],
     ]
     let y = p.y + 54
@@ -633,7 +665,7 @@ const Inventory = (() => {
     } else {
       ctx.fillStyle = UI.textFaint; ctx.font = '10px monospace'
       const ik = window.Hotkeys ? Hotkeys.name('inventory') : 'I'
-      ctx.fillText(`[${ik}] close   •   click item to equip   •   click slot to unequip`, px + 18, py + PH - 12)
+      ctx.fillText(`[${ik}] close   •   right-click to equip / unequip   •   drag to move or drop`, px + 18, py + PH - 12)
     }
 
     // Narrow window: draw the stats popup on top as an overlay (no room beside).
@@ -704,7 +736,7 @@ const Inventory = (() => {
     } catch (e) { return { error: String(e) } }
   }
 
-  return { update, render, onClick, onMouseDown, onMouseMove, onMouseUp, isOpen, equip, unequip, debugGiveItem, debugState }
+  return { update, render, onClick, onMouseDown, onMouseMove, onMouseUp, onRightClick, isOpen, equip, unequip, debugGiveItem, debugState }
 })()
 
 // Drag-aware input: down starts a drag/equip, move tracks it, up resolves it
@@ -723,6 +755,12 @@ window.addEventListener('mouseup', e => {
   if (e.button !== 0) return
   if (Inventory.isOpen() && typeof G !== 'undefined' && G.char) {
     Inventory.onMouseUp(e.clientX, e.clientY, G.char, e.altKey)
+  }
+}, true)
+// Right-click = equip a grid item / unequip an equipped slot.
+canvas.addEventListener('contextmenu', e => {
+  if (Inventory.isOpen() && typeof G !== 'undefined' && G.char) {
+    if (Inventory.onRightClick(e.clientX, e.clientY, G.char, e.altKey)) { e.preventDefault(); e.stopPropagation() }
   }
 }, true)
 

@@ -363,6 +363,15 @@ function renderHUD(char, zoneName, map, mobs) {
   const mx = ((w - modW) / 2) | 0
   const my = h - modH - 12
 
+  // Scale the whole vitals module up to match the zoomed-in game. It's purely a
+  // readout (no click targets), so a scale transform about its bottom-center
+  // anchor keeps it bottom-centered while enlarging panel + bars + fonts.
+  const VITALS_SCALE = 1.32
+  ctx.save()
+  ctx.translate(w / 2, h)
+  ctx.scale(VITALS_SCALE, VITALS_SCALE)
+  ctx.translate(-w / 2, -h)
+
   uiPanel(mx, my, modW, modH, 11, UI.panelBorder, UI.panelBg)
   // accent top edge for a bit of identity
   ctx.save(); uiRoundRect(mx, my, modW, modH, 11); ctx.clip()
@@ -387,8 +396,10 @@ function renderHUD(char, zoneName, map, mobs) {
         `HP  ${compactNum(char.hp)} / ${compactNum(char.maxHp)}`)
   uiBar(bx, my + 44, barsW, 14, char.mp / char.maxMp, UI.mp, UI.mpTrack,
         `MP  ${compactNum(char.mp)} / ${compactNum(char.maxMp)}`)
-  // XP / glory — secondary thin bar
-  const xpFrac = capped ? (char.glory % 1000) / 1000 : Math.min(1, char.xp / char.xpNext)
+  // XP / glory — secondary thin bar. Post-cap there is no "next" threshold, so
+  // the purple glory bar is always shown FULL; glory itself just accrues as a
+  // number (the GLORY readout above). Pre-cap it fills toward the next level.
+  const xpFrac = capped ? 1 : Math.min(1, char.xp / char.xpNext)
   uiBar(bx, my + 62, barsW, 6, xpFrac, capped ? UI.glory : UI.xp,
         capped ? UI.gloryTrack : UI.xpTrack, null, 3)
 
@@ -414,6 +425,7 @@ function renderHUD(char, zoneName, map, mobs) {
     ctx.fillText('READY', ax + slot / 2, ay + 43)
   }
   ctx.textAlign = 'left'
+  ctx.restore()   // end vitals-module scale transform
 
   // ---- Zone banner (top-center) ----
   ctx.font = 'bold 11px monospace'
@@ -425,14 +437,11 @@ function renderHUD(char, zoneName, map, mobs) {
 
   // ---- return hint (top-left; clear of minimap) ----
   const rKey = window.Hotkeys ? Hotkeys.name('returnNexus') : 'R'
-  const iKey = window.Hotkeys ? Hotkeys.name('inventory') : 'I'
   if (zoneName !== 'NEXUS') {
     ctx.fillStyle = UI.textFaint; ctx.font = '10px monospace'
     ctx.fillText(`[${rKey}] Return to Nexus`, pad, pad + 11)
   }
-  // inventory hint just under it
-  ctx.fillStyle = UI.textFaint; ctx.font = '10px monospace'
-  ctx.fillText(`[${iKey}] Inventory`, pad, pad + 26)
+  // (Removed the top-left "[I] Inventory" hint per request.)
 
   // ---- Minimap (top-right) ----
   if (typeof Minimap !== 'undefined' && map) Minimap.render(char, map, mobs || [])
@@ -445,7 +454,7 @@ function renderHUD(char, zoneName, map, mobs) {
 // Tactical top-right map: full tile layout (cached per-map to an offscreen
 // canvas), player position + facing, enemy dots, bosses as gold diamonds.
 const Minimap = (() => {
-  const SIZE = 172
+  const SIZE = 232
   let zoom = 1                 // in-memory minimap zoom (1 = whole map)
   const ZMIN = 1, ZMAX = 6
   let _rect = null             // last drawn minimap bounds (for wheel hover test)
@@ -471,6 +480,15 @@ const Minimap = (() => {
     }
   }
 
+  // Parse '#rrggbb' / '#rgb' → [r,g,b] (or null). Used to color minimap biomes
+  // from their real in-world palette rather than a separate hand-picked tint.
+  function miniHexRgb(hex) {
+    if (typeof hex !== 'string' || hex[0] !== '#') return null
+    if (hex.length === 4) return [parseInt(hex[1] + hex[1], 16), parseInt(hex[2] + hex[2], 16), parseInt(hex[3] + hex[3], 16)]
+    if (hex.length === 7) return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)]
+    return null
+  }
+
   function build(map) {
     const c = document.createElement('canvas')
     c.width = map.w; c.height = map.h
@@ -478,14 +496,27 @@ const Minimap = (() => {
     const img = g.createImageData(map.w, map.h)
     const d = img.data
     const hasBiome = !!map.biome && typeof BIOME_BY_ID !== 'undefined'
+    // Precompute each biome's minimap color from its ACCENT (the vivid signature
+    // color you see in that region), grounded slightly toward its floor tint so
+    // the minimap regions visually MATCH the biomes you walk through.
+    const biomeCol = {}
+    if (hasBiome) {
+      for (const id in BIOME_BY_ID) {
+        const bd = BIOME_BY_ID[id]
+        const ac = miniHexRgb(bd.accent), fl = miniHexRgb(bd.floor)
+        if (ac && fl)      biomeCol[id] = [(ac[0] * 0.72 + fl[0] * 0.28) | 0, (ac[1] * 0.72 + fl[1] * 0.28) | 0, (ac[2] * 0.72 + fl[2] * 0.28) | 0]
+        else if (ac)       biomeCol[id] = ac
+        else if (bd.mini)  biomeCol[id] = bd.mini
+      }
+    }
     for (let y = 0; y < map.h; y++) {
       for (let x = 0; x < map.w; x++) {
         const t = map.get(x, y)
         let [r, gg, b, a] = tileRGBA(t)
         // Tint floor/grass by biome so regions read on the minimap.
         if (hasBiome && (t === T_FLOOR || t === T_GRASS)) {
-          const bd = BIOME_BY_ID[map.biome[y * map.w + x]]
-          if (bd && bd.mini) { r = bd.mini[0]; gg = bd.mini[1]; b = bd.mini[2]; a = 255 }
+          const bc = biomeCol[map.biome[y * map.w + x]]
+          if (bc) { r = bc[0]; gg = bc[1]; b = bc[2]; a = 255 }
         }
         const i = (y * map.w + x) * 4
         d[i] = r; d[i + 1] = gg; d[i + 2] = b; d[i + 3] = a
@@ -695,22 +726,8 @@ function renderPlayer(char, offX, offY) {
   }
   ctx.shadowBlur = 0
 
-  // World-anchored facing marker: a bright wedge on the body's forward edge,
-  // drawn inside the world transform with NO counter-rotation, so it rotates
-  // WITH the map/screen rotation (Q/E). This makes the body's rotation clearly
-  // visible even for the rotationally-symmetric (circle) class shapes — the
-  // body now visibly turns with the world. Distinct from the mouse aim dot.
-  // Bright, prominent fill (was near-black/invisible) so the rotation reads on
-  // every class — including the symmetric circle classes whose round body shows
-  // no rotation on its own. This wedge is world-anchored (no counter-rotation),
-  // so it visibly swings WITH the map/screen as you rotate (Q/E).
-  ctx.fillStyle = '#ffffff'
-  ctx.beginPath()
-  ctx.moveTo(sx, sy - PLAYER_RADIUS - 9)
-  ctx.lineTo(sx - 6, sy - PLAYER_RADIUS + 3)
-  ctx.lineTo(sx + 6, sy - PLAYER_RADIUS + 3)
-  ctx.closePath(); ctx.fill()
-  ctx.strokeStyle = cls.color; ctx.lineWidth = 2; ctx.stroke()
+  // (Removed the white facing wedge/cone that used to sit on the player's
+  // forward edge — the mouse-aim dot below already shows facing.)
 
   // Direction dot (toward mouse)
   const [wx, wy] = screenToWorld(mouse.x, mouse.y)

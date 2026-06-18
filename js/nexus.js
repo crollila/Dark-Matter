@@ -7,6 +7,25 @@ const NexusZone = (() => {
   let promptLabel = ''
   let promptTimer = 0
   let eLatch = false
+  let charBtn = null    // top-left "Characters" button rect (switch / create)
+
+  function overlayOpen() {
+    return (window.Stations && Stations.isOpen()) || (window.Wiki && Wiki.isOpen()) ||
+           (window.Chat && Chat.isOpen()) || (window.Options && Options.isOpen()) ||
+           (window.Inventory && Inventory.isOpen())
+  }
+
+  // Clicking the nexus "Characters" button saves and returns to the roster menu,
+  // where the player can switch to another character or create a new one.
+  function onClick(x, y) {
+    if (overlayOpen()) return false
+    if (charBtn && x >= charBtn.x && x <= charBtn.x + charBtn.w && y >= charBtn.y && y <= charBtn.y + charBtn.h) {
+      if (window.saveGame) saveGame()
+      G.enterZone('menu')
+      return true
+    }
+    return false
+  }
 
   function init(char) {
     eLatch = false
@@ -26,10 +45,10 @@ const NexusZone = (() => {
     let vx = 0, vy = 0
     const spd = char.spd
     if (!chatOpen) {
-      if (keys['KeyW'] || keys['ArrowUp'])    vy = -spd
-      if (keys['KeyS'] || keys['ArrowDown'])  vy =  spd
-      if (keys['KeyA'] || keys['ArrowLeft'])  vx = -spd
-      if (keys['KeyD'] || keys['ArrowRight']) vx =  spd
+      if (Hotkeys.down('moveUp')    || keys['ArrowUp'])    vy = -spd
+      if (Hotkeys.down('moveDown')  || keys['ArrowDown'])  vy =  spd
+      if (Hotkeys.down('moveLeft')  || keys['ArrowLeft'])  vx = -spd
+      if (Hotkeys.down('moveRight') || keys['ArrowRight']) vx =  spd
       if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707 }
       ;[vx, vy] = inputToWorld(vx, vy)   // screen-relative movement (rotation-aware)
     }
@@ -132,7 +151,18 @@ const NexusZone = (() => {
     }
 
     renderHUD(char, 'NEXUS', map, [])
+
+    // Top-left "Characters" button — switch character or create a new one.
+    charBtn = { x: 12, y: 10, w: 168, h: 26 }
+    const hov = mouse.x >= charBtn.x && mouse.x <= charBtn.x + charBtn.w && mouse.y >= charBtn.y && mouse.y <= charBtn.y + charBtn.h
+    ctx.fillStyle = hov ? 'rgba(76,201,240,0.22)' : 'rgba(10,12,26,0.8)'
+    ctx.strokeStyle = '#4cc9f088'; ctx.lineWidth = 1
+    ctx.fillRect(charBtn.x, charBtn.y, charBtn.w, charBtn.h)
+    ctx.strokeRect(charBtn.x, charBtn.y, charBtn.w, charBtn.h)
+    ctx.fillStyle = '#9fe6ff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
+    ctx.fillText('⮌  CHARACTERS', charBtn.x + 12, charBtn.y + charBtn.h / 2 + 1)
+    ctx.textBaseline = 'alphabetic'
   }
 
-  return { init, update, render }
+  return { init, update, render, onClick }
 })()

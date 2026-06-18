@@ -712,25 +712,36 @@ function fuseItems(items) {
   return it ? { item: it } : { error: 'Fusion failed' }
 }
 
-const GAMBLE_COST = 100   // glory per gamble
-const GAMBLE_SLOTS = ['weapon', 'helmet', 'chest', 'boots', 'ring']
+const GAMBLE_COST = 100   // legacy fallback glory per gamble (per-slot costs below)
+// Every equippable slot can be gambled for now (added amulet, hands, legs, ability).
+const GAMBLE_SLOTS = ['weapon', 'helmet', 'chest', 'hands', 'pants', 'boots', 'ring', 'amulet', 'ability']
+// Per-slot Glory cost: weapons 1000, any armor 500, ring 250, amulet 300, ability 650.
+const GAMBLE_COSTS = {
+  weapon: 1000,
+  helmet: 500, chest: 500, hands: 500, pants: 500, boots: 500,
+  ring: 250, amulet: 300, ability: 650,
+}
+function gambleCost(slot) { return GAMBLE_COSTS[slot] != null ? GAMBLE_COSTS[slot] : GAMBLE_COST }
 
 // Gamble: spend glory, get a random item of `slot`, weighted by rarity and
 // filtered by the character's class (e.g. mage only gets mage weapons).
+// Returns { item, cost } on success so the caller can refund the exact cost if
+// the win can't be stored (inventory full).
 function gambleItem(acct, char, slot) {
   if (!char) return { error: 'No character' }
-  if ((acct.glory || 0) < GAMBLE_COST) return { error: 'Not enough Glory' }
+  const cost = gambleCost(slot)
+  if ((acct.glory || 0) < cost) return { error: `Not enough Glory (need ${cost})` }
   let bases = basesForSlot(slot, char.classKey)
   // Tier-4 "chase" gear stays boss-only — never gambled. Fall back to the full
   // list if a slot somehow has only chase bases (keeps old slots working).
   const nonChase = bases.filter(k => (ITEM_BASES[k].tier || 1) < 4)
   if (nonChase.length) bases = nonChase
   if (!bases.length) return { error: 'No items for that slot' }
-  acct.glory -= GAMBLE_COST
+  acct.glory -= cost
   const baseKey = bases[Math.random() * bases.length | 0]
   const rarity = rollRarity(0.25)
   const it = rollItem(baseKey, rarity, null, 'gamble')
-  return it ? { item: it } : { error: 'Gamble failed' }
+  return it ? { item: it, cost } : { error: 'Gamble failed' }
 }
 
 // Roll one of a dungeon's exclusive signature items (boosted rarity). Returns
@@ -1025,12 +1036,24 @@ function renderItemTooltip(it, x, y) {
   const src = (window.DUNGEONS && DUNGEONS[it.source] && DUNGEONS[it.source].name) || it.source || '—'
   lines.push({ t: `${rar} • ${it.slot} • ${src}`, c: '#9fb3c8' })
   const stats = it.stats || {}
+  const roll = (typeof it.rollPercent === 'number') ? it.rollPercent : it.rating
+  // Weapons: attack speed (as attacks/sec) shares the top line with the roll%;
+  // range + projectile speed are FIXED weapon mechanics shown on their own line,
+  // never mixed into the rolled stat list below.
+  if (it.slot === 'weapon') {
+    const aps = stats.atkSpd ? (1 / stats.atkSpd).toFixed(2) + ' atk/s' : ''
+    const rollTxt = (typeof roll === 'number') ? `Roll ${roll}%` : ''
+    if (aps || rollTxt) lines.push({ t: [rollTxt, aps].filter(Boolean).join('   •   '), c: '#ffd60a' })
+    const mech = []
+    if (stats.range != null) mech.push(`Range ${Math.round(stats.range)}`)
+    if (stats.bspd != null) mech.push(`Proj spd ${Math.round(stats.bspd)}`)
+    if (mech.length) lines.push({ t: mech.join('   •   '), c: '#9fb3c8' })
+  }
   for (const k in stats) {
-    if (k === 'bspd') continue   // fixed weapon projectile speed, not a stat bonus
+    if (k === 'bspd' || k === 'atkSpd' || k === 'range') continue  // weapon mechanics, shown above
     lines.push({ t: fmtStatLine(k, stats[k]), c: it.void && PCT_KEYS[k] ? '#b18bff' : '#d8e6f2' })
   }
-  const roll = (typeof it.rollPercent === 'number') ? it.rollPercent : it.rating
-  if (typeof roll === 'number') lines.push({ t: `Roll ${roll}%`, c: '#ffd60a' })
+  if (it.slot !== 'weapon' && typeof roll === 'number') lines.push({ t: `Roll ${roll}%`, c: '#ffd60a' })
 
   ctx.font = '10px monospace'
   let w = 0
@@ -1180,7 +1203,7 @@ function handleLootPreviewClick(mx, my) {
 function renderLootHUD(char, acct) {
   const w = canvas.width
   const pad = 12
-  let y = 206   // start below the top-right minimap module
+  let y = 266   // start below the top-right minimap module
   const x = w - pad
 
   ctx.textAlign = 'right'
@@ -1268,6 +1291,8 @@ window.canFuse = canFuse
 window.fuseItems = fuseItems
 window.gambleItem = gambleItem
 window.GAMBLE_COST = GAMBLE_COST
+window.GAMBLE_COSTS = GAMBLE_COSTS
+window.gambleCost = gambleCost
 window.GAMBLE_SLOTS = GAMBLE_SLOTS
 window.REFORGE_COST = REFORGE_COST
 window.itemDisplayName = itemDisplayName

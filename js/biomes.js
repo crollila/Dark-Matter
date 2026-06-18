@@ -147,13 +147,15 @@ function assignBiomes(m, rng) {
   for (const k in BIOMES) ids.push(BIOMES[k].id)
   const minDim = Math.min(W, H)
   const homeR = Math.max(18, minDim * 0.11)     // neutral home radius (tiles)
-  const minSep = minDim * 0.15                  // min distance between centers (tighter: more biomes now)
+  const minSep = minDim * 0.17                  // min distance between centers (spread the big blobs)
   const clusters = []
   for (const id of ids) {
     const hard = BIOME_HARDNESS[id] != null ? BIOME_HARDNESS[id] : 0.5
     let placed = null
     for (let attempt = 0; attempt < 300; attempt++) {
-      const r = (0.055 + rng() * 0.05) * minDim  // blob radius (tiles)
+      // Larger blobs so biomes dominate the world map instead of reading as small
+      // scattered dots — each region now spans ~2-3x its old footprint.
+      const r = (0.105 + rng() * 0.06) * minDim  // blob radius (tiles)
       const margin = r + 4
       // Difficulty → latitude: hard=1 sits at the far NORTH (y≈0.16H), easy=0
       // sits DEEP SOUTH near the home band (y≈0.78H), so the new low/mid biomes
@@ -168,7 +170,7 @@ function assignBiomes(m, rng) {
     }
     // Defensive fallback: relaxed placement still produces a valid cluster.
     if (!placed) {
-      const r = 0.09 * minDim
+      const r = 0.13 * minDim
       placed = { id, x: r + 4 + rng() * (W - 2 * (r + 4)), y: r + 4 + rng() * (H - 2 * (r + 4)), r }
     }
     clusters.push(placed)

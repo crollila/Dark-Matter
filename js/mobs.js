@@ -2,6 +2,11 @@
 // MOBS — all enemy and boss definitions
 // ============================================================
 
+// Render-only size multiplier for NORMAL mobs (bosses excluded). Their sprite,
+// shadow, geometric body, outline and HP bar scale by this; the gameplay hitbox
+// (e.radius used in collision / hit tests) is untouched.
+const MOB_VISUAL_SCALE = 1.45
+
 // AI behaviour functions — keyed by name, called each frame per enemy
 const MOB_AI = {
 
@@ -650,12 +655,17 @@ function renderMob(e, offX, offY) {
   MobDebug.rendered++
   const flash = e.hitFlash > 0
 
+  // Visual radius: normal mobs render noticeably larger than their hitbox so they
+  // read clearly against busy biome tiles (bosses keep their true size). Hitbox /
+  // collision / HP logic all keep using e.radius — this is render-only.
+  const vr = e.isBoss ? e.radius : e.radius * MOB_VISUAL_SCALE
+
   // Shadow — drawn UPRIGHT (like the HP bar) so it stays a flat ellipse pinned
   // under the mob on screen at any screen rotation, instead of tilting with the
   // world. Position still tracks the mob via the sx,sy anchor.
   drawUpright(sx, sy, () => {
     ctx.fillStyle = 'rgba(0,0,0,0.3)'
-    ctx.beginPath(); ctx.ellipse(0, e.radius - 2, e.radius * 0.8, e.radius * 0.3, 0, 0, Math.PI*2); ctx.fill()
+    ctx.beginPath(); ctx.ellipse(0, vr - 2, vr * 0.8, vr * 0.3, 0, 0, Math.PI*2); ctx.fill()
   })
 
   // Body — try an assigned sprite first; fall back to geometric art if no
@@ -666,7 +676,14 @@ function renderMob(e, offX, offY) {
   // via the sx,sy anchor; we draw at the local origin (0,0) inside drawUpright.
   let drewSprite = false
   if (typeof Sprites !== 'undefined') {
-    drawUpright(sx, sy, () => { drewSprite = Sprites.drawForMob(e, 0, 0) })
+    drawUpright(sx, sy, () => {
+      // Dark rim outline (shadow halo hugs the sprite silhouette) so mobs stand
+      // out from the terrain. White rim on hit-flash for the damage pop.
+      ctx.shadowColor = flash ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.85)'
+      ctx.shadowBlur = flash ? 8 : 5
+      drewSprite = Sprites.drawForMob(e, 0, 0, vr)
+      ctx.shadowBlur = 0
+    })
   }
   if (!drewSprite) {
     ctx.shadowBlur = flash ? 16 : 6
@@ -675,24 +692,26 @@ function renderMob(e, offX, offY) {
     if (e.isBoss) {
       // Boss: diamond shape
       ctx.beginPath()
-      ctx.moveTo(sx, sy - e.radius)
-      ctx.lineTo(sx + e.radius, sy)
-      ctx.lineTo(sx, sy + e.radius)
-      ctx.lineTo(sx - e.radius, sy)
+      ctx.moveTo(sx, sy - vr)
+      ctx.lineTo(sx + vr, sy)
+      ctx.lineTo(sx, sy + vr)
+      ctx.lineTo(sx - vr, sy)
       ctx.closePath(); ctx.fill()
     } else {
-      ctx.beginPath(); ctx.arc(sx, sy, e.radius, 0, Math.PI*2); ctx.fill()
+      ctx.beginPath(); ctx.arc(sx, sy, vr, 0, Math.PI*2); ctx.fill()
     }
     ctx.shadowBlur = 0
+    // Crisp dark outline around the geometric body for terrain contrast.
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.stroke()
   }
 
   // HP bar (+ boss name) — anchored at the mob but drawn upright via drawUpright
   // so it stays readable and pinned above the enemy at any screen rotation
   // (matches the under-player HP/MP bars). Its POSITION still tracks the world.
-  const bw = e.radius * 2.4, bh = 4
+  const bw = vr * 2.4, bh = 4
   const hpFrac = e.maxHp ? Math.max(0, Math.min(1, e.hp / e.maxHp)) : 0
   drawUpright(sx, sy, () => {
-    const bx = -bw/2, by = -e.radius - 9
+    const bx = -bw/2, by = -vr - 9
     ctx.fillStyle = '#111'
     ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2)
     ctx.fillStyle = e.isBoss ? '#ff6b6b' : '#4caf50'

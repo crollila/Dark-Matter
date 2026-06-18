@@ -11,14 +11,23 @@
 // ============================================================
 
 // Rebindable gameplay hotkeys (stored as KeyboardEvent.code values).
-// Move/Shoot/Chat/Command/Options stay fixed — rebinding Esc/Enter/'/' would
-// break the menus. Interact defaults to Control (E is now screen-rotate).
+// Every gameplay key is rebindable now (movement + rotation included). Only the
+// structural menu keys stay fixed — Esc (Options), Enter (Chat) and '/' (Command)
+// can't be rebound or they'd break the menus, and Shoot is the left mouse button.
+// Arrow keys always work as a fixed movement alternative regardless of binds.
 const DEFAULT_KEYS = {
-  ability:     'Space',
-  interact:    'ControlLeft',
-  inventory:   'KeyI',
-  returnNexus: 'KeyR',
-  ring2:       'AltLeft',
+  moveUp:        'KeyW',
+  moveDown:      'KeyS',
+  moveLeft:      'KeyA',
+  moveRight:     'KeyD',
+  ability:       'Space',
+  interact:      'ControlLeft',
+  inventory:     'KeyI',
+  returnNexus:   'KeyR',
+  ring2:         'AltLeft',
+  rotateLeft:    'KeyQ',
+  rotateRight:   'KeyE',
+  resetRotation: 'KeyZ',
 }
 
 // Fixed render/AI distances (world px, NOT window-size based). Mobs farther
@@ -39,12 +48,16 @@ const Settings = {
   hideOtherProjectiles: false,
   otherPlayerOpacity: 100,   // 0..100 (%)
   screenRotation: 0,         // degrees; Q/E rotate the view (applied in render)
+  zoom: 1.85,                // world camera zoom (engine.js worldZoom); player-tunable
   renderDistance: PERF_DEFAULTS.renderDistance,
   aiWakeDistance: PERF_DEFAULTS.aiWakeDistance,
   tileRenderRadius: PERF_DEFAULTS.tileRenderRadius,
   keys: { ...DEFAULT_KEYS },
 }
 window.Settings = Settings
+
+// Camera zoom bounds for the Options control.
+const ZOOM_LIMITS = { min: 1.0, max: 3.5, step: 0.15 }
 
 // Friendly label for a KeyboardEvent.code (for prompts / options UI).
 function keyLabel(code) {
@@ -99,6 +112,7 @@ const Options = (() => {
       if (typeof s.hideOtherProjectiles === 'boolean') Settings.hideOtherProjectiles = s.hideOtherProjectiles
       if (typeof s.otherPlayerOpacity === 'number') Settings.otherPlayerOpacity = clamp(Math.round(s.otherPlayerOpacity), 0, 100)
       if (typeof s.screenRotation === 'number') Settings.screenRotation = ((Math.round(s.screenRotation) % 360) + 360) % 360
+      if (typeof s.zoom === 'number') Settings.zoom = clamp(s.zoom, ZOOM_LIMITS.min, ZOOM_LIMITS.max)
       if (typeof s.renderDistance === 'number') Settings.renderDistance = clamp(Math.round(s.renderDistance), PERF_LIMITS.renderDistance.min, PERF_LIMITS.renderDistance.max)
       if (typeof s.aiWakeDistance === 'number') Settings.aiWakeDistance = clamp(Math.round(s.aiWakeDistance), PERF_LIMITS.aiWakeDistance.min, PERF_LIMITS.aiWakeDistance.max)
       if (typeof s.tileRenderRadius === 'number') Settings.tileRenderRadius = clamp(Math.round(s.tileRenderRadius), PERF_LIMITS.tileRenderRadius.min, PERF_LIMITS.tileRenderRadius.max)
@@ -118,17 +132,21 @@ const Options = (() => {
 
   // Rows with an `action` are rebindable; rows with `fixed` are display-only.
   const HOTKEY_ROWS = [
-    { label: 'Move',            fixed: 'WASD / Arrows' },
+    { label: 'Move Up',         action: 'moveUp' },
+    { label: 'Move Down',       action: 'moveDown' },
+    { label: 'Move Left',       action: 'moveLeft' },
+    { label: 'Move Right',      action: 'moveRight' },
     { label: 'Shoot',           fixed: 'Left Click' },
     { label: 'Ability',         action: 'ability' },
     { label: 'Interact',        action: 'interact' },
     { label: 'Inventory',       action: 'inventory' },
     { label: 'Return to Nexus', action: 'returnNexus' },
     { label: 'Ring 2 modifier', action: 'ring2' },
+    { label: 'Rotate Left',     action: 'rotateLeft' },
+    { label: 'Rotate Right',    action: 'rotateRight' },
+    { label: 'Reset rotation',  action: 'resetRotation' },
     { label: 'Chat',            fixed: 'Enter' },
     { label: 'Command',         fixed: '/' },
-    { label: 'Rotate screen',   fixed: 'Hold Q / E' },
-    { label: 'Reset rotation',  fixed: 'Z' },
     { label: 'Options',         fixed: 'Esc' },
   ]
 
@@ -154,7 +172,7 @@ const Options = (() => {
   function render() {
     if (!open) return
     const PW = 460
-    const PH = Math.min(canvas.height - 12, 648)
+    const PH = Math.min(canvas.height - 12, 712)
     const px = ((canvas.width - PW) / 2) | 0
     const py = Math.max(8, ((canvas.height - PH) / 2) | 0)
 
@@ -225,6 +243,15 @@ const Options = (() => {
 
     // ---- SCREEN ----
     y = sect('SCREEN', y)
+    // Camera zoom
+    ctx.fillStyle = UI.text; ctx.font = '11px monospace'; ctx.fillText('Camera zoom', px + 24, y + 5)
+    const zmMinus = { x: px + PW - 150, y: y - 9, w: 24, h: 22 }
+    const zmPlus  = { x: px + PW - 54,  y: y - 9, w: 24, h: 22 }
+    drawStep(zmMinus, '-'); drawStep(zmPlus, '+')
+    ctx.fillStyle = UI.text; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'
+    ctx.fillText((Settings.zoom || 1).toFixed(2) + '×', px + PW - 90, y + 5); ctx.textAlign = 'left'
+    y += 30
+    // Screen rotation
     ctx.fillStyle = UI.text; ctx.font = '11px monospace'; ctx.fillText('Screen rotation', px + 24, y + 5)
     const rotMinus = { x: px + PW - 150, y: y - 9, w: 24, h: 22 }
     const rotPlus  = { x: px + PW - 54,  y: y - 9, w: 24, h: 22 }
@@ -234,41 +261,32 @@ const Options = (() => {
     y += 32
     const rotReset = { x: px + 24, y: y - 8, w: 180, h: 24 }
     drawButton(rotReset, 'Reset rotation to 0°')
-    y += 32
+    y += 30
     ctx.fillStyle = UI.textFaint; ctx.font = '9px monospace'
-    ctx.fillText('Hold Q / E in-game to rotate · Z resets to 0°. Aim stays correct while rotated.', px + 24, y)
+    ctx.fillText('Rotate / reset keys are rebindable above. Aim stays correct while rotated.', px + 24, y)
     y += 18
 
-    // ---- PERFORMANCE (fixed render/AI distances, not window-size based) ----
-    y = sect('PERFORMANCE', y)
-    ctx.fillStyle = UI.text; ctx.font = '11px monospace'; ctx.fillText('Render distance', px + 24, y + 5)
-    const rdMinus = { x: px + PW - 170, y: y - 9, w: 24, h: 22 }
-    const rdPlus  = { x: px + PW - 54,  y: y - 9, w: 24, h: 22 }
-    drawStep(rdMinus, '-'); drawStep(rdPlus, '+')
-    ctx.fillStyle = UI.text; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'
-    ctx.fillText(Settings.renderDistance + '', px + PW - 100, y + 5); ctx.textAlign = 'left'
-    y += 30
-    ctx.fillStyle = UI.text; ctx.font = '11px monospace'; ctx.fillText('AI wake distance', px + 24, y + 5)
-    const awMinus = { x: px + PW - 170, y: y - 9, w: 24, h: 22 }
-    const awPlus  = { x: px + PW - 54,  y: y - 9, w: 24, h: 22 }
-    drawStep(awMinus, '-'); drawStep(awPlus, '+')
-    ctx.fillStyle = UI.text; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'
-    ctx.fillText(Settings.aiWakeDistance + '', px + PW - 100, y + 5); ctx.textAlign = 'left'
-    y += 30
-    ctx.fillStyle = UI.text; ctx.font = '11px monospace'; ctx.fillText('Tile render radius (blocks)', px + 24, y + 5)
-    const trMinus = { x: px + PW - 170, y: y - 9, w: 24, h: 22 }
-    const trPlus  = { x: px + PW - 54,  y: y - 9, w: 24, h: 22 }
-    drawStep(trMinus, '-'); drawStep(trPlus, '+')
-    ctx.fillStyle = UI.text; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'
-    ctx.fillText(Settings.tileRenderRadius + '', px + PW - 100, y + 5); ctx.textAlign = 'left'
-    y += 28
+    // ---- PERFORMANCE (server-managed — read-only on the client) ----
+    y = sect('PERFORMANCE  (server-managed)', y)
+    const perfRows = [
+      ['Render distance', Settings.renderDistance],
+      ['AI wake distance', Settings.aiWakeDistance],
+      ['Tile render radius (blocks)', Settings.tileRenderRadius],
+    ]
+    for (const [label, val] of perfRows) {
+      ctx.fillStyle = UI.textDim; ctx.font = '11px monospace'; ctx.textAlign = 'left'
+      ctx.fillText(label, px + 24, y + 5)
+      ctx.fillStyle = UI.textFaint; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'right'
+      ctx.fillText('' + val, px + PW - 24, y + 5); ctx.textAlign = 'left'
+      y += 22
+    }
     ctx.fillStyle = UI.textFaint; ctx.font = '9px monospace'
-    ctx.fillText('Lower = better performance. Bosses always render/active.', px + 24, y)
+    ctx.fillText('These are tuned by the server and can\'t be changed by players.', px + 24, y + 2)
 
     ctx.fillStyle = UI.textFaint; ctx.font = '10px monospace'; ctx.textAlign = 'center'
     ctx.fillText('Esc to close', px + PW / 2, py + PH - 10); ctx.textAlign = 'left'
 
-    _L = { px, py, PW, PH, closeBtn, keyRows, resetKeys, hideToggle, opMinus, opTrack, opPlus, rotMinus, rotPlus, rotReset, rdMinus, rdPlus, awMinus, awPlus, trMinus, trPlus }
+    _L = { px, py, PW, PH, closeBtn, keyRows, resetKeys, hideToggle, opMinus, opTrack, opPlus, zmMinus, zmPlus, rotMinus, rotPlus, rotReset }
   }
 
   function onClick(x, y) {
@@ -283,16 +301,13 @@ const Options = (() => {
     if (hit(L.opMinus, x, y)) { Settings.otherPlayerOpacity = clamp(Settings.otherPlayerOpacity - 10, 0, 100); save(); return true }
     if (hit(L.opPlus, x, y))  { Settings.otherPlayerOpacity = clamp(Settings.otherPlayerOpacity + 10, 0, 100); save(); return true }
     if (hit(L.opTrack, x, y)) { Settings.otherPlayerOpacity = clamp(Math.round((x - L.opTrack.x) / L.opTrack.w * 20) * 5, 0, 100); save(); return true }
+    const zl = ZOOM_LIMITS
+    if (hit(L.zmMinus, x, y)) { Settings.zoom = clamp(+(Settings.zoom - zl.step).toFixed(2), zl.min, zl.max); save(); return true }
+    if (hit(L.zmPlus, x, y))  { Settings.zoom = clamp(+(Settings.zoom + zl.step).toFixed(2), zl.min, zl.max); save(); return true }
     if (hit(L.rotMinus, x, y)) { Settings.screenRotation = ((Settings.screenRotation - 15) % 360 + 360) % 360; save(); return true }
     if (hit(L.rotPlus, x, y))  { Settings.screenRotation = (Settings.screenRotation + 15) % 360; save(); return true }
     if (hit(L.rotReset, x, y)) { Settings.screenRotation = 0; save(); return true }
-    const rd = PERF_LIMITS.renderDistance, aw = PERF_LIMITS.aiWakeDistance, tr = PERF_LIMITS.tileRenderRadius
-    if (hit(L.rdMinus, x, y)) { Settings.renderDistance = clamp(Settings.renderDistance - rd.step, rd.min, rd.max); save(); return true }
-    if (hit(L.rdPlus, x, y))  { Settings.renderDistance = clamp(Settings.renderDistance + rd.step, rd.min, rd.max); save(); return true }
-    if (hit(L.awMinus, x, y)) { Settings.aiWakeDistance = clamp(Settings.aiWakeDistance - aw.step, aw.min, aw.max); save(); return true }
-    if (hit(L.awPlus, x, y))  { Settings.aiWakeDistance = clamp(Settings.aiWakeDistance + aw.step, aw.min, aw.max); save(); return true }
-    if (hit(L.trMinus, x, y)) { Settings.tileRenderRadius = clamp(Settings.tileRenderRadius - tr.step, tr.min, tr.max); save(); return true }
-    if (hit(L.trPlus, x, y))  { Settings.tileRenderRadius = clamp(Settings.tileRenderRadius + tr.step, tr.min, tr.max); save(); return true }
+    // Performance is server-managed: read-only, no client controls.
     return true   // swallow all clicks while the menu is open
   }
 
